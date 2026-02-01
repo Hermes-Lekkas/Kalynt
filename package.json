@@ -10,6 +10,8 @@
     "scripts": {
         "dev": "npm run dev --workspace=apps/desktop",
         "build": "npm run build --workspace=apps/desktop",
+        "build:secure": "npm run build:secure --workspace=apps/desktop",
+        "electron:build:secure": "npm run electron:build:secure --workspace=apps/desktop",
         "test": "npm run test --workspaces --if-present",
         "lint": "eslint . --ext .ts,.tsx"
     },
