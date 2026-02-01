@@ -50,7 +50,7 @@ The result is an IDE where AI accelerated implementation, but every major design
 
 ## Key Features
 
-### AIME (Advanced Inference Matrix Engine)
+### AIME (Artificial Intelligence Memory Engine)
 - **Offline Intelligence**: Run powerful LLMs locally using `node-llama-cpp`. No data leaves your machine.
 - **Agentic Capabilities**: Autonomous agents that can read, plan, and execute code changes within your workspace.
 - **Hybrid Mode**: Seamlessly switch between local models and cloud providers if desired.
