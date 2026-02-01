@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+/dist/
+/build/
+/dist-electron/
+/release/
+/packages/*/dist
+/apps/*/dist
+/apps/*/dist-electron
+/apps/*/release
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+eslint-output.txt
+tsc_output.txt
+validation-output.txt
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ============================================
+# PROPRIETARY MODULES (DO NOT COMMIT)
+# ============================================
+apps/desktop/electron/handlers/llm-inference.ts
+apps/desktop/src/services/agentService.ts
+apps/desktop/src/services/offlineLLMService.ts
+apps/desktop/src/services/aiService.ts
+apps/desktop/src/components/AIMESettings.tsx
+apps/desktop/src/types/aime.ts
+apps/desktop/src/services/hardwareService.ts
+
+# Internal Scripts
+/scripts/clean-proprietary-files.js
+node_modules

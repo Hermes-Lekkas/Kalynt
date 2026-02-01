@@ -1,0 +1,17 @@
+{
+    "name": "@kalynt/networking",
+    "version": "1.0.0-beta",
+    "author": "Hermes Lekkas",
+    "private": true,
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "dependencies": {
+        "simple-peer": "^9.11.1",
+        "y-webrtc": "^10.3.0",
+        "yjs": "^13.6.0"
+    },
+    "devDependencies": {
+        "@types/simple-peer": "^9.11.0",
+        "typescript": "^5.3.0"
+    }
+}

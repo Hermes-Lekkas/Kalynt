@@ -1,0 +1,873 @@
+﻿
+C:\Kalynt\apps\desktop\electron\handlers\build.ts
+   42:7   warning  Unexpected console statement              no-console
+   71:9   warning  Unexpected console statement              no-console
+  408:7   warning  Unexpected console statement              no-console
+  603:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  604:7   warning  Unexpected console statement              no-console
+  619:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  620:7   warning  Unexpected console statement              no-console
+  630:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  631:7   warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\code-execution.ts
+  105:13   warning  Unexpected console statement              no-console
+  117:13   warning  Unexpected console statement              no-console
+  132:17   warning  Unexpected console statement              no-console
+  211:13   warning  Unexpected console statement              no-console
+  220:5    warning  Unexpected console statement              no-console
+  259:5    warning  Unexpected console statement              no-console
+  272:17   warning  Unexpected console statement              no-console
+  281:21   warning  Unexpected console statement              no-console
+  575:35   error    A `require()` style import is forbidden   @typescript-eslint/no-require-imports
+  603:118  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  610:13   warning  Unexpected console statement              no-console
+  743:25   warning  Unexpected console statement              no-console
+  884:9    warning  Unexpected console statement              no-console
+  891:9    warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\debug.ts
+   51:7   warning  Unexpected console statement              no-console
+   91:9   warning  Unexpected console statement              no-console
+  229:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  324:7   warning  Unexpected console statement              no-console
+  332:7   warning  Unexpected console statement              no-console
+  362:9   warning  Unexpected console statement              no-console
+  422:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  593:9   warning  Unexpected console statement              no-console
+  640:84  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  679:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  679:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  689:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  715:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  716:7   warning  Unexpected console statement              no-console
+  738:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  739:9   warning  Unexpected console statement              no-console
+  750:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  751:7   warning  Unexpected console statement              no-console
+  763:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  764:9   warning  Unexpected console statement              no-console
+  775:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  784:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  793:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  802:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  811:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  821:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  836:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  849:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\electron\handlers\dependency.ts
+  99:5  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\file-system.ts
+   39:9   warning  Unexpected console statement  no-console
+   54:9   warning  Unexpected console statement  no-console
+  128:25  warning  Unexpected console statement  no-console
+  342:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\llm-inference.ts
+   51:9   warning  Unexpected console statement              no-console
+   52:9   warning  Unexpected console statement              no-console
+   53:9   warning  Unexpected console statement              no-console
+   54:9   warning  Unexpected console statement              no-console
+   60:13  warning  Unexpected console statement              no-console
+   65:17  warning  Unexpected console statement              no-console
+   72:13  warning  Unexpected console statement              no-console
+   93:17  warning  Unexpected console statement              no-console
+  101:17  warning  Unexpected console statement              no-console
+  104:21  warning  Unexpected console statement              no-console
+  105:21  warning  Unexpected console statement              no-console
+  107:21  warning  Unexpected console statement              no-console
+  114:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  116:17  warning  Unexpected console statement              no-console
+  117:17  warning  Unexpected console statement              no-console
+  122:13  warning  Unexpected console statement              no-console
+  123:13  warning  Unexpected console statement              no-console
+  124:13  warning  Unexpected console statement              no-console
+  125:13  warning  Unexpected console statement              no-console
+  130:21  warning  Unexpected console statement              no-console
+  132:21  warning  Unexpected console statement              no-console
+  140:17  warning  Unexpected console statement              no-console
+  141:17  warning  Unexpected console statement              no-console
+  142:17  warning  Unexpected console statement              no-console
+  156:17  warning  Unexpected console statement              no-console
+  157:17  warning  Unexpected console statement              no-console
+  168:17  warning  Unexpected console statement              no-console
+  169:17  warning  Unexpected console statement              no-console
+  170:17  warning  Unexpected console statement              no-console
+  171:17  warning  Unexpected console statement              no-console
+  174:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  197:17  warning  Unexpected console statement              no-console
+  198:17  warning  Unexpected console statement              no-console
+  201:17  warning  Unexpected console statement              no-console
+  204:17  warning  Unexpected console statement              no-console
+  207:17  warning  Unexpected console statement              no-console
+  226:13  warning  Unexpected console statement              no-console
+  230:13  warning  Unexpected console statement              no-console
+  231:13  warning  Unexpected console statement              no-console
+  249:9   warning  Unexpected console statement              no-console
+  268:9   warning  Unexpected console statement              no-console
+  276:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  280:17  warning  Unexpected console statement              no-console
+  284:13  warning  Unexpected console statement              no-console
+  319:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  322:76  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  325:29  warning  Unexpected console statement              no-console
+  328:25  warning  Unexpected console statement              no-console
+  332:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  351:25  warning  Unexpected console statement              no-console
+  374:13  warning  Unexpected console statement              no-console
+  422:25  warning  Unexpected console statement              no-console
+  443:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  446:76  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  449:29  warning  Unexpected console statement              no-console
+  452:25  warning  Unexpected console statement              no-console
+  456:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  484:21  warning  Unexpected console statement              no-console
+  495:21  warning  Unexpected console statement              no-console
+  504:21  warning  Unexpected console statement              no-console
+  513:21  warning  Unexpected console statement              no-console
+  530:13  warning  Unexpected console statement              no-console
+  559:17  warning  Unexpected console statement              no-console
+  564:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\model-download.ts
+   51:13  warning  Unexpected console statement  no-console
+   55:9   warning  Unexpected console statement  no-console
+   62:13  warning  Unexpected console statement  no-console
+   91:33  warning  Unexpected console statement  no-console
+  101:29  warning  Unexpected console statement  no-console
+  150:29  warning  Unexpected console statement  no-console
+  158:25  warning  Unexpected console statement  no-console
+  186:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\nuke-handler.ts
+  11:9   warning  Unexpected console statement              no-console
+  28:21  warning  Unexpected console statement              no-console
+  30:21  warning  Unexpected console statement              no-console
+  55:29  warning  Unexpected console statement              no-console
+  70:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  71:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\safeStorage.ts
+   31:9   warning  Unexpected console statement  no-console
+   41:9   warning  Unexpected console statement  no-console
+   58:17  warning  Unexpected console statement  no-console
+   71:13  warning  Unexpected console statement  no-console
+   74:13  warning  Unexpected console statement  no-console
+  100:13  warning  Unexpected console statement  no-console
+  112:13  warning  Unexpected console statement  no-console
+  115:13  warning  Unexpected console statement  no-console
+  126:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\terminal.ts
+  241:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  324:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\handlers\update-handler.ts
+   20:32  warning  Unexpected console statement              no-console
+   21:32  warning  Unexpected console statement              no-console
+   22:33  warning  Unexpected console statement              no-console
+   23:33  warning  Unexpected console statement              no-console
+   48:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   74:9   warning  Unexpected console statement              no-console
+   85:5   warning  Unexpected console statement              no-console
+  100:17  warning  Unexpected console statement              no-console
+  108:13  warning  Unexpected console statement              no-console
+  129:13  warning  Unexpected console statement              no-console
+  150:13  warning  Unexpected console statement              no-console
+  161:13  warning  Unexpected console statement              no-console
+  198:13  warning  Unexpected console statement              no-console
+  205:13  warning  Unexpected console statement              no-console
+  218:13  warning  Unexpected console statement              no-console
+  227:13  warning  Unexpected console statement              no-console
+  256:5   warning  Unexpected console statement              no-console
+  265:9   warning  Unexpected console statement              no-console
+  279:9   warning  Unexpected console statement              no-console
+  298:9   warning  Unexpected console statement              no-console
+  307:9   warning  Unexpected console statement              no-console
+  322:9   warning  Unexpected console statement              no-console
+  336:9   warning  Unexpected console statement              no-console
+  353:17  warning  Unexpected console statement              no-console
+  356:17  warning  Unexpected console statement              no-console
+  365:21  warning  Unexpected console statement              no-console
+  369:17  warning  Unexpected console statement              no-console
+  374:9   warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\main.ts
+   48:13  warning  Unexpected console statement  no-console
+   59:13  warning  Unexpected console statement  no-console
+  238:17  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\preload.ts
+   18:20   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   31:65   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   33:59   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   41:68   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   43:27   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   48:86   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   50:86   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   61:73   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   63:101  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   71:88   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   75:65   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   75:110  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:69   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   80:84   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   84:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   84:112  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   86:68   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:103  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   93:116  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  104:81   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  106:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  110:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:84   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  128:30   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  128:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  130:78   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:49   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  136:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  138:69   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  142:79   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  148:57   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  153:52   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  155:71   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  181:30   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  197:26   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  199:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  200:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  223:26   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:31   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  253:77   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  256:105  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  273:92   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:69   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  279:88   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  282:71   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  287:107  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  293:120  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  316:45   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  346:34   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  348:53   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  360:56   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  363:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  385:30   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  389:27   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  390:29   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  392:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  393:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  409:28   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  411:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  414:35   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  456:24   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  457:25   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  458:24   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  459:27   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  461:29   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  462:26   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  485:28   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  492:29   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  494:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  495:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  501:34   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  502:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  508:39   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  509:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  527:32   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  529:72   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  538:38   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  539:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  545:38   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  546:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  552:40   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  553:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  559:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  560:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  566:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  567:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  573:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  574:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  580:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  581:68   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  587:43   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  588:71   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  594:36   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  595:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  619:24   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  629:28   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  630:31   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  631:28   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  632:32   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  633:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  634:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  635:90   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  637:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  638:79   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  640:34   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  641:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  665:46   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  666:81   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  668:49   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  669:85   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  671:51   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  672:93   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  674:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  675:82   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  677:43   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  678:78   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  693:47   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\electron\services\runtime-manager.ts
+  267:13  warning  Unexpected console statement  no-console
+  272:13  warning  Unexpected console statement  no-console
+  417:25  warning  Unexpected console statement  no-console
+  443:17  warning  Unexpected console statement  no-console
+  456:13  warning  Unexpected console statement  no-console
+  469:17  warning  Unexpected console statement  no-console
+  492:13  warning  Unexpected console statement  no-console
+  495:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\terminal\dependencyManager.ts
+  381:17  warning  Unexpected console statement              no-console
+  429:25  warning  Unexpected console statement              no-console
+  438:21  warning  Unexpected console statement              no-console
+  468:13  warning  Unexpected console statement              no-console
+  499:17  warning  Unexpected console statement              no-console
+  540:17  warning  Unexpected console statement              no-console
+  695:13  warning  Unexpected console statement              no-console
+  778:77  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  786:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  793:60  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\electron\terminal\languageGateway.ts
+  255:17  warning  Unexpected console statement  no-console
+  267:17  warning  Unexpected console statement  no-console
+  323:13  warning  Unexpected console statement  no-console
+  348:17  warning  Unexpected console statement  no-console
+  349:17  warning  Unexpected console statement  no-console
+  351:21  warning  Unexpected console statement  no-console
+  352:21  warning  Unexpected console statement  no-console
+  354:21  warning  Unexpected console statement  no-console
+  355:21  warning  Unexpected console statement  no-console
+  425:17  warning  Unexpected console statement  no-console
+  445:13  warning  Unexpected console statement  no-console
+  485:29  warning  Unexpected console statement  no-console
+  488:29  warning  Unexpected console statement  no-console
+  567:13  warning  Unexpected console statement  no-console
+  602:13  warning  Unexpected console statement  no-console
+  622:13  warning  Unexpected console statement  no-console
+  662:25  warning  Unexpected console statement  no-console
+  677:17  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\electron\terminal\shellIntegration.ts
+   12:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  352:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\terminal\taskRunner.ts
+   88:25  warning  Unexpected console statement              no-console
+  219:25  warning  Unexpected console statement              no-console
+  351:17  warning  Unexpected console statement              no-console
+  364:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  365:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  377:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  500:13  warning  Unexpected console statement              no-console
+  518:13  warning  Unexpected console statement              no-console
+  571:13  warning  Unexpected console statement              no-console
+  589:21  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\terminal\terminalManager.ts
+   19:15  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   65:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  261:13  warning  Unexpected console statement              no-console
+  282:13  warning  Unexpected console statement              no-console
+  298:13  warning  Unexpected console statement              no-console
+  317:13  warning  Unexpected console statement              no-console
+  344:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\terminal\terminalService.ts
+  126:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  153:13  warning  Unexpected console statement              no-console
+  160:13  warning  Unexpected console statement              no-console
+  233:17  warning  Unexpected console statement              no-console
+  234:17  warning  Unexpected console statement              no-console
+  238:25  warning  Unexpected console statement              no-console
+  242:17  warning  Unexpected console statement              no-console
+  255:13  warning  Unexpected console statement              no-console
+  298:13  warning  Unexpected console statement              no-console
+  301:13  warning  Unexpected console statement              no-console
+  436:13  warning  Unexpected console statement              no-console
+  446:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  451:13  warning  Unexpected console statement              no-console
+  463:54  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  470:13  warning  Unexpected console statement              no-console
+  489:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  490:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  554:78  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  580:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  671:17  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\electron\utils\pathValidator.ts
+  57:9  warning  Unexpected console statement  no-console
+  66:9  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\AIMESettings.tsx
+  102:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\CollaborationPanel.tsx
+  428:21  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\Editor.tsx
+  42:11  warning  Unexpected console statement  no-console
+  56:7   warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\ErrorBoundary.tsx
+  26:9  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\FilesPanel.tsx
+  123:9  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\MainContent.tsx
+  41:9  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\MemberManagement.tsx
+  279:72  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\ModelManager.tsx
+   77:58  error  Irregular whitespace not allowed  no-irregular-whitespace
+  158:43  error  Irregular whitespace not allowed  no-irregular-whitespace
+
+C:\Kalynt\apps\desktop\src\components\PluginsPanel.tsx
+  451:21  warning  Unexpected console statement  no-console
+  510:21  warning  Unexpected console statement  no-console
+  521:13  warning  Unexpected console statement  no-console
+  548:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\ResourceMonitor.tsx
+  414:69  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\SettingsPanel.tsx
+  69:11  warning  Unexpected console statement  no-console
+  79:5   warning  Unexpected console statement  no-console
+  88:7   warning  Unexpected console statement  no-console
+  93:5   warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\TaskBoard.tsx
+  116:7   warning  Unexpected console statement              no-console
+  137:7   warning  Unexpected console statement              no-console
+  149:7   warning  Unexpected console statement              no-console
+  519:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\UnifiedAgentPanel.tsx
+    60:27   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    73:61   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   132:27   warning  Unexpected console statement              no-console
+   141:70   warning  Unexpected console statement              no-console
+   209:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   244:33   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   298:13   warning  Unexpected console statement              no-console
+   374:21   warning  Unexpected console statement              no-console
+   388:25   warning  Unexpected console statement              no-console
+   408:25   warning  Unexpected console statement              no-console
+   422:88   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   437:36   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   443:25   warning  Unexpected console statement              no-console
+   512:21   warning  Unexpected console statement              no-console
+   513:21   warning  Unexpected console statement              no-console
+   546:33   warning  Unexpected console statement              no-console
+   579:33   warning  Unexpected console statement              no-console
+   585:25   warning  Unexpected console statement              no-console
+   588:29   warning  Unexpected console statement              no-console
+   590:29   warning  Unexpected console statement              no-console
+   651:37   warning  Unexpected console statement              no-console
+   676:41   warning  Unexpected console statement              no-console
+   693:41   warning  Unexpected console statement              no-console
+   713:37   warning  Unexpected console statement              no-console
+   718:33   warning  Unexpected console statement              no-console
+   728:29   warning  Unexpected console statement              no-console
+   731:25   warning  Unexpected console statement              no-console
+   754:101  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   797:37   warning  Unexpected console statement              no-console
+   824:41   warning  Unexpected console statement              no-console
+   833:37   warning  Unexpected console statement              no-console
+   838:33   warning  Unexpected console statement              no-console
+   847:39   warning  Unexpected console statement              no-console
+   946:53   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   971:157  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1289:105  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1307:73   warning  Unexpected console statement              no-console
+  1347:65   warning  Unexpected console statement              no-console
+  1349:65   warning  Unexpected console statement              no-console
+  1452:80   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1457:80   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1458:82   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\UnifiedSettingsPanel.tsx
+   114:11  warning  Unexpected console statement              no-console
+   279:59  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   525:80  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   540:9   warning  Unexpected console statement              no-console
+   563:7   warning  Unexpected console statement              no-console
+   577:7   warning  Unexpected console statement              no-console
+   689:93  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   692:57  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   910:4   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1097:90  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\VersionPanel.tsx
+  171:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\ide\CodeBlockRenderer.tsx
+  31:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\ide\CommandPalette.tsx
+  127:13  warning  Unexpected console statement  no-console
+  138:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\ide\FileExplorer.tsx
+  132:13  warning  Unexpected console statement  no-console
+  148:21  warning  Unexpected console statement  no-console
+  195:17  warning  Unexpected console statement  no-console
+  384:13  warning  Unexpected console statement  no-console
+  413:13  warning  Unexpected console statement  no-console
+  453:13  warning  Unexpected console statement  no-console
+  581:13  warning  Unexpected console statement  no-console
+  615:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\ide\GitPanel.tsx
+   99:22  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  139:13  warning  Unexpected console statement              no-console
+  154:17  warning  Unexpected console statement              no-console
+  175:13  warning  Unexpected console statement              no-console
+  197:13  warning  Unexpected console statement              no-console
+  230:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\src\components\ide\IDEWorkspace.tsx
+   30:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   31:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   32:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   36:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  133:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  135:21  warning  Unexpected console statement              no-console
+  140:52  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  142:21  warning  Unexpected console statement              no-console
+  220:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  351:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  353:17  warning  Unexpected console statement              no-console
+  378:21  warning  Unexpected console statement              no-console
+  480:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  482:17  warning  Unexpected console statement              no-console
+  489:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  490:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  524:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  557:25  warning  Unexpected console statement              no-console
+  657:13  warning  Unexpected console statement              no-console
+  667:13  warning  Unexpected console statement              no-console
+  684:9   warning  Unexpected console statement              no-console
+  694:9   warning  Unexpected console statement              no-console
+  711:38  error    Irregular whitespace not allowed          no-irregular-whitespace
+  775:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  787:42  error    Irregular whitespace not allowed          no-irregular-whitespace
+  792:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  803:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  813:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  823:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  833:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  843:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  866:42  error    Irregular whitespace not allowed          no-irregular-whitespace
+  872:61  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  888:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  900:42  error    Irregular whitespace not allowed          no-irregular-whitespace
+  905:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  950:25  warning  Unexpected console statement              no-console
+  983:87  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\ide\SearchPanel.tsx
+   59:11  warning  Unexpected console statement              no-console
+   75:7   warning  Unexpected console statement              no-console
+   99:11  warning  Unexpected console statement              no-console
+  108:5   warning  Unexpected console statement              no-console
+  114:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  183:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  319:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\ide\Terminal.tsx
+  149:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\components\ide\terminal\CommandPalette.tsx
+  114:17  error    Unexpected lexical declaration in case block  no-case-declarations
+  115:17  error    Unexpected lexical declaration in case block  no-case-declarations
+  222:56  warning  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\components\ide\terminal\TerminalSearch.tsx
+   9:18  warning  Unexpected any. Specify a different type                               @typescript-eslint/no-explicit-any
+  50:25  error    Expected an assignment or function call and instead saw an expression  @typescript-eslint/no-unused-expressions
+
+C:\Kalynt\apps\desktop\src\components\ide\terminal\useTerminalSession.ts
+   46:13  warning  Unexpected console statement  no-console
+  117:13  warning  Unexpected console statement  no-console
+  194:58  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\hooks\useEncryption.tsx
+  64:21  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\hooks\useGhostText.ts
+  47:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:68  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\hooks\useP2P.ts
+  26:17  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\hooks\usePermissions.ts
+   97:13  warning  Unexpected console statement  no-console
+  105:13  warning  Unexpected console statement  no-console
+  113:13  warning  Unexpected console statement  no-console
+  121:13  warning  Unexpected console statement  no-console
+  129:13  warning  Unexpected console statement  no-console
+  137:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\hooks\useYjs.ts
+   88:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:17  warning  Unexpected console statement              no-console
+   91:21  warning  Unexpected console statement              no-console
+   96:17  warning  Unexpected console statement              no-console
+  108:13  warning  Unexpected console statement              no-console
+  152:13  warning  Unexpected console statement              no-console
+  165:21  warning  Unexpected console statement              no-console
+  169:9   warning  Unexpected console statement              no-console
+  187:13  warning  Unexpected console statement              no-console
+  207:13  warning  Unexpected console statement              no-console
+  222:5   warning  Unexpected console statement              no-console
+  286:29  warning  Unexpected console statement              no-console
+  290:21  warning  Unexpected console statement              no-console
+  296:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  326:21  warning  Unexpected console statement              no-console
+  346:13  warning  Unexpected console statement              no-console
+  380:21  warning  Unexpected console statement              no-console
+  389:17  warning  Unexpected console statement              no-console
+  547:52  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  566:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\services\agentService.ts
+   55:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   95:99  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  290:68  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  428:52  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  675:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  684:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  690:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\services\aiService.ts
+  236:17  warning  Unexpected console statement              no-console
+  398:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  446:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\services\collabEngine.ts
+   24:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   75:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  297:13  warning  Unexpected console statement              no-console
+  344:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\src\services\encryptedProvider.ts
+  150:5  warning  Unexpected console statement  no-console
+  158:5  warning  Unexpected console statement  no-console
+  191:9  warning  Unexpected console statement  no-console
+  218:9  warning  Unexpected console statement  no-console
+  234:9  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\encryptionService.ts
+  198:17  warning  Unexpected console statement  no-console
+  258:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\fileTransferService.ts
+   92:9   warning  Unexpected console statement  no-console
+  222:13  warning  Unexpected console statement  no-console
+  225:13  warning  Unexpected console statement  no-console
+  282:13  warning  Unexpected console statement  no-console
+  304:9   warning  Unexpected console statement  no-console
+  358:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\hardwareService.ts
+  45:63  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  53:17  warning  Unexpected console statement              no-console
+  65:63  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  70:17  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\src\services\ideAgentTools.ts
+  1024:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1027:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\services\ideCommands.ts
+   28:21  warning  Unexpected console statement              no-console
+  118:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\services\integrationService.ts
+  327:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\languageRuntimeService.ts
+  102:13  warning  Unexpected console statement  no-console
+  187:17  warning  Unexpected console statement  no-console
+  193:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\memberSyncService.ts
+   77:17  warning  Unexpected console statement  no-console
+   79:17  warning  Unexpected console statement  no-console
+   94:9   warning  Unexpected console statement  no-console
+  106:13  warning  Unexpected console statement  no-console
+  116:13  warning  Unexpected console statement  no-console
+  137:13  warning  Unexpected console statement  no-console
+  177:9   warning  Unexpected console statement  no-console
+  226:9   warning  Unexpected console statement  no-console
+  252:9   warning  Unexpected console statement  no-console
+  256:17  warning  Unexpected console statement  no-console
+  259:17  warning  Unexpected console statement  no-console
+  314:13  warning  Unexpected console statement  no-console
+  344:9   warning  Unexpected console statement  no-console
+  357:13  warning  Unexpected console statement  no-console
+  387:9   warning  Unexpected console statement  no-console
+  400:13  warning  Unexpected console statement  no-console
+  423:9   warning  Unexpected console statement  no-console
+  434:13  warning  Unexpected console statement  no-console
+  450:9   warning  Unexpected console statement  no-console
+  465:13  warning  Unexpected console statement  no-console
+  480:9   warning  Unexpected console statement  no-console
+  542:9   warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\modelDownloadService.ts
+   16:5   warning  Unexpected console statement  no-console
+   44:9   warning  Unexpected console statement  no-console
+   52:9   warning  Unexpected console statement  no-console
+   58:9   warning  Unexpected console statement  no-console
+   70:9   warning  Unexpected console statement  no-console
+   71:9   warning  Unexpected console statement  no-console
+   92:13  warning  Unexpected console statement  no-console
+   97:9   warning  Unexpected console statement  no-console
+  116:5   warning  Unexpected console statement  no-console
+  127:5   warning  Unexpected console statement  no-console
+  134:5   warning  Unexpected console statement  no-console
+  145:9   warning  Unexpected console statement  no-console
+  147:9   warning  Unexpected console statement  no-console
+  159:9   warning  Unexpected console statement  no-console
+  168:17  warning  Unexpected console statement  no-console
+  175:9   warning  Unexpected console statement  no-console
+  178:9   warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\offlineLLMService.ts
+  170:5   warning  Unexpected console statement              no-console
+  194:13  warning  Unexpected console statement              no-console
+  202:13  warning  Unexpected console statement              no-console
+  207:9   warning  Unexpected console statement              no-console
+  219:17  warning  Unexpected console statement              no-console
+  223:13  warning  Unexpected console statement              no-console
+  232:13  warning  Unexpected console statement              no-console
+  237:9   warning  Unexpected console statement              no-console
+  243:17  warning  Unexpected console statement              no-console
+  257:25  warning  Unexpected console statement              no-console
+  261:17  warning  Unexpected console statement              no-console
+  265:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  270:21  warning  Unexpected console statement              no-console
+  273:17  warning  Unexpected console statement              no-console
+  276:66  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  294:13  warning  Unexpected console statement              no-console
+  297:13  warning  Unexpected console statement              no-console
+  310:9   warning  Unexpected console statement              no-console
+  361:9   warning  Unexpected console statement              no-console
+  362:9   warning  Unexpected console statement              no-console
+  397:33  warning  Unexpected console statement              no-console
+  412:13  warning  Unexpected console statement              no-console
+  442:17  warning  Unexpected console statement              no-console
+  448:17  warning  Unexpected console statement              no-console
+  454:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\src\services\p2pService.ts
+  180:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\projectService.ts
+  421:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\services\storageService.ts
+  150:13  warning  Unexpected console statement              no-console
+  162:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  179:13  warning  Unexpected console statement              no-console
+  207:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  216:13  warning  Unexpected console statement              no-console
+  275:13  warning  Unexpected console statement              no-console
+
+C:\Kalynt\apps\desktop\src\services\versionControlService.ts
+  267:13  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\stores\appStore.ts
+  267:17  warning  Unexpected console statement  no-console
+  270:25  warning  Unexpected console statement  no-console
+  272:25  warning  Unexpected console statement  no-console
+  273:25  warning  Unexpected console statement  no-console
+  274:25  warning  Unexpected console statement  no-console
+  275:25  warning  Unexpected console statement  no-console
+  294:1   warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\stores\memberStore.ts
+  154:25  warning  Unexpected console statement  no-console
+  160:25  warning  Unexpected console statement  no-console
+  207:21  warning  Unexpected console statement  no-console
+  276:17  warning  Unexpected console statement  no-console
+  311:17  warning  Unexpected console statement  no-console
+  342:17  warning  Unexpected console statement  no-console
+  441:21  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\stores\modelStore.ts
+   81:17  warning  Unexpected console statement  no-console
+   89:17  warning  Unexpected console statement  no-console
+  115:17  warning  Unexpected console statement  no-console
+  160:17  warning  Unexpected console statement  no-console
+  175:17  warning  Unexpected console statement  no-console
+  183:17  warning  Unexpected console statement  no-console
+  209:17  warning  Unexpected console statement  no-console
+  228:17  warning  Unexpected console statement  no-console
+  233:17  warning  Unexpected console statement  no-console
+  258:21  warning  Unexpected console statement  no-console
+  262:17  warning  Unexpected console statement  no-console
+  272:33  warning  Unexpected console statement  no-console
+  276:29  warning  Unexpected console statement  no-console
+  284:21  warning  Unexpected console statement  no-console
+  293:21  warning  Unexpected console statement  no-console
+  309:5   warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\stores\updateStore.ts
+  108:25  warning  Unexpected console statement  no-console
+  114:25  warning  Unexpected console statement  no-console
+  117:21  warning  Unexpected console statement  no-console
+  136:21  warning  Unexpected console statement  no-console
+  138:21  warning  Unexpected console statement  no-console
+  150:21  warning  Unexpected console statement  no-console
+  160:21  warning  Unexpected console statement  no-console
+  194:29  warning  Unexpected console statement  no-console
+  197:25  warning  Unexpected console statement  no-console
+  204:25  warning  Unexpected console statement  no-console
+  209:25  warning  Unexpected console statement  no-console
+  219:25  warning  Unexpected console statement  no-console
+  228:25  warning  Unexpected console statement  no-console
+  236:25  warning  Unexpected console statement  no-console
+  246:25  warning  Unexpected console statement  no-console
+  254:21  warning  Unexpected console statement  no-console
+  256:21  warning  Unexpected console statement  no-console
+
+C:\Kalynt\apps\desktop\src\types\agentTypes.ts
+  100:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\src\utils\logger.ts
+   49:47  warning  Unexpected console statement              no-console
+   50:13  warning  Unexpected console statement              no-console
+   62:47  warning  Unexpected console statement              no-console
+   63:13  warning  Unexpected console statement              no-console
+   96:13  warning  Unexpected console statement              no-console
+  102:13  warning  Unexpected console statement              no-console
+  108:13  warning  Unexpected console statement              no-console
+  114:13  warning  Unexpected console statement              no-console
+  155:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Kalynt\apps\desktop\vite.config.ts
+  8:1  error  Use "@ts-expect-error" instead of "@ts-ignore", as "@ts-ignore" will do nothing if the following line is error-free  @typescript-eslint/ban-ts-comment
+
+Ô£û 718 problems (11 errors, 707 warnings)
+

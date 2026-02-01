@@ -1,0 +1,26 @@
+# KALYNT DUAL LICENSE
+
+## 1. OPEN SOURCE CORE (AGPLv3)
+
+The "Open Source Core" of Kalynt is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+This applies to all files containing the header:
+`SPDX-License-Identifier: AGPL-3.0-only`
+
+---
+
+## 2. PROPRIETARY PRO MODULES
+
+The "Proprietary Pro Modules" are the exclusive intellectual property of **Hermes Lekkas**.
+
+This applies to all files containing the header:
+`Copyright 2026 Hermes Lekkas. PROPRIETARY & CONFIDENTIAL.`
+
+**TERMS:**
+*   You may NOT copy, modify, distribute, or reverse engineer these files.
+*   You may NOT use these files to create a competing product.
+*   These files are provided solely for use within the official Kalynt application.
+
+---
+
+**By downloading or using this software, you agree to these terms.**

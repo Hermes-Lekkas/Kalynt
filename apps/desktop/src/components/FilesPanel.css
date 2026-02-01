@@ -1,0 +1,478 @@
+﻿/*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ */
+/* Files Panel - Kalynt Glassmorphism */
+.files-panel {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    /* Kalynt Base: Deep Black with Blue Ambient Glow */
+    background: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.08), transparent 40%),
+        var(--color-bg);
+    position: relative;
+    overflow: hidden;
+}
+
+.files-panel.empty {
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-muted);
+}
+
+.files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4) var(--space-6);
+    /* Glass Header with Blue Tint */
+    background: rgba(10, 10, 15, 0.6);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    gap: var(--space-4);
+    z-index: 10;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex: 1;
+}
+
+.files-header h2 {
+    font-size: var(--text-base);
+    font-weight: var(--font-medium);
+    color: var(--color-text);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* Glass Search Input */
+.search-input-wrapper {
+    position: relative;
+    flex: 1;
+    max-width: 300px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 8px 36px 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--text-sm);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.search-input:focus {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    outline: none;
+}
+
+.search-icon-overlay {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-text-muted);
+    pointer-events: none;
+}
+
+/* Main Content Area */
+.files-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+/* Drop Zone - Premium Glass */
+.drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-xl);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    min-height: 120px;
+}
+
+.drop-zone:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--color-accent);
+    /* Blue border on hover */
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.drop-zone.active {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: var(--color-accent);
+    border-style: solid;
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.15);
+    transform: scale(1.01);
+}
+
+.drop-zone-icon {
+    color: var(--color-text-muted);
+    opacity: 0.7;
+    transition: all 0.3s;
+}
+
+.drop-zone:hover .drop-zone-icon,
+.drop-zone.active .drop-zone-icon {
+    color: var(--color-accent);
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.drop-text {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+
+.drop-subtext {
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+}
+
+/* File Grid/List */
+.files-list-container {
+    flex: 1;
+}
+
+.empty-files {
+    height: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    color: var(--color-text-muted);
+    /* Glass card for empty state */
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: var(--radius-lg);
+    border: 1px dashed rgba(255, 255, 255, 0.05);
+}
+
+.files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-4);
+}
+
+/* File Card - Kalynt Glass */
+.file-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    /* Deep multi-layered glass */
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    /* Subtle blue-tinted border */
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-lg);
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    cursor: default;
+}
+
+.file-card:hover {
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-color: rgba(96, 165, 250, 0.3);
+    /* Accent hover color */
+    transform: translateY(-4px);
+    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+}
+
+.file-icon-wrapper {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: 20px;
+    transition: all 0.2s;
+}
+
+.file-card:hover .file-icon-wrapper {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-accent);
+}
+
+.file-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+}
+
+.file-name {
+    font-family: var(--font-medium);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-meta {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+}
+
+/* Actions */
+.file-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    /* Initially hidden or low opacity */
+    opacity: 0;
+    transform: translateY(5px);
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.file-card:hover .file-actions {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.action-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--color-text-secondary);
+    transition: all 0.2s;
+}
+
+.action-btn:hover {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: white;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+    transform: scale(1.1);
+}
+
+.action-btn.delete:hover {
+    background: var(--color-error);
+    border-color: var(--color-error);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+/* Banned State */
+.files-panel.banned {
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    background: rgba(20, 0, 0, 0.8);
+}
+
+.banned-icon {
+    font-size: 48px;
+    filter: drop-shadow(0 0 20px rgba(239, 68, 68, 0.4));
+}
+
+/* Peers Indicator */
+.peers-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 100px;
+    color: #34d399;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Header Right */
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+/* File Source Badge */
+.file-source {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.file-card.local .file-source {
+    color: var(--color-accent);
+}
+
+.file-card.remote .file-source {
+    color: #34d399;
+}
+
+/* Remote file card glow */
+.file-card.remote {
+    border-color: rgba(16, 185, 129, 0.2);
+}
+
+.file-card.remote:hover {
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 10px 30px -5px rgba(16, 185, 129, 0.2);
+}
+
+/* Upload Controls */
+.upload-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+}
+
+/* Tier Selector */
+.tier-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tier-selector:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--color-accent);
+    color: var(--color-text);
+}
+
+/* Tier Dropdown Menu */
+.tier-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-lg);
+    padding: 8px;
+    min-width: 220px;
+    z-index: 100;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.tier-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: left;
+}
+
+.tier-option:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--color-text);
+}
+
+.tier-option.active {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--color-accent);
+}
+
+.tier-option-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tier-option-label {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.tier-option-desc {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* Upload Progress */
+.upload-progress {
+    width: 100%;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-accent), var(--color-accent-hover));
+    border-radius: 2px;
+    transition: width 0.2s ease;
+}
+
+/* Tier Badge */
+.tier-badge {
+    margin-left: auto;
+    opacity: 0.5;
+}
+
+/* Spin animation for loader */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}

@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+release/
+*.asar
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+build-log.txt
+errors.log
+errors.txt
+full_errors.txt
+tsc_errors.txt
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary
+*.tmp
+*.temp
+.cache/
+
+# ============================================
+# SECURITY: Never commit these to repository!
+# ============================================
+
+# Source maps (reveals original code)
+*.map
+*.js.map
+*.css.map
+
+# Unobfuscated builds
+dist-unobfuscated/
+
+# API keys/secrets
+secrets/
+*.key
+*.pem
+
+# Debug builds
+debug-build/
+
+# ============================================
+# PROPRIETARY MODULES (DO NOT COMMIT)
+# ============================================
+electron/handlers/llm-inference.ts
+src/services/agentService.ts
+src/services/offlineLLMService.ts
+src/services/aiService.ts
+src/components/AIMESettings.tsx
+src/types/aime.ts
+src/services/hardwareService.ts
