@@ -87,8 +87,8 @@ Kalynt is built as a monorepo using **Turbo/Workspaces**:
 
 ```bash
 # Clone the repository
-git clone https://github.com/HermesLekkas/kalynt.git
-cd kalynt
+git clone https://github.com/Hermes-Lekkas/Kalynt.git
+cd Kalynt
 
 # Install dependencies
 npm install
