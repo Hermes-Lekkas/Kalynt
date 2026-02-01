@@ -149,7 +149,8 @@
                 "AppImage",
                 "deb"
             ],
-            "category": "Development"
+            "category": "Development",
+            "icon": "build/icon.png"
         }
     }
 }
