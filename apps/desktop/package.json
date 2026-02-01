@@ -5,7 +5,7 @@
     "productName": "Kalynt",
     "author": "Hermes Lekkas",
     "description": "Kalynt Desktop Application",
-    "main": "dist-electron/main.js",
+    "main": "dist-electron/main.mjs",
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build && electron-builder",

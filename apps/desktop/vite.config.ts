@@ -175,7 +175,11 @@ export default defineConfig({
                                 'simple-git',
                                 'node-llama-cpp',
                                 'chokidar'
-                            ]
+                            ],
+                            output: {
+                                format: 'es',
+                                entryFileNames: '[name].mjs'
+                            }
                         }
                     }
                 }
