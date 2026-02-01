@@ -93,7 +93,7 @@ export default defineConfig({
         shouldObfuscate ? obfuscator({
             include: PROPRIETARY_FILES,
             ...HEAVY_OBFUSCATION_OPTIONS
-        }) : null,
+        }) : undefined,
         electron({
             main: {
                 entry: 'electron/main.ts',
@@ -134,8 +134,8 @@ export default defineConfig({
                                     include: PROPRIETARY_FILES,
                                     ...HEAVY_OBFUSCATION_OPTIONS,
                                     target: 'node'
-                                }) : null
-                            ]
+                                }) : undefined
+                            ].filter(Boolean)
                         }
                     }
                 }
