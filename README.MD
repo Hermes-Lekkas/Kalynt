@@ -22,22 +22,31 @@ Kalynt was built to combine what these tools do well with what they miss: end‑
 
 ## How It Was Built
 
+Kalynt was built using a modern AI‑assisted workflow where AI wrote most of the raw code, and I acted as the architect and reviewer.
+
 **Development Environment:**
-- Google Antigravity IDE (AI-assisted development)
-- Claude, Gemini, GPT (AI orchestration)
+- Google Antigravity IDE (AI‑assisted development)
+- Claude, Gemini, GPT (for implementation and refactoring)
 - 8GB Lenovo laptop
+
+**My Role (Human‑Directed Architecture):**
+- Designed the overall system (WebRTC, CRDTs, P2P, security model)
+- Broke work into clear specifications and prompts for the models
+- Reviewed, corrected, and integrated all AI‑generated code
+- Made final decisions on architecture, security, and performance trade‑offs
 
 **Quality Assurance:**
 - SonarQube (code quality analysis)
 - Snyk (security vulnerability scanning)
 - ESLint (code standards enforcement)
 
-**Architecture & Decisions:** 100% human-directed
-**System Design:** Deep understanding of WebRTC, CRDTs, P2P, security
-**Final Review:** Every line reviewed and understood
+The result is an IDE where AI accelerated implementation, but every major design choice, safety boundary, and architectural decision was human‑directed and fully understood before shipping.
 
-Built in less than a month by orchestrating modern tools 
-while maintaining deep architectural understanding.
+
+**Project Scale:**
+- **Lines of Code:** 44,000+ (Verified active logic)
+- **Core Stacks:** TypeScript, React, Electron, node-llama-cpp
+- **Architecture:** Monorepo (Turbo)
 
 ## Key Features
 

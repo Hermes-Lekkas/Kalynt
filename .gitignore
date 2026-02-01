@@ -27,6 +27,7 @@ implement.md
 CROSS_PLATFORM_BUILD.md
 .eslintrc.json
 eslint-report.json
+snyk_report.json
 
 # Environment
 .env
