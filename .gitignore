@@ -58,3 +58,5 @@ apps/desktop/src/services/hardwareService.ts
 # Internal Scripts
 /scripts/clean-proprietary-files.js
 node_modules
+.claude/settings.local.json
+.agent/rules/snyk_rules.md
