@@ -99,20 +99,24 @@ npm run dev
 
 ## Building
 
-Kalynt supports two build modes: **Standard** and **Secure (Obfuscated)**.
-
-### Standard Build (Development/Debug)
 ```bash
+# Standard production build
 npm run build
-```
 
-### Secure Build (Production)
-Applies heavy obfuscation to proprietary modules (`src/services/agentService.ts`, `src/services/hardwareService.ts`, `aime` core logic, etc.) to protect IP.
-
-```bash
+# Production build with obfuscation enabled
 npm run build:secure
 ```
-*Note: Secure builds require `OBFUSCATE=true` environment variable.*
+
+### Optional: Code Obfuscation
+
+Kalynt includes an optional **code obfuscation** feature that makes reverse-engineering significantly harder for attackers. When enabled (`OBFUSCATE=true`), heavy obfuscation is applied to sensitive modules including:
+
+- RC4 string encryption
+- Control flow flattening
+- Dead code injection
+- Hexadecimal identifier renaming
+
+This is useful if you want to distribute builds where the code is harder to inspect or modify. See [OBFUSCATION.md](./OBFUSCATION.md) for full details on what's protected and how to configure it.
 
 ## License
 

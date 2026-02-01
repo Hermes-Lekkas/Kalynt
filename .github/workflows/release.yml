@@ -40,10 +40,10 @@ jobs:
         run: npm install
 
       # Build & Publish
-      # OBFUSCATE=true enables code protection for the release
+      # Set OBFUSCATE=true to enable code obfuscation (see OBFUSCATION.md)
       - name: Build and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OBFUSCATE: "true"
+          OBFUSCATE: "false"
         run: |
           npm run electron:build:secure

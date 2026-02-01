@@ -44,17 +44,6 @@ snyk_report.json
 .DS_Store
 Thumbs.db
 
-# ============================================
-# PROPRIETARY MODULES (DO NOT COMMIT)
-# ============================================
-apps/desktop/electron/handlers/llm-inference.ts
-apps/desktop/src/services/agentService.ts
-apps/desktop/src/services/offlineLLMService.ts
-apps/desktop/src/services/aiService.ts
-apps/desktop/src/components/AIMESettings.tsx
-apps/desktop/src/types/aime.ts
-apps/desktop/src/services/hardwareService.ts
-
 # Internal Scripts
 /scripts/clean-proprietary-files.js
 node_modules

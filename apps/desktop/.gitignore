@@ -62,13 +62,3 @@ secrets/
 # Debug builds
 debug-build/
 
-# ============================================
-# PROPRIETARY MODULES (DO NOT COMMIT)
-# ============================================
-electron/handlers/llm-inference.ts
-src/services/agentService.ts
-src/services/offlineLLMService.ts
-src/services/aiService.ts
-src/components/AIMESettings.tsx
-src/types/aime.ts
-src/services/hardwareService.ts
