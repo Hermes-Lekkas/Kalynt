@@ -1,12 +1,11 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { defineConfig } from 'vite'
+import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
 import path from 'node:path'
-// @ts-expect-error rollup-plugin-javascript-obfuscator lacks built-in types
-import obfuscator from 'rollup-plugin-javascript-obfuscator'
+import JavaScriptObfuscator from 'javascript-obfuscator'
 
 // Check if obfuscation should be applied
 const isProduction = process.env.NODE_ENV === 'production'
@@ -33,71 +32,124 @@ const PROPRIETARY_FILES = [
 
     // Hardware/Optimization
     'src/services/hardwareService.ts'
-].map(p => path.resolve(__dirname, p))
+]
+
+// Normalize paths for cross-platform comparison
+const PROPRIETARY_PATHS = PROPRIETARY_FILES.map(p =>
+    path.resolve(__dirname, p).replace(/\\/g, '/')
+)
 
 // ============================================================================
 // HEAVY OBFUSCATION CONFIGURATION
 // Applied only when OBFUSCATE=true environment variable is set
 // ============================================================================
-const HEAVY_OBFUSCATION_OPTIONS = {
+const OBFUSCATION_OPTIONS_BROWSER = {
     // Variable/Function names
     compact: true,
     simplify: true,
-    identifierNamesGenerator: 'hexadecimal',
+    identifierNamesGenerator: 'hexadecimal' as const,
     renameGlobals: false,
 
     // String protection (RC4 - strongest)
     stringArray: true,
     stringArrayCallsTransform: true,
     stringArrayCallsTransformThreshold: 0.75,
-    stringArrayEncoding: ['rc4'],
+    stringArrayEncoding: ['rc4' as const],
     stringArrayIndexShift: true,
     stringArrayRotate: true,
     stringArrayShuffle: true,
-    stringArrayWrappersCount: 3,
+    stringArrayWrappersCount: 2,
     stringArrayWrappersChainedCalls: true,
-    stringArrayWrappersParametersMaxCount: 5,
-    stringArrayWrappersType: 'function',
-    stringArrayThreshold: 0.8,
+    stringArrayWrappersParametersMaxCount: 4,
+    stringArrayWrappersType: 'function' as const,
+    stringArrayThreshold: 0.75,
     splitStrings: true,
-    splitStringsChunkLength: 8,
+    splitStringsChunkLength: 10,
 
     // Control flow
     controlFlowFlattening: true,
-    controlFlowFlatteningThreshold: 0.9,
+    controlFlowFlatteningThreshold: 0.75,
     deadCodeInjection: true,
-    deadCodeInjectionThreshold: 0.5,
+    deadCodeInjectionThreshold: 0.4,
 
-    // Anti-debugging
-    selfDefending: true,
-    debugProtection: true,
-    debugProtectionInterval: 3000,
-    disableConsoleOutput: true,
+    // Anti-debugging (disabled for browser - causes issues)
+    selfDefending: false,
+    debugProtection: false,
+    disableConsoleOutput: false,
 
     // Numbers/expressions
     numbersToExpressions: true,
     transformObjectKeys: true,
     unicodeEscapeSequence: false,
 
-    // Target browser for React frontend
-    target: 'browser',
-
-    // No source maps in production!
+    // Target
+    target: 'browser' as const,
     sourceMap: false
+}
+
+const OBFUSCATION_OPTIONS_NODE = {
+    ...OBFUSCATION_OPTIONS_BROWSER,
+    target: 'node' as const,
+    // Node can handle stronger obfuscation
+    selfDefending: true,
+    stringArrayWrappersCount: 3,
+    controlFlowFlatteningThreshold: 0.9,
+    deadCodeInjectionThreshold: 0.5
+}
+
+// ============================================================================
+// CUSTOM VITE PLUGIN FOR SELECTIVE OBFUSCATION
+// Transforms proprietary files during the build phase
+// ============================================================================
+function createObfuscatorPlugin(target: 'browser' | 'node' = 'browser'): Plugin {
+    const options = target === 'node' ? OBFUSCATION_OPTIONS_NODE : OBFUSCATION_OPTIONS_BROWSER
+
+    return {
+        name: 'vite-plugin-selective-obfuscator',
+        enforce: 'post', // Run after TypeScript compilation
+
+        transform(code: string, id: string) {
+            // Skip if obfuscation is disabled
+            if (!shouldObfuscate) return null
+
+            // Normalize the file path for comparison
+            const normalizedId = id.replace(/\\/g, '/').split('?')[0]
+
+            // Check if this file should be obfuscated
+            const shouldObfuscateFile = PROPRIETARY_PATHS.some(p => normalizedId.endsWith(p.split('/').slice(-2).join('/')))
+
+            if (!shouldObfuscateFile) return null
+
+            console.log(`[Obfuscator] Obfuscating: ${path.basename(normalizedId)}`)
+
+            try {
+                const result = JavaScriptObfuscator.obfuscate(code, options)
+                return {
+                    code: result.getObfuscatedCode(),
+                    map: null // No source map for obfuscated code
+                }
+            } catch (error) {
+                console.error(`[Obfuscator] Failed to obfuscate ${path.basename(normalizedId)}:`, error)
+                // Return original code if obfuscation fails
+                return null
+            }
+        }
+    }
 }
 
 export default defineConfig({
     plugins: [
         react(),
-        // Apply obfuscation ONLY to proprietary files
-        shouldObfuscate ? obfuscator({
-            include: PROPRIETARY_FILES,
-            ...HEAVY_OBFUSCATION_OPTIONS
-        }) : undefined,
+        // Apply selective obfuscation to proprietary files
+        createObfuscatorPlugin('browser'),
         electron({
             main: {
                 entry: 'electron/main.ts',
                 vite: {
+                    plugins: [
+                        // Obfuscate proprietary files in electron main
+                        createObfuscatorPlugin('node')
+                    ],
                     build: {
                         outDir: 'dist-electron',
                         // Use terser for production builds
@@ -127,15 +179,7 @@ export default defineConfig({
                                 'simple-git',
                                 'node-llama-cpp',
                                 'chokidar'
-                            ],
-                            // Inject obfuscator specifically for Electron build too
-                            plugins: [
-                                shouldObfuscate ? obfuscator({
-                                    include: PROPRIETARY_FILES,
-                                    ...HEAVY_OBFUSCATION_OPTIONS,
-                                    target: 'node'
-                                }) : undefined
-                            ].filter(Boolean)
+                            ]
                         }
                     }
                 }
