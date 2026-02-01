@@ -24,6 +24,8 @@ bugs.md
 Applied_Fixes.md
 implement.md
 CROSS_PLATFORM_BUILD.md
+.eslintrc.json
+eslint-report.json
 
 # Environment
 .env
