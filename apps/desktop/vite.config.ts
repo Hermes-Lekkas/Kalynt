@@ -146,10 +146,6 @@ export default defineConfig({
             main: {
                 entry: 'electron/main.ts',
                 vite: {
-                    plugins: [
-                        // Obfuscate proprietary files in electron main
-                        createObfuscatorPlugin('node')
-                    ],
                     build: {
                         outDir: 'dist-electron',
                         // Use terser for production builds
