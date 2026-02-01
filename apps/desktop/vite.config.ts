@@ -176,10 +176,6 @@ export default defineConfig({
                                 'node-llama-cpp',
                                 'chokidar'
                             ],
-                            output: {
-                                format: 'es',
-                                entryFileNames: '[name].mjs'
-                            }
                         }
                     }
                 }
