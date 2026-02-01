@@ -19,6 +19,8 @@ yarn-error.log*
 eslint-output.txt
 tsc_output.txt
 validation-output.txt
+bugs.md
+Applied_Fixes.md
 
 # Environment
 .env
