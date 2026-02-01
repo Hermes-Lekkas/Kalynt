@@ -46,4 +46,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OBFUSCATE: "false"
         run: |
-          npm run electron:build:secure
+          npm run electron:build
