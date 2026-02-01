@@ -48,5 +48,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OBFUSCATE: "false"
+        working-directory: apps/desktop
         run: |
-          npm run electron:build
+          npm run build:vite
+          npx electron-builder --publish always
