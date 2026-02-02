@@ -22,48 +22,59 @@ const SIGNALING_SERVERS = [
     'wss://y-webrtc-signaling-us.herokuapp.com'
 ]
 
+// SECURITY FIX V-001: Load TURN credentials from environment variables
 // ICE servers for NAT traversal (STUN discovers public IP, TURN relays traffic)
 // TURN servers are essential for users behind symmetric NAT, firewalls, or corporate networks
-const ICE_SERVERS: RTCIceServer[] = [
-    // STUN servers
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // OpenRelay TURN servers (free, for when STUN fails)
-    {
-        urls: 'turn:openrelay.metered.ca:80',
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-    },
-    {
-        urls: 'turn:openrelay.metered.ca:443',
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-    },
-    {
-        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-        username: 'openrelayproject',
-        credential: 'openrelayproject'
-    },
-    // Metered.ca free TURN (backup)
-    {
-        urls: 'turn:a.relay.metered.ca:80',
-        username: 'e8dd65b92f62d5eedb7e1b12',
-        credential: 'uWdWNmkhvyqTmFfm'
-    },
-    {
-        urls: 'turn:a.relay.metered.ca:443',
-        username: 'e8dd65b92f62d5eedb7e1b12',
-        credential: 'uWdWNmkhvyqTmFfm'
-    },
-    {
-        urls: 'turn:a.relay.metered.ca:443?transport=tcp',
-        username: 'e8dd65b92f62d5eedb7e1b12',
-        credential: 'uWdWNmkhvyqTmFfm'
+const getIceServers = (): RTCIceServer[] => {
+    const servers: RTCIceServer[] = [
+        // STUN servers
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        // OpenRelay TURN servers (public, no credentials required)
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }
+    ]
+
+    // SECURITY: Add custom TURN server from environment if configured
+    const customTurnUrl = import.meta.env?.VITE_TURN_URL
+    const customTurnUsername = import.meta.env?.VITE_TURN_USERNAME
+    const customTurnCredential = import.meta.env?.VITE_TURN_CREDENTIAL
+
+    if (customTurnUrl && customTurnUsername && customTurnCredential) {
+        servers.push({
+            urls: customTurnUrl,
+            username: customTurnUsername,
+            credential: customTurnCredential
+        })
+        if (!customTurnUrl.includes('transport=tcp')) {
+            servers.push({
+                urls: `${customTurnUrl}?transport=tcp`,
+                username: customTurnUsername,
+                credential: customTurnCredential
+            })
+        }
     }
-]
+
+    return servers
+}
+
+const ICE_SERVERS: RTCIceServer[] = getIceServers()
 
 // Helper interface for objects with cleanup method
 interface CleanupCapable {

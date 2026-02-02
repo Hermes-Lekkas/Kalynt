@@ -30,11 +30,53 @@ const DEFAULT_CONFIG: EncryptionConfig = {
 
 // Maximum number of room keys to keep in memory (LRU eviction)
 const MAX_ROOM_KEYS = 50
+// SECURITY FIX V-008: Key expiration timeout (10 minutes of inactivity)
+const KEY_EXPIRATION_MS = 10 * 60 * 1000
 
 class EncryptionService {
     private config: EncryptionConfig = DEFAULT_CONFIG
     private roomKeys: Map<string, CryptoKey> = new Map()
     private keyAccessOrder: string[] = [] // Track access order for LRU eviction
+    // SECURITY FIX V-008: Track last access time for expiration
+    private keyAccessTimes: Map<string, number> = new Map()
+    private cleanupInterval: ReturnType<typeof setInterval> | null = null
+
+    constructor() {
+        // SECURITY FIX V-008: Start background key expiration check
+        this.startKeyExpirationCheck()
+    }
+
+    /**
+     * SECURITY FIX V-008: Background check for expired keys
+     */
+    private startKeyExpirationCheck(): void {
+        if (this.cleanupInterval) return
+
+        this.cleanupInterval = setInterval(() => {
+            this.clearExpiredKeys()
+        }, 60 * 1000) // Check every minute
+    }
+
+    /**
+     * SECURITY FIX V-008: Clear keys that haven't been accessed recently
+     */
+    clearExpiredKeys(): number {
+        const now = Date.now()
+        let expiredCount = 0
+
+        for (const [roomId, lastAccess] of this.keyAccessTimes) {
+            if (now - lastAccess > KEY_EXPIRATION_MS) {
+                this.roomKeys.delete(roomId)
+                this.roomSalts.delete(roomId)
+                this.keyAccessTimes.delete(roomId)
+                this.keyAccessOrder = this.keyAccessOrder.filter(id => id !== roomId)
+                expiredCount++
+                console.log(`[Encryption] Expired key for room ${roomId} (inactive)`)
+            }
+        }
+
+        return expiredCount
+    }
 
     setConfig(config: Partial<EncryptionConfig>) {
         this.config = { ...this.config, ...config }
@@ -188,32 +230,65 @@ class EncryptionService {
         return new TextDecoder().decode(decrypted)
     }
 
+    // SECURITY FIX V-003: Store salts for proper key derivation
+    private roomSalts: Map<string, Uint8Array> = new Map()
+
     // Room key management with LRU eviction
-    async setRoomKey(roomId: string, password: string): Promise<void> {
+    // SECURITY FIX V-003: Use random salt combined with roomId hash for proper entropy
+    async setRoomKey(roomId: string, password: string, existingSalt?: Uint8Array): Promise<Uint8Array> {
         // Evict oldest keys if at capacity
         while (this.roomKeys.size >= MAX_ROOM_KEYS && this.keyAccessOrder.length > 0) {
             const oldestRoomId = this.keyAccessOrder.shift()
             if (oldestRoomId) {
                 this.roomKeys.delete(oldestRoomId)
+                this.roomSalts.delete(oldestRoomId)
                 console.log(`[Encryption] Evicted key for room ${oldestRoomId} (LRU)`)
             }
         }
 
-        // Use roomId as salt for deterministic key derivation
-        // Note: Using roomId as salt is acceptable for PBKDF2 since it still
-        // slows down brute-force attacks. For higher security, use random salt
-        // stored alongside room metadata.
-        const saltString = roomId.padEnd(16, '0').slice(0, 16)
-        const saltArray = new Uint8Array(16)
-        for (let i = 0; i < 16; i++) {
-            saltArray[i] = saltString.charCodeAt(i)
+        // SECURITY FIX V-003: Generate random salt or use existing
+        // Salt = random bytes XOR'd with roomId hash for uniqueness
+        let salt: Uint8Array
+        if (existingSalt && existingSalt.length === 16) {
+            salt = existingSalt
+        } else {
+            // Generate random 16-byte salt
+            const randomSalt = crypto.getRandomValues(new Uint8Array(16))
+            // Hash roomId to add deterministic component
+            const roomIdHash = await crypto.subtle.digest(
+                'SHA-256',
+                new TextEncoder().encode(roomId)
+            )
+            const roomIdBytes = new Uint8Array(roomIdHash).slice(0, 16)
+            // XOR random salt with roomId hash for final salt
+            salt = new Uint8Array(16)
+            for (let i = 0; i < 16; i++) {
+                salt[i] = randomSalt[i] ^ roomIdBytes[i]
+            }
         }
-        const { key } = await this.deriveKeyFromPassword(password, saltArray)
+
+        const { key } = await this.deriveKeyFromPassword(password, salt)
         this.roomKeys.set(roomId, key)
+        this.roomSalts.set(roomId, salt)
 
         // Update access order (most recently accessed at end)
         this.keyAccessOrder = this.keyAccessOrder.filter(id => id !== roomId)
         this.keyAccessOrder.push(roomId)
+        // SECURITY FIX V-008: Track access time for expiration
+        this.keyAccessTimes.set(roomId, Date.now())
+
+        // Return salt so it can be stored/shared with room metadata
+        return salt
+    }
+
+    // Get salt for a room (needed for sharing with peers)
+    getRoomSalt(roomId: string): Uint8Array | undefined {
+        return this.roomSalts.get(roomId)
+    }
+
+    // Set room key with known salt (when joining existing room)
+    async setRoomKeyWithSalt(roomId: string, password: string, salt: Uint8Array): Promise<void> {
+        await this.setRoomKey(roomId, password, salt)
     }
 
     getRoomKey(roomId: string): CryptoKey | undefined {
@@ -221,6 +296,8 @@ class EncryptionService {
         if (this.roomKeys.has(roomId)) {
             this.keyAccessOrder = this.keyAccessOrder.filter(id => id !== roomId)
             this.keyAccessOrder.push(roomId)
+            // SECURITY FIX V-008: Update last access time
+            this.keyAccessTimes.set(roomId, Date.now())
         }
         return this.roomKeys.get(roomId)
     }
@@ -232,13 +309,26 @@ class EncryptionService {
 
     removeRoomKey(roomId: string): void {
         this.roomKeys.delete(roomId)
+        this.roomSalts.delete(roomId)
+        this.keyAccessTimes.delete(roomId)
         this.keyAccessOrder = this.keyAccessOrder.filter(id => id !== roomId)
     }
 
     // Clear all room keys (for security, e.g., on logout or after inactivity)
     clearAllRoomKeys(): void {
         this.roomKeys.clear()
+        this.roomSalts.clear()
+        this.keyAccessTimes.clear()
         this.keyAccessOrder = []
+    }
+
+    // SECURITY FIX V-008: Stop background cleanup (call on app shutdown)
+    destroy(): void {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval)
+            this.cleanupInterval = null
+        }
+        this.clearAllRoomKeys()
     }
 
     // Encrypt for room

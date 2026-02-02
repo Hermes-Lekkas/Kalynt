@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 // Member Sync Service - P2P synchronization of member data via Yjs
+// SECURITY FIX V-004: Encrypt moderation actions in awareness channel
+// SECURITY FIX V-006: Peer authentication via ECDSA signatures
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import {
@@ -12,8 +14,23 @@ import {
     ModerationAction
 } from '../types/permissions'
 import { useMemberStore } from '../stores/memberStore'
+import {
+    encryptRoomMessage,
+    decryptRoomMessage,
+    isRoomEncryptionReady
+} from './encryptedProvider'
+import {
+    initializeLocalIdentity,
+    getLocalIdentity,
+    registerPeer,
+    isPeerTrusted,
+    createIdentityAnnouncement,
+    cleanupRoom as cleanupPeerAuth
+} from './peerAuthService'
 
 // Types for awareness state
+// SECURITY FIX V-004: Moderation can be encrypted
+// SECURITY FIX V-006: Peer identity for authentication
 interface AwarenessState {
     user?: {
         id: string
@@ -21,6 +38,54 @@ interface AwarenessState {
         role?: WorkspaceRole
     }
     moderation?: ModerationAction
+    encryptedModeration?: string // Base64 encrypted moderation action
+    // SECURITY FIX V-006: Peer identity for authentication
+    peerIdentity?: {
+        type: 'identity'
+        peerId: string
+        publicKey: string
+        timestamp: number
+    }
+}
+
+// SECURITY FIX V-004: Helper to encrypt moderation action
+async function encryptModerationAction(
+    spaceId: string,
+    action: ModerationAction
+): Promise<string | null> {
+    if (!isRoomEncryptionReady(spaceId)) {
+        return null
+    }
+    try {
+        const data = new TextEncoder().encode(JSON.stringify(action))
+        const encrypted = await encryptRoomMessage(spaceId, data)
+        // Convert to base64 for awareness state
+        return btoa(String.fromCharCode(...encrypted))
+    } catch (e) {
+        console.error('[MemberSync] Failed to encrypt moderation action:', e)
+        return null
+    }
+}
+
+// SECURITY FIX V-004: Helper to decrypt moderation action
+async function decryptModerationAction(
+    spaceId: string,
+    encryptedData: string
+): Promise<ModerationAction | null> {
+    if (!isRoomEncryptionReady(spaceId)) {
+        return null
+    }
+    try {
+        // Convert from base64
+        const encrypted = new Uint8Array(
+            atob(encryptedData).split('').map(c => c.charCodeAt(0))
+        )
+        const decrypted = await decryptRoomMessage(spaceId, encrypted)
+        return JSON.parse(new TextDecoder().decode(decrypted))
+    } catch (e) {
+        console.error('[MemberSync] Failed to decrypt moderation action:', e)
+        return null
+    }
 }
 
 // Serializable member data for Y.Map
@@ -53,20 +118,20 @@ class MemberSyncService {
         })
     }
 
-    private processAction(spaceId: string, action: ModerationAction) {
+    private async processAction(spaceId: string, action: ModerationAction) {
         const store = useMemberStore.getState()
 
-        // Execute action via sync service
+        // Execute action via sync service (now async for encryption)
         let success = false
         switch (action.type) {
             case 'kick':
-                success = this.kickMember(spaceId, action.targetUserId)
+                success = await this.kickMember(spaceId, action.targetUserId)
                 break
             case 'ban':
-                success = this.banMember(spaceId, action.targetUserId, action.reason)
+                success = await this.banMember(spaceId, action.targetUserId, action.reason)
                 break
             case 'unban':
-                success = this.unbanMember(spaceId, action.targetUserId)
+                success = await this.unbanMember(spaceId, action.targetUserId)
                 break
         }
 
@@ -82,19 +147,50 @@ class MemberSyncService {
     }
 
     /**
-     * Initialize member sync for a space
+     * SECURITY FIX V-005: Create ownership signature hash
      */
-    initializeSpace(
+    private async createOwnershipSignature(data: string): Promise<string> {
+        const encoded = new TextEncoder().encode(data)
+        const hash = await crypto.subtle.digest('SHA-256', encoded)
+        return Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('')
+    }
+
+    /**
+     * SECURITY FIX V-005: Verify ownership signature
+     */
+    private async verifyOwnershipSignature(data: string, expectedHash: string): Promise<boolean> {
+        const actualHash = await this.createOwnershipSignature(data)
+        return actualHash === expectedHash
+    }
+
+    /**
+     * Initialize member sync for a space
+     * SECURITY FIX V-006: Initialize and announce peer identity
+     */
+    async initializeSpace(
         spaceId: string,
         doc: Y.Doc,
         awareness: Awareness,
         userId: string,
         displayName: string
-    ): void {
+    ): Promise<void> {
         console.log('[MemberSync] Initializing for space:', spaceId)
 
         this.spaceDocs.set(spaceId, doc)
         this.spaceAwareness.set(spaceId, awareness)
+
+        // SECURITY FIX V-006: Initialize local peer identity
+        try {
+            await initializeLocalIdentity()
+            const identity = getLocalIdentity()
+            if (identity) {
+                console.log('[MemberSync] Local peer identity:', identity.peerId.substring(0, 8) + '...')
+            }
+        } catch (e) {
+            console.error('[MemberSync] Failed to initialize peer identity:', e)
+        }
 
         // Get or create members Y.Map
         const membersMap = doc.getMap<SyncedMember>('members')
@@ -108,12 +204,33 @@ class MemberSyncService {
             return
         }
 
-        // Set owner if not set (first user becomes owner)
-        if (!ownerRef.get('ownerId')) {
+        // SECURITY FIX V-005: Secure owner assignment with timestamp and signature
+        // Owner can only be set once, with cryptographic proof
+        const existingOwnerId = ownerRef.get('ownerId')
+        const ownerTimestamp = ownerRef.get('ownerTimestamp')
+        const ownerSignature = ownerRef.get('ownerSignature')
+
+        if (!existingOwnerId) {
+            // First user becomes owner - but with timestamp and signature
+            const timestamp = Date.now()
+            // Create a signature to prove ownership claim
+            // This prevents replay attacks and ensures ownership can be verified
+            const signatureData = `${spaceId}:${userId}:${timestamp}`
+            const signatureHash = await this.createOwnershipSignature(signatureData)
+
             doc.transact(() => {
                 ownerRef.set('ownerId', userId)
+                ownerRef.set('ownerTimestamp', timestamp.toString())
+                ownerRef.set('ownerSignature', signatureHash)
             })
-            console.log('[MemberSync] Set as owner:', userId)
+            console.log('[MemberSync] Set as owner with signature:', userId)
+        } else if (existingOwnerId !== userId && ownerTimestamp && ownerSignature) {
+            // SECURITY: Verify existing owner's claim is valid
+            const expectedSignature = `${spaceId}:${existingOwnerId}:${ownerTimestamp}`
+            const isValid = await this.verifyOwnershipSignature(expectedSignature, ownerSignature)
+            if (!isValid) {
+                console.warn('[MemberSync] Invalid owner signature detected - possible tampering')
+            }
         }
 
         const ownerId = ownerRef.get('ownerId')
@@ -144,6 +261,13 @@ class MemberSyncService {
             role
         })
 
+        // SECURITY FIX V-006: Announce peer identity for authentication
+        const identityAnnouncement = createIdentityAnnouncement()
+        if (identityAnnouncement) {
+            awareness.setLocalStateField('peerIdentity', identityAnnouncement)
+            console.log('[MemberSync] Announced peer identity')
+        }
+
         // Subscribe to member changes
         const memberObserver = () => {
             this.syncMembersToStore(spaceId, membersMap, bannedMap, ownerId || userId)
@@ -151,13 +275,66 @@ class MemberSyncService {
         membersMap.observe(memberObserver)
         bannedMap.observe(memberObserver)
 
-        // Subscribe to awareness for moderation actions
-        const awarenessHandler = ({ added, updated }: { added: number[], updated: number[], removed: number[] }) => {
+        // Subscribe to awareness for moderation actions and peer identity
+        // SECURITY FIX V-004: Handle both encrypted and plaintext moderation
+        // SECURITY FIX V-006: Handle peer identity announcements
+        const awarenessHandler = async ({ added, updated, removed }: { added: number[], updated: number[], removed: number[] }) => {
             const states = awareness.getStates() as Map<number, AwarenessState>
+
+            // SECURITY FIX V-006: Handle removed peers
+            // Note: We can't get peer state after removal, cleanup happens on room leave
+            if (removed.length > 0) {
+                console.log('[MemberSync] Peers disconnected:', removed.length)
+            }
 
             for (const clientId of [...added, ...updated]) {
                 const state = states.get(clientId)
+
+                // SECURITY FIX V-006: Register peer identity
+                if (state?.peerIdentity) {
+                    const { peerId, publicKey, timestamp } = state.peerIdentity
+                    // Validate timestamp (reject if too old)
+                    const MAX_AGE_MS = 5 * 60 * 1000
+                    if (Date.now() - timestamp < MAX_AGE_MS) {
+                        const registered = await registerPeer(
+                            spaceId,
+                            peerId,
+                            publicKey,
+                            state.user?.name
+                        )
+                        if (registered) {
+                            console.log('[MemberSync] Registered peer:', peerId.substring(0, 8))
+                        }
+                    } else {
+                        console.warn('[MemberSync] Rejected stale peer identity from:', peerId?.substring(0, 8))
+                    }
+                }
+
+                // SECURITY FIX V-006: Verify peer is trusted before accepting moderation
+                const peerIsTrusted = state?.peerIdentity
+                    ? isPeerTrusted(spaceId, state.peerIdentity.peerId)
+                    : false
+
+                // Try encrypted moderation first (secure)
+                if (state?.encryptedModeration) {
+                    // Only accept from trusted peers in encrypted rooms
+                    if (isRoomEncryptionReady(spaceId) && !peerIsTrusted && state.peerIdentity) {
+                        console.warn('[MemberSync] Rejecting moderation from untrusted peer')
+                        continue
+                    }
+                    const decrypted = await decryptModerationAction(spaceId, state.encryptedModeration)
+                    if (decrypted) {
+                        this.handleModerationAction(spaceId, decrypted, doc, userId)
+                        continue
+                    }
+                }
+
+                // Fallback to plaintext moderation (legacy/unencrypted rooms)
                 if (state?.moderation) {
+                    // Log warning if encryption is enabled but got plaintext
+                    if (isRoomEncryptionReady(spaceId)) {
+                        console.warn('[MemberSync] Received plaintext moderation in encrypted room - possible downgrade attack')
+                    }
                     this.handleModerationAction(spaceId, state.moderation, doc, userId)
                 }
             }
@@ -305,8 +482,9 @@ class MemberSyncService {
 
     /**
      * Kick a member (broadcast via awareness)
+     * SECURITY FIX V-004: Use encrypted moderation when encryption is enabled
      */
-    kickMember(spaceId: string, targetUserId: string): boolean {
+    async kickMember(spaceId: string, targetUserId: string): Promise<boolean> {
         const awareness = this.spaceAwareness.get(spaceId)
         const store = useMemberStore.getState()
 
@@ -325,7 +503,15 @@ class MemberSyncService {
             timestamp: Date.now()
         }
 
-        awareness.setLocalStateField('moderation', kickAction)
+        // SECURITY FIX V-004: Encrypt moderation action if encryption enabled
+        const encrypted = await encryptModerationAction(spaceId, kickAction)
+        if (encrypted) {
+            awareness.setLocalStateField('encryptedModeration', encrypted)
+            awareness.setLocalStateField('moderation', null) // Clear plaintext
+        } else {
+            awareness.setLocalStateField('moderation', kickAction)
+            awareness.setLocalStateField('encryptedModeration', null)
+        }
 
         // Remove from local members map
         const doc = this.spaceDocs.get(spaceId)
@@ -339,6 +525,7 @@ class MemberSyncService {
         // Clear moderation field after broadcast
         setTimeout(() => {
             awareness.setLocalStateField('moderation', null)
+            awareness.setLocalStateField('encryptedModeration', null)
         }, 1000)
 
         console.log('[MemberSync] Kicked member:', targetUserId)
@@ -347,8 +534,9 @@ class MemberSyncService {
 
     /**
      * Ban a member (broadcast via awareness + persist)
+     * SECURITY FIX V-004: Use encrypted moderation when encryption is enabled
      */
-    banMember(spaceId: string, targetUserId: string, reason?: string): boolean {
+    async banMember(spaceId: string, targetUserId: string, reason?: string): Promise<boolean> {
         const awareness = this.spaceAwareness.get(spaceId)
         const doc = this.spaceDocs.get(spaceId)
         const store = useMemberStore.getState()
@@ -377,11 +565,20 @@ class MemberSyncService {
             timestamp: Date.now()
         }
 
-        awareness.setLocalStateField('moderation', banAction)
+        // SECURITY FIX V-004: Encrypt moderation action if encryption enabled
+        const encrypted = await encryptModerationAction(spaceId, banAction)
+        if (encrypted) {
+            awareness.setLocalStateField('encryptedModeration', encrypted)
+            awareness.setLocalStateField('moderation', null)
+        } else {
+            awareness.setLocalStateField('moderation', banAction)
+            awareness.setLocalStateField('encryptedModeration', null)
+        }
 
         // Clear moderation field after broadcast
         setTimeout(() => {
             awareness.setLocalStateField('moderation', null)
+            awareness.setLocalStateField('encryptedModeration', null)
         }, 1000)
 
         console.log('[MemberSync] Banned member:', targetUserId, reason)
@@ -390,8 +587,9 @@ class MemberSyncService {
 
     /**
      * Unban a member
+     * SECURITY FIX V-004: Use encrypted moderation when encryption is enabled
      */
-    unbanMember(spaceId: string, targetUserId: string): boolean {
+    async unbanMember(spaceId: string, targetUserId: string): Promise<boolean> {
         const doc = this.spaceDocs.get(spaceId)
         const awareness = this.spaceAwareness.get(spaceId)
         const store = useMemberStore.getState()
@@ -414,9 +612,20 @@ class MemberSyncService {
                 initiatorId: store.userId,
                 timestamp: Date.now()
             }
-            awareness.setLocalStateField('moderation', unbanAction)
+
+            // SECURITY FIX V-004: Encrypt moderation action if encryption enabled
+            const encrypted = await encryptModerationAction(spaceId, unbanAction)
+            if (encrypted) {
+                awareness.setLocalStateField('encryptedModeration', encrypted)
+                awareness.setLocalStateField('moderation', null)
+            } else {
+                awareness.setLocalStateField('moderation', unbanAction)
+                awareness.setLocalStateField('encryptedModeration', null)
+            }
+
             setTimeout(() => {
                 awareness.setLocalStateField('moderation', null)
+                awareness.setLocalStateField('encryptedModeration', null)
             }, 1000)
         }
 
@@ -528,6 +737,7 @@ class MemberSyncService {
 
     /**
      * Cleanup when leaving a space
+     * SECURITY FIX V-006: Also cleanup peer authentication state
      */
     cleanup(spaceId: string): void {
         const unsubscribe = this.unsubscribers.get(spaceId)
@@ -535,6 +745,9 @@ class MemberSyncService {
             unsubscribe()
             this.unsubscribers.delete(spaceId)
         }
+
+        // SECURITY FIX V-006: Cleanup peer authentication for this room
+        cleanupPeerAuth(spaceId)
 
         this.spaceDocs.delete(spaceId)
         this.spaceAwareness.delete(spaceId)

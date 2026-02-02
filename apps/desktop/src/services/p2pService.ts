@@ -32,21 +32,18 @@ type ConnectionCallback = (peerId: string, connected: boolean) => void
 type SyncCallback = (synced: boolean) => void
 type PeersCallback = (peers: PeerInfo[]) => void
 
-const DEFAULT_CONFIG: P2PConfig = {
-    signalingServers: [
-        'wss://signaling.yjs.dev',
-        'wss://y-webrtc-signaling-eu.herokuapp.com',
-        'wss://y-webrtc-signaling-us.herokuapp.com'
-    ],
-    iceServers: [
+// SECURITY FIX V-001: Load TURN credentials from environment variables
+// Never hardcode credentials - use VITE_TURN_* env vars for custom TURN servers
+const getIceServers = (): RTCIceServer[] => {
+    const servers: RTCIceServer[] = [
         // STUN servers for NAT traversal (discovers public IP)
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        // OpenRelay TURN servers (free, for when STUN fails - symmetric NAT, firewalls)
-        // These are essential for cross-network connectivity
+        // OpenRelay TURN servers (public, no credentials required)
+        // Essential for cross-network connectivity (symmetric NAT, firewalls)
         {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -61,26 +58,151 @@ const DEFAULT_CONFIG: P2PConfig = {
             urls: 'turn:openrelay.metered.ca:443?transport=tcp',
             username: 'openrelayproject',
             credential: 'openrelayproject'
-        },
-        // Metered.ca free TURN (backup)
-        {
-            urls: 'turn:a.relay.metered.ca:80',
-            username: 'e8dd65b92f62d5eedb7e1b12',
-            credential: 'uWdWNmkhvyqTmFfm'
-        },
-        {
-            urls: 'turn:a.relay.metered.ca:443',
-            username: 'e8dd65b92f62d5eedb7e1b12',
-            credential: 'uWdWNmkhvyqTmFfm'
-        },
-        {
-            urls: 'turn:a.relay.metered.ca:443?transport=tcp',
-            username: 'e8dd65b92f62d5eedb7e1b12',
-            credential: 'uWdWNmkhvyqTmFfm'
         }
+    ]
+
+    // SECURITY: Add custom TURN server from environment if configured
+    // These should be set via VITE_TURN_URL, VITE_TURN_USERNAME, VITE_TURN_CREDENTIAL
+    const customTurnUrl = import.meta.env?.VITE_TURN_URL
+    const customTurnUsername = import.meta.env?.VITE_TURN_USERNAME
+    const customTurnCredential = import.meta.env?.VITE_TURN_CREDENTIAL
+
+    if (customTurnUrl && customTurnUsername && customTurnCredential) {
+        servers.push({
+            urls: customTurnUrl,
+            username: customTurnUsername,
+            credential: customTurnCredential
+        })
+        // Also add TCP transport variant if not already TCP
+        if (!customTurnUrl.includes('transport=tcp')) {
+            servers.push({
+                urls: `${customTurnUrl}?transport=tcp`,
+                username: customTurnUsername,
+                credential: customTurnCredential
+            })
+        }
+    }
+
+    return servers
+}
+
+const DEFAULT_CONFIG: P2PConfig = {
+    signalingServers: [
+        'wss://signaling.yjs.dev',
+        'wss://y-webrtc-signaling-eu.herokuapp.com',
+        'wss://y-webrtc-signaling-us.herokuapp.com'
     ],
+    iceServers: getIceServers(),
     maxPeers: 15
 }
+
+// SECURITY FIX V-009: Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+    maxMessagesPerSecond: 50,      // Max messages per second per peer
+    maxConnectionsPerMinute: 10,   // Max new connections per minute
+    burstAllowance: 20,            // Allow short bursts
+    banDurationMs: 60 * 1000       // Ban duration for violators (1 minute)
+}
+
+// SECURITY FIX V-009: Rate limiter for peers
+class PeerRateLimiter {
+    private messageCounters: Map<string, { count: number; resetTime: number }> = new Map()
+    private connectionCounters: Map<string, { count: number; resetTime: number }> = new Map()
+    private bannedPeers: Map<string, number> = new Map() // peerId -> banExpiry
+
+    /**
+     * Check if peer is currently banned
+     */
+    isBanned(peerId: string): boolean {
+        const banExpiry = this.bannedPeers.get(peerId)
+        if (!banExpiry) return false
+
+        if (Date.now() > banExpiry) {
+            this.bannedPeers.delete(peerId)
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Track and check message rate for a peer
+     * Returns true if message is allowed, false if rate limited
+     */
+    checkMessageRate(peerId: string): boolean {
+        if (this.isBanned(peerId)) return false
+
+        const now = Date.now()
+        const counter = this.messageCounters.get(peerId)
+
+        if (!counter || now > counter.resetTime) {
+            // Reset counter for new time window
+            this.messageCounters.set(peerId, {
+                count: 1,
+                resetTime: now + 1000 // 1 second window
+            })
+            return true
+        }
+
+        counter.count++
+
+        // Check if exceeds rate limit (with burst allowance)
+        if (counter.count > RATE_LIMIT_CONFIG.maxMessagesPerSecond + RATE_LIMIT_CONFIG.burstAllowance) {
+            console.warn(`[P2P] Rate limiting peer ${peerId}: ${counter.count} messages/sec`)
+            this.banPeer(peerId)
+            return false
+        }
+
+        return true
+    }
+
+    /**
+     * Track connection attempts
+     */
+    checkConnectionRate(peerId: string): boolean {
+        if (this.isBanned(peerId)) return false
+
+        const now = Date.now()
+        const counter = this.connectionCounters.get(peerId)
+
+        if (!counter || now > counter.resetTime) {
+            this.connectionCounters.set(peerId, {
+                count: 1,
+                resetTime: now + 60000 // 1 minute window
+            })
+            return true
+        }
+
+        counter.count++
+
+        if (counter.count > RATE_LIMIT_CONFIG.maxConnectionsPerMinute) {
+            console.warn(`[P2P] Connection rate limiting peer ${peerId}`)
+            this.banPeer(peerId)
+            return false
+        }
+
+        return true
+    }
+
+    /**
+     * Ban a peer temporarily
+     */
+    private banPeer(peerId: string): void {
+        this.bannedPeers.set(peerId, Date.now() + RATE_LIMIT_CONFIG.banDurationMs)
+        console.warn(`[P2P] Peer ${peerId} banned for ${RATE_LIMIT_CONFIG.banDurationMs / 1000}s`)
+    }
+
+    /**
+     * Clear all rate limit data
+     */
+    clear(): void {
+        this.messageCounters.clear()
+        this.connectionCounters.clear()
+        this.bannedPeers.clear()
+    }
+}
+
+// Singleton rate limiter
+const peerRateLimiter = new PeerRateLimiter()
 
 class P2PService {
     private providers: Map<string, WebrtcProvider> = new Map()
@@ -93,6 +215,9 @@ class P2PService {
         onSync?: SyncCallback
         onPeers?: PeersCallback
     }> = new Map()
+
+    // SECURITY FIX V-009: Rate limiter reference
+    private rateLimiter = peerRateLimiter
 
     setConfig(config: Partial<P2PConfig>) {
         this.config = { ...this.config, ...config }
@@ -165,9 +290,17 @@ class P2PService {
                 callbacks.onSync?.(synced)
             })
 
-            // Handle peer connections
+            // Handle peer connections with rate limiting
+            // SECURITY FIX V-009: Apply rate limiting to peer connections
             provider.on('peers', ({ added, removed }: { added: string[]; removed: string[] }) => {
-                added.forEach(id => callbacks.onConnection?.(id, true))
+                added.forEach(id => {
+                    // Check connection rate limit
+                    if (!this.rateLimiter.checkConnectionRate(id)) {
+                        logger.p2p.warn('Peer connection rate limited:', { peerId: id })
+                        return // Skip banned/rate-limited peer
+                    }
+                    callbacks.onConnection?.(id, true)
+                })
                 removed.forEach(id => callbacks.onConnection?.(id, false))
                 this.updatePeerList(provider, roomId)
             })
@@ -256,33 +389,65 @@ class P2PService {
         return this.providers.get(roomId)
     }
 
-    // Generate a shareable room link (updated branding to kalynt)
+    // SECURITY FIX V-002: Use URL fragment (#) instead of query string (?)
+    // Fragment is NOT sent in HTTP Referer headers, not logged by servers
     generateRoomLink(roomId: string, password?: string): string {
         const base = `kalynt://join/${roomId}`
         if (password) {
-            return `${base}?p=${encodeURIComponent(password)}`
+            // Use fragment (#p=) instead of query string (?p=) for security
+            // Fragments are client-side only and never sent to servers
+            return `${base}#p=${encodeURIComponent(password)}`
         }
         return base
     }
 
     // Parse a room link (supports both kalynt and legacy collabforge)
+    // SECURITY FIX V-002: Parse password from URL fragment for security
     parseRoomLink(link: string): { roomId: string; password?: string } | null {
         try {
             const url = new URL(link)
             const roomId = url.pathname.split('/').pop()
-            const password = url.searchParams.get('p') || undefined
+
+            // SECURITY: First check fragment (secure), then query string (legacy/insecure)
+            let password: string | undefined
+
+            // Check URL fragment first (secure method)
+            if (url.hash) {
+                const hashParams = new URLSearchParams(url.hash.slice(1))
+                password = hashParams.get('p') || undefined
+            }
+
+            // Fallback to query string for backward compatibility (legacy/insecure)
+            if (!password) {
+                password = url.searchParams.get('p') || undefined
+                if (password) {
+                    logger.p2p.warn('Room link uses insecure query string for password - please regenerate link')
+                }
+            }
+
             if (roomId) {
                 return { roomId, password }
             }
         } catch (error) {
             // URL parsing failed, try simple regex format for both kalynt and legacy collabforge
             logger.p2p.debug('Failed to parse room link as URL, trying regex', { link, error })
-            const match = link.match(/(?:kalynt|collabforge):\/\/join\/([^?]+)/)
-            if (match) {
-                const passwordMatch = link.match(/[?&]p=([^&]+)/)
+            const roomMatch = /(?:kalynt|collabforge):\/\/join\/([^?#]+)/.exec(link)
+            if (roomMatch) {
+                // Check fragment first (secure), then query string (legacy)
+                const fragmentMatch = /#p=([^&]+)/.exec(link)
+                const queryMatch = /[?&]p=([^&#]+)/.exec(link)
+
+                let password: string | undefined
+                if (fragmentMatch) {
+                    password = decodeURIComponent(fragmentMatch[1])
+                } else if (queryMatch) {
+                    password = decodeURIComponent(queryMatch[1])
+                    logger.p2p.warn('Room link uses insecure query string for password')
+                }
+
                 return {
-                    roomId: match[1],
-                    password: passwordMatch ? decodeURIComponent(passwordMatch[1]) : undefined
+                    roomId: roomMatch[1],
+                    password
                 }
             }
         }
@@ -389,6 +554,21 @@ class P2PService {
             iceServers: this.config.iceServers.length,
             turnEnabled: hasTurn
         }
+    }
+
+    // SECURITY FIX V-009: Check if peer is rate limited or banned
+    isPeerAllowed(peerId: string): boolean {
+        return !this.rateLimiter.isBanned(peerId)
+    }
+
+    // SECURITY FIX V-009: Check message rate for a peer
+    checkPeerMessageRate(peerId: string): boolean {
+        return this.rateLimiter.checkMessageRate(peerId)
+    }
+
+    // SECURITY FIX V-009: Clear rate limiting data (for testing or reset)
+    clearRateLimits(): void {
+        this.rateLimiter.clear()
     }
 }
 

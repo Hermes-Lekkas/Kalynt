@@ -3,8 +3,17 @@
  */
 // Encrypted WebRTC Provider - Encrypts Yjs updates at the network layer
 // This wraps y-webrtc to encrypt/decrypt binary update messages
+// SECURITY FIX V-007: Added HMAC integrity verification for updates
 
 import * as Y from 'yjs'
+import {
+    signUpdate,
+    verifyUpdate,
+    initializeFromPassword as initIntegrity,
+    cleanupRoom as cleanupIntegrity,
+    isIntegrityEnabled,
+    hasIntegrityHeader
+} from './updateIntegrityService'
 
 // Encryption key storage (derived keys, never raw passwords)
 const derivedKeys = new Map<string, CryptoKey>()
@@ -14,19 +23,49 @@ const ALGORITHM = 'AES-GCM'
 const KEY_LENGTH = 256
 const PBKDF2_ITERATIONS = 100000
 
+// SECURITY FIX V-003: Store salts for rooms
+const roomSalts = new Map<string, Uint8Array>()
+
 /**
  * Derive encryption key from password using PBKDF2
+ * SECURITY FIX V-003: Use random salt combined with roomId for proper entropy
  * Key is derived once and cached - never store raw password
  */
-export async function deriveRoomKey(roomId: string, password: string): Promise<CryptoKey> {
-    // Check cache first
-    const cacheKey = `${roomId}:${await hashPassword(password)}`
-    const cached = derivedKeys.get(cacheKey)
-    if (cached) return cached
+export async function deriveRoomKey(
+    roomId: string,
+    password: string,
+    existingSalt?: Uint8Array
+): Promise<{ key: CryptoKey; salt: Uint8Array }> {
+    // Generate or use existing salt
+    let salt: Uint8Array
+    if (existingSalt && existingSalt.length >= 16) {
+        salt = existingSalt.slice(0, 16)
+    } else {
+        // Check if we have a cached salt for this room
+        const cachedSalt = roomSalts.get(roomId)
+        if (cachedSalt) {
+            salt = cachedSalt
+        } else {
+            // SECURITY FIX V-003: Generate random salt XOR'd with roomId hash
+            const randomSalt = crypto.getRandomValues(new Uint8Array(16))
+            const roomIdHash = await crypto.subtle.digest(
+                'SHA-256',
+                new TextEncoder().encode(roomId)
+            )
+            const roomIdBytes = new Uint8Array(roomIdHash).slice(0, 16)
+            salt = new Uint8Array(16)
+            for (let i = 0; i < 16; i++) {
+                salt[i] = randomSalt[i] ^ roomIdBytes[i]
+            }
+            roomSalts.set(roomId, salt)
+        }
+    }
 
-    // Create salt from roomId (deterministic for same room)
-    const saltString = roomId.padEnd(16, '0').slice(0, 16)
-    const salt = new TextEncoder().encode(saltString)
+    // Check cache with salt included in key
+    const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('')
+    const cacheKey = `${roomId}:${saltHex}:${await hashPassword(password)}`
+    const cached = derivedKeys.get(cacheKey)
+    if (cached) return { key: cached, salt }
 
     // Import password as key material
     const keyMaterial = await crypto.subtle.importKey(
@@ -41,7 +80,7 @@ export async function deriveRoomKey(roomId: string, password: string): Promise<C
     const key = await crypto.subtle.deriveKey(
         {
             name: 'PBKDF2',
-            salt,
+            salt: salt as BufferSource,
             iterations: PBKDF2_ITERATIONS,
             hash: 'SHA-256'
         },
@@ -52,7 +91,22 @@ export async function deriveRoomKey(roomId: string, password: string): Promise<C
     )
 
     derivedKeys.set(cacheKey, key)
-    return key
+    roomSalts.set(roomId, salt)
+    return { key, salt }
+}
+
+/**
+ * Get salt for a room (for sharing with peers)
+ */
+export function getRoomSalt(roomId: string): Uint8Array | undefined {
+    return roomSalts.get(roomId)
+}
+
+/**
+ * Set salt for a room (when receiving from peer/owner)
+ */
+export function setRoomSalt(roomId: string, salt: Uint8Array): void {
+    roomSalts.set(roomId, salt)
 }
 
 /**
@@ -130,11 +184,14 @@ const roomStates = new Map<string, RoomEncryptionState>()
 
 /**
  * Initialize encryption for a room
+ * SECURITY FIX V-003: Returns salt for sharing with peers
+ * SECURITY FIX V-007: Also initializes HMAC integrity verification
  */
 export async function initializeRoomEncryption(
     roomId: string,
-    password: string
-): Promise<void> {
+    password: string,
+    existingSalt?: Uint8Array
+): Promise<Uint8Array> {
     const state: RoomEncryptionState = {
         enabled: true,
         key: null,
@@ -143,18 +200,32 @@ export async function initializeRoomEncryption(
     roomStates.set(roomId, state)
 
     // Derive key in background
-    state.pendingKey = deriveRoomKey(roomId, password)
-    state.key = await state.pendingKey
+    const keyPromise = deriveRoomKey(roomId, password, existingSalt)
+    state.pendingKey = keyPromise.then(r => r.key)
+    const result = await keyPromise
+    state.key = result.key
     state.pendingKey = null
 
+    // SECURITY FIX V-007: Initialize integrity verification
+    try {
+        await initIntegrity(roomId, password)
+        console.log(`[Encryption] Room ${roomId} integrity verification initialized`)
+    } catch (e) {
+        console.error('[Encryption] Failed to initialize integrity:', e)
+    }
+
     console.log(`[Encryption] Room ${roomId} encryption initialized`)
+    return result.salt
 }
 
 /**
  * Disable encryption for a room
+ * SECURITY FIX V-007: Also cleanup integrity verification state
  */
 export function disableRoomEncryption(roomId: string): void {
     roomStates.delete(roomId)
+    // SECURITY FIX V-007: Cleanup integrity state
+    cleanupIntegrity(roomId)
     console.log(`[Encryption] Room ${roomId} encryption disabled`)
 }
 
@@ -175,6 +246,7 @@ export function isRoomEncryptionReady(roomId: string): boolean {
 
 /**
  * Encrypt outgoing message for a room
+ * SECURITY FIX V-007: Also signs message with HMAC for integrity
  */
 export async function encryptRoomMessage(
     roomId: string,
@@ -186,7 +258,12 @@ export async function encryptRoomMessage(
     }
 
     try {
-        return await encryptUpdate(data, state.key)
+        // SECURITY FIX V-007: Sign the data before encryption
+        let dataToEncrypt = data
+        if (isIntegrityEnabled(roomId)) {
+            dataToEncrypt = await signUpdate(roomId, data)
+        }
+        return await encryptUpdate(dataToEncrypt, state.key)
     } catch (e) {
         console.error('[Encryption] Failed to encrypt:', e)
         return data // Fallback to unencrypted on error
@@ -195,6 +272,7 @@ export async function encryptRoomMessage(
 
 /**
  * Decrypt incoming message for a room
+ * SECURITY FIX V-007: Also verifies HMAC integrity after decryption
  */
 export async function decryptRoomMessage(
     roomId: string,
@@ -213,7 +291,22 @@ export async function decryptRoomMessage(
     }
 
     try {
-        return await decryptUpdate(data, state.key)
+        const decrypted = await decryptUpdate(data, state.key)
+
+        // SECURITY FIX V-007: Verify integrity if enabled
+        if (isIntegrityEnabled(roomId) && hasIntegrityHeader(decrypted)) {
+            const verified = await verifyUpdate(roomId, decrypted)
+            if (!verified) {
+                console.error('[Encryption] Integrity verification failed - rejecting update')
+                throw new Error('Integrity verification failed')
+            }
+            if (!verified.verified) {
+                console.warn('[Encryption] Update not verified (legacy peer?):', verified.peerId)
+            }
+            return verified.update
+        }
+
+        return decrypted
     } catch (e) {
         console.error('[Encryption] Failed to decrypt:', e)
         throw new Error('Decryption failed - wrong key?')
@@ -239,15 +332,52 @@ export function createEncryptedDoc(roomId: string, baseDoc?: Y.Doc): Y.Doc {
 
 /**
  * LRU Cache with size limit for decrypted data
+ * SECURITY FIX V-008: Added background TTL cleanup and shorter TTL
  */
 export class LRUCache<K, V> {
-    private cache = new Map<K, { value: V; timestamp: number }>()
-    private maxSize: number
-    private ttlMs: number
+    private readonly cache = new Map<K, { value: V; timestamp: number }>()
+    private readonly maxSize: number
+    private readonly ttlMs: number
+    private cleanupInterval: ReturnType<typeof setInterval> | null = null
 
-    constructor(maxSize: number = 1000, ttlMs: number = 5 * 60 * 1000) {
+    // SECURITY FIX V-008: Reduced default TTL to 2 minutes for security
+    constructor(maxSize: number = 1000, ttlMs: number = 2 * 60 * 1000) {
         this.maxSize = maxSize
         this.ttlMs = ttlMs
+
+        // SECURITY FIX V-008: Start background cleanup every 30 seconds
+        this.startBackgroundCleanup()
+    }
+
+    /**
+     * SECURITY FIX V-008: Background cleanup of expired entries
+     */
+    private startBackgroundCleanup(): void {
+        if (this.cleanupInterval) return
+
+        this.cleanupInterval = setInterval(() => {
+            this.clearExpired()
+        }, 30 * 1000) // Run every 30 seconds
+    }
+
+    /**
+     * SECURITY FIX V-008: Clear all expired entries proactively
+     */
+    clearExpired(): number {
+        const now = Date.now()
+        let expiredCount = 0
+
+        for (const [key, entry] of this.cache) {
+            if (now - entry.timestamp > this.ttlMs) {
+                this.cache.delete(key)
+                expiredCount++
+            }
+        }
+
+        if (expiredCount > 0) {
+            console.log(`[LRUCache] Cleared ${expiredCount} expired entries`)
+        }
+        return expiredCount
     }
 
     get(key: K): V | undefined {
@@ -289,6 +419,17 @@ export class LRUCache<K, V> {
 
     size(): number {
         return this.cache.size
+    }
+
+    /**
+     * SECURITY FIX V-008: Stop background cleanup (call on app shutdown)
+     */
+    destroy(): void {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval)
+            this.cleanupInterval = null
+        }
+        this.cache.clear()
     }
 }
 
