@@ -313,6 +313,10 @@ class DebugSessionManager {
         throw new Error(`Debug adapter not found: '${requiredBinary}' is not installed or not in PATH.\n\n${installInstructions}`);
       }
 
+      // Resolve the actual path to use (may be from common locations)
+      debuggerPath = await this.resolveBinaryPath(requiredBinary);
+      console.log(`[Debug] Using debugger at: ${debuggerPath}`);
+
       // For Python, also check if debugpy module is installed
       if (type === 'python' || type === 'debugpy') {
         const debugpyInstalled = await this.checkPythonModule('debugpy');
@@ -337,9 +341,105 @@ class DebugSessionManager {
   }
 
   /**
-   * Check if a binary exists in PATH
+   * Platform-specific search paths for debuggers
    */
-  private checkBinaryExists(binary: string): Promise<boolean> {
+  private readonly DEBUGGER_SEARCH_PATHS: Record<string, { windows: string[]; darwin: string[]; linux: string[] }> = {
+    python: {
+      windows: [
+        'C:\\Python311\\python.exe',
+        'C:\\Python310\\python.exe',
+        'C:\\Python39\\python.exe',
+        'C:\\Python38\\python.exe',
+        `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python311\\python.exe`,
+        `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python310\\python.exe`,
+        `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python39\\python.exe`,
+        `${process.env.USERPROFILE}\\.pyenv\\pyenv-win\\shims\\python.exe`,
+        'C:\\msys64\\mingw64\\bin\\python.exe',
+      ],
+      darwin: [
+        '/usr/bin/python3',
+        '/usr/local/bin/python3',
+        '/opt/homebrew/bin/python3',
+        `${process.env.HOME}/.pyenv/shims/python`,
+        '/Library/Frameworks/Python.framework/Versions/3.11/bin/python3',
+        '/Library/Frameworks/Python.framework/Versions/3.10/bin/python3',
+      ],
+      linux: [
+        '/usr/bin/python3',
+        '/usr/local/bin/python3',
+        `${process.env.HOME}/.pyenv/shims/python`,
+        '/usr/bin/python',
+      ],
+    },
+    gdb: {
+      windows: [
+        'C:\\MinGW\\bin\\gdb.exe',
+        'C:\\msys64\\mingw64\\bin\\gdb.exe',
+        'C:\\msys64\\usr\\bin\\gdb.exe',
+        'C:\\cygwin64\\bin\\gdb.exe',
+        `${process.env.PROGRAMFILES}\\mingw-w64\\x86_64-8.1.0-posix-seh-rt_v6-rev0\\mingw64\\bin\\gdb.exe`,
+      ],
+      darwin: [
+        '/usr/local/bin/gdb',
+        '/opt/homebrew/bin/gdb',
+      ],
+      linux: [
+        '/usr/bin/gdb',
+        '/usr/local/bin/gdb',
+      ],
+    },
+    'lldb-vscode': {
+      windows: [
+        'C:\\Program Files\\LLVM\\bin\\lldb-vscode.exe',
+        `${process.env.PROGRAMFILES}\\LLVM\\bin\\lldb-vscode.exe`,
+      ],
+      darwin: [
+        '/usr/local/opt/llvm/bin/lldb-vscode',
+        '/opt/homebrew/opt/llvm/bin/lldb-vscode',
+        '/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-vscode',
+      ],
+      linux: [
+        '/usr/bin/lldb-vscode',
+        '/usr/local/bin/lldb-vscode',
+        '/usr/lib/llvm-14/bin/lldb-vscode',
+        '/usr/lib/llvm-15/bin/lldb-vscode',
+      ],
+    },
+    dlv: {
+      windows: [
+        `${process.env.GOPATH || process.env.USERPROFILE + '\\go'}\\bin\\dlv.exe`,
+        `${process.env.USERPROFILE}\\go\\bin\\dlv.exe`,
+      ],
+      darwin: [
+        `${process.env.GOPATH || process.env.HOME + '/go'}/bin/dlv`,
+        `${process.env.HOME}/go/bin/dlv`,
+        '/usr/local/bin/dlv',
+      ],
+      linux: [
+        `${process.env.GOPATH || process.env.HOME + '/go'}/bin/dlv`,
+        `${process.env.HOME}/go/bin/dlv`,
+        '/usr/local/bin/dlv',
+      ],
+    },
+  };
+
+  /**
+   * Check if a binary exists in PATH or common installation paths
+   */
+  private async checkBinaryExists(binary: string): Promise<boolean> {
+    // First, check if it's in PATH using which/where
+    const inPath = await this.checkBinaryInPath(binary);
+    if (inPath) return true;
+
+    // If not in PATH, search common installation locations
+    const foundPath = await this.findBinaryPath(binary);
+    return foundPath !== null;
+  }
+
+  /**
+   * Check if binary is in PATH
+   */
+  private checkBinaryInPath(binary: string): Promise<boolean> {
     return new Promise((resolve) => {
       const command = process.platform === 'win32' ? 'where' : 'which';
       const checkProcess = spawn(command, [binary], { shell: true });
@@ -355,11 +455,55 @@ class DebugSessionManager {
   }
 
   /**
+   * Find binary in common platform-specific paths
+   * Returns the path if found, null otherwise
+   */
+  private async findBinaryPath(binary: string): Promise<string | null> {
+    const searchPaths = this.DEBUGGER_SEARCH_PATHS[binary];
+    if (!searchPaths) return null;
+
+    const platform = process.platform;
+    let paths: string[] = [];
+
+    if (platform === 'win32') {
+      paths = searchPaths.windows;
+    } else if (platform === 'darwin') {
+      paths = searchPaths.darwin;
+    } else {
+      paths = searchPaths.linux;
+    }
+
+    for (const p of paths) {
+      if (p && fs.existsSync(p)) {
+        console.log(`[Debug] Found ${binary} at: ${p}`);
+        return p;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get the actual binary path (from PATH or common locations)
+   */
+  private async resolveBinaryPath(binary: string): Promise<string> {
+    // Check common paths first
+    const foundPath = await this.findBinaryPath(binary);
+    if (foundPath) return foundPath;
+
+    // Fallback to name (will use PATH)
+    return binary;
+  }
+
+  /**
    * Check if a Python module is installed
    */
-  private checkPythonModule(moduleName: string): Promise<boolean> {
+  private async checkPythonModule(moduleName: string): Promise<boolean> {
+    // First, try to find Python
+    const pythonPath = await this.resolveBinaryPath('python');
+
     return new Promise((resolve) => {
-      const checkProcess = spawn('python', ['-c', `import ${moduleName}`], { shell: true });
+      const checkProcess = spawn(pythonPath, ['-c', `import ${moduleName}`], { shell: true });
 
       checkProcess.on('close', (code) => {
         resolve(code === 0);

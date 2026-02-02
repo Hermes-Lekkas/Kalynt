@@ -587,42 +587,34 @@ function SecurityTab({ settings, setSettings, showPassword, setShowPassword }: a
         Encryption
       </h3>
       <p className="section-description">
-        End-to-end encryption for your workspace data during P2P sync.
+        End-to-end encryption is always enabled for P2P sync. All data is encrypted using AES-256-GCM.
       </p>
 
       <div className="setting-card">
         <div className="setting-row">
           <div className="setting-info">
-            <label>Enable Encryption</label>
-            <p>Encrypt all workspace content with a shared password</p>
+            <label>Status</label>
+            <p style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Shield size={14} /> Encryption is always active
+            </p>
           </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={settings.encryptionEnabled}
-              onChange={(e) => setSettings({ ...settings, encryptionEnabled: e.target.checked })}
-            />
-            <span className="toggle-slider"></span>
-          </label>
         </div>
 
-        {settings.encryptionEnabled && (
-          <div className="password-input-group">
-            <label>Room Password</label>
-            <div className="input-with-icon">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter shared password"
-                value={settings.roomPassword}
-                onChange={(e) => setSettings({ ...settings, roomPassword: e.target.value })}
-              />
-              <button className="icon-button" onClick={() => setShowPassword(!showPassword)}>
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            <p className="hint">Share this password with all workspace collaborators</p>
+        <div className="password-input-group">
+          <label>Room Password</label>
+          <div className="input-with-icon">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Enter shared password for this workspace"
+              value={settings.roomPassword}
+              onChange={(e) => setSettings({ ...settings, roomPassword: e.target.value, encryptionEnabled: true })}
+            />
+            <button className="icon-button" onClick={() => setShowPassword(!showPassword)}>
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
-        )}
+          <p className="hint">Share this password with all workspace collaborators to enable P2P sync</p>
+        </div>
       </div>
 
       <h3 className="section-title" style={{ marginTop: '32px' }}>
