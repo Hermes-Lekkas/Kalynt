@@ -165,4 +165,93 @@ export function registerGitHandlers(ipcMain: Electron.IpcMain, getCurrentWorkspa
             return { success: false, error: String(error) }
         }
     })
+
+    // Initialize a new git repository
+    ipcMain.handle('git:init', async (_event, repoPath: string) => {
+        try {
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath || !repoPath.startsWith(currentWorkspacePath)) {
+                return { success: false, error: 'Invalid repo path' }
+            }
+            if (fs.existsSync(path.join(repoPath, '.git'))) {
+                return { success: false, error: 'Already a git repository' }
+            }
+            const git: SimpleGit = simpleGit(repoPath)
+            await git.init()
+            return { success: true }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
+
+    // Discard changes (checkout file from HEAD)
+    ipcMain.handle('git:discard', async (_event, options: { repoPath: string, files: string[] }) => {
+        try {
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath || !options.repoPath.startsWith(currentWorkspacePath)) {
+                return { success: false, error: 'Invalid repo path' }
+            }
+            const git: SimpleGit = simpleGit(options.repoPath)
+            // For untracked files, we need to delete them
+            // For tracked files, checkout from HEAD
+            await git.checkout(['--', ...options.files])
+            return { success: true }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
+
+    // Create a new branch
+    ipcMain.handle('git:createBranch', async (_event, options: { repoPath: string, branchName: string, checkout?: boolean }) => {
+        try {
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath || !options.repoPath.startsWith(currentWorkspacePath)) {
+                return { success: false, error: 'Invalid repo path' }
+            }
+            const git: SimpleGit = simpleGit(options.repoPath)
+            if (options.checkout) {
+                await git.checkoutLocalBranch(options.branchName)
+            } else {
+                await git.branch([options.branchName])
+            }
+            return { success: true }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
+
+    // Fetch from remote
+    ipcMain.handle('git:fetch', async (_event, repoPath: string) => {
+        try {
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath || !repoPath.startsWith(currentWorkspacePath)) {
+                return { success: false, error: 'Invalid repo path' }
+            }
+            const git: SimpleGit = simpleGit(repoPath)
+            await git.fetch()
+            return { success: true }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
+
+    // Get remote info (ahead/behind counts)
+    ipcMain.handle('git:remote', async (_event, repoPath: string) => {
+        try {
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath || !repoPath.startsWith(currentWorkspacePath)) {
+                return { success: false, error: 'Invalid repo path' }
+            }
+            const git: SimpleGit = simpleGit(repoPath)
+            const status = await git.status()
+            return {
+                success: true,
+                ahead: status.ahead,
+                behind: status.behind,
+                tracking: status.tracking
+            }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
 }

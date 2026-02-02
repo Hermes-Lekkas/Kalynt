@@ -461,8 +461,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         checkout: (options: any) => ipcRenderer.invoke('git:checkout', options),
         reset: (options: any) => ipcRenderer.invoke('git:reset', options),
         push: (repoPath: string) => ipcRenderer.invoke('git:push', repoPath),
-        pull: (repoPath: string) => ipcRenderer.invoke('git:pull', repoPath)
+        pull: (repoPath: string) => ipcRenderer.invoke('git:pull', repoPath),
+        init: (repoPath: string) => ipcRenderer.invoke('git:init', repoPath),
+        discard: (options: any) => ipcRenderer.invoke('git:discard', options),
+        createBranch: (options: any) => ipcRenderer.invoke('git:createBranch', options),
+        fetch: (repoPath: string) => ipcRenderer.invoke('git:fetch', repoPath),
+        remote: (repoPath: string) => ipcRenderer.invoke('git:remote', repoPath)
     },
+
 
     // ==========================================
     // Shell Integration
