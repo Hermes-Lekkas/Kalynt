@@ -254,6 +254,8 @@ class DebugSessionManager {
 
     let debuggerPath: string;
     let debuggerArgs: string[];
+    let requiredBinary: string | null = null;
+    let installInstructions: string = '';
 
     // Determine debugger executable based on type
     switch (type) {
@@ -262,6 +264,7 @@ class DebugSessionManager {
         // Use Node's built-in inspector protocol
         debuggerPath = process.execPath; // Node.js executable
         debuggerArgs = ['--inspect-brk=0', configuration.program || ''];
+        // Node is always available since we're running in Electron
         break;
 
       case 'debugpy':
@@ -271,28 +274,52 @@ class DebugSessionManager {
         if (configuration.program) {
           debuggerArgs.push(configuration.program);
         }
+        requiredBinary = 'python';
+        installInstructions = 'Python debugging requires Python and debugpy.\nInstall with: pip install debugpy';
         break;
 
       case 'lldb':
       case 'rust-lldb':
         debuggerPath = 'lldb-vscode';
         debuggerArgs = [];
+        requiredBinary = 'lldb-vscode';
+        installInstructions = 'LLDB debugging requires lldb-vscode.\nInstall LLVM/LLDB from https://llvm.org/';
         break;
 
       case 'gdb':
       case 'cppdbg':
         debuggerPath = 'gdb';
         debuggerArgs = ['--interpreter=mi'];
+        requiredBinary = 'gdb';
+        installInstructions = 'GDB debugging requires GDB.\nInstall via your system package manager (e.g., apt install gdb)';
         break;
 
       case 'delve':
       case 'go':
         debuggerPath = 'dlv';
         debuggerArgs = ['dap', '--listen=127.0.0.1:0'];
+        requiredBinary = 'dlv';
+        installInstructions = 'Go debugging requires Delve.\nInstall with: go install github.com/go-delve/delve/cmd/dlv@latest';
         break;
 
       default:
         throw new Error(`Unsupported debug type: ${type}`);
+    }
+
+    // Validate that the required binary exists before attempting to spawn
+    if (requiredBinary) {
+      const binaryExists = await this.checkBinaryExists(requiredBinary);
+      if (!binaryExists) {
+        throw new Error(`Debug adapter not found: '${requiredBinary}' is not installed or not in PATH.\n\n${installInstructions}`);
+      }
+
+      // For Python, also check if debugpy module is installed
+      if (type === 'python' || type === 'debugpy') {
+        const debugpyInstalled = await this.checkPythonModule('debugpy');
+        if (!debugpyInstalled) {
+          throw new Error(`Python debugger module not found.\n\nInstall with: pip install debugpy`);
+        }
+      }
     }
 
     // Spawn debugger process
@@ -307,6 +334,41 @@ class DebugSessionManager {
     adapter.process = childProcess;
 
     return adapter;
+  }
+
+  /**
+   * Check if a binary exists in PATH
+   */
+  private checkBinaryExists(binary: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const command = process.platform === 'win32' ? 'where' : 'which';
+      const checkProcess = spawn(command, [binary], { shell: true });
+
+      checkProcess.on('close', (code) => {
+        resolve(code === 0);
+      });
+
+      checkProcess.on('error', () => {
+        resolve(false);
+      });
+    });
+  }
+
+  /**
+   * Check if a Python module is installed
+   */
+  private checkPythonModule(moduleName: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const checkProcess = spawn('python', ['-c', `import ${moduleName}`], { shell: true });
+
+      checkProcess.on('close', (code) => {
+        resolve(code === 0);
+      });
+
+      checkProcess.on('error', () => {
+        resolve(false);
+      });
+    });
   }
 
   /**
