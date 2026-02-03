@@ -50,3 +50,12 @@ node_modules
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
 
+# Proprietary Modules
+apps/desktop/electron/handlers/llm-inference.ts
+apps/desktop/src/services/agentService.ts
+apps/desktop/src/services/offlineLLMService.ts
+apps/desktop/src/services/aiService.ts
+apps/desktop/src/components/AIMESettings.tsx
+apps/desktop/src/types/aime.ts
+apps/desktop/src/services/hardwareService.ts
+
