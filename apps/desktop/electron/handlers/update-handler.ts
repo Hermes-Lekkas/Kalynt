@@ -66,8 +66,8 @@ function configureAutoUpdater(githubToken?: string) {
     if (githubToken) {
         autoUpdater.setFeedURL({
             provider: 'github',
-            owner: process.env.GITHUB_REPO_OWNER || 'HermesLekkas',
-            repo: process.env.GITHUB_REPO_NAME || 'kalynt',
+            owner: process.env.GITHUB_REPO_OWNER || 'Hermes-Lekkas',
+            repo: process.env.GITHUB_REPO_NAME || 'Kalynt',
             private: false,
             token: githubToken
         })

@@ -57,8 +57,8 @@ export const CONFIG = {
 
   // Auto-Update Configuration
   UPDATE_CHECK_INTERVAL_MS: 3600000, // Check every hour
-  GITHUB_REPO_OWNER: 'YOUR_GITHUB_USERNAME', // Replace with your GitHub username
-  GITHUB_REPO_NAME: 'kalynt', // Replace with your repo name
+  GITHUB_REPO_OWNER: 'Hermes-Lekkas',
+  GITHUB_REPO_NAME: 'Kalynt',
   UPDATE_CHANNEL: 'latest', // 'latest' for stable, 'beta' for beta releases
 } as const
 

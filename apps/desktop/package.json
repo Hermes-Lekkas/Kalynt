@@ -1,6 +1,6 @@
 {
     "name": "@kalynt/desktop",
-    "version": "1.0.1-beta",
+    "version": "1.0.2-beta",
     "private": true,
     "productName": "Kalynt",
     "author": "Hermes Lekkas",
@@ -118,7 +118,7 @@
         "publish": {
             "provider": "github",
             "owner": "Hermes-Lekkas",
-            "repo": "kalynt",
+            "repo": "Kalynt",
             "private": false,
             "releaseType": "release"
         },
