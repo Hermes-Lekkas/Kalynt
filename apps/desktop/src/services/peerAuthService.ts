@@ -117,7 +117,7 @@ async function signData(data: Uint8Array, privateKey: CryptoKey): Promise<Uint8A
     const signature = await crypto.subtle.sign(
         { name: 'ECDSA', hash: 'SHA-256' },
         privateKey,
-        data
+        data as BufferSource
     )
     return new Uint8Array(signature)
 }
@@ -134,8 +134,8 @@ async function verifySignature(
         return await crypto.subtle.verify(
             { name: 'ECDSA', hash: 'SHA-256' },
             publicKey,
-            signature,
-            data
+            signature as BufferSource,
+            data as BufferSource
         )
     } catch (e) {
         console.error('[PeerAuth] Signature verification failed:', e)
@@ -225,8 +225,8 @@ export async function signMessage(data: Uint8Array): Promise<SignedMessage | nul
     const signature = await signData(data, localKeyPair.privateKey)
 
     return {
-        data: arrayBufferToBase64(data.buffer),
-        signature: arrayBufferToBase64(signature.buffer),
+        data: arrayBufferToBase64(data.buffer as ArrayBuffer),
+        signature: arrayBufferToBase64(signature.buffer as ArrayBuffer),
         peerId: localPeerId,
         timestamp: Date.now()
     }

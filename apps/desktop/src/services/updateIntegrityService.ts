@@ -5,7 +5,7 @@
 // Provides HMAC verification for Yjs updates to prevent tampering
 // Uses HMAC-SHA256 for integrity verification
 
-import { getLocalPeerId, isPeerTrusted } from './peerAuthService'
+import { getLocalPeerId } from './peerAuthService'
 
 // HMAC key derived from room encryption key
 const roomHmacKeys = new Map<string, CryptoKey>()
@@ -318,7 +318,7 @@ export function hasIntegrityHeader(data: Uint8Array): boolean {
  * Hash update for replay detection
  */
 async function hashUpdate(update: Uint8Array): Promise<string> {
-    const hash = await crypto.subtle.digest('SHA-256', update)
+    const hash = await crypto.subtle.digest('SHA-256', update as BufferSource)
     return Array.from(new Uint8Array(hash))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('')

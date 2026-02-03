@@ -64,15 +64,17 @@ export default function MemberManagement({ spaceId, onClose }: Props) {
     // Get banned users
     const bannedUserIds = useMemberStore(state => state.spaceMembers[spaceId]?.bannedUsers || [])
 
-    const handleKick = (member: WorkspaceMember) => {
-        if (memberSyncService.kickMember(spaceId, member.userId)) {
+    const handleKick = async (member: WorkspaceMember) => {
+        const success = await memberSyncService.kickMember(spaceId, member.userId)
+        if (success) {
             setConfirmAction(null)
             setSelectedMember(null)
         }
     }
 
-    const handleBan = (member: WorkspaceMember) => {
-        if (memberSyncService.banMember(spaceId, member.userId, banReason)) {
+    const handleBan = async (member: WorkspaceMember) => {
+        const success = await memberSyncService.banMember(spaceId, member.userId, banReason)
+        if (success) {
             setConfirmAction(null)
             setSelectedMember(null)
             setBanReason('')
