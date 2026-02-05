@@ -264,8 +264,17 @@ export function useYDoc(spaceId: string | null) {
     const [peerCount, setPeerCount] = useState(0)
     const [encrypted, setEncrypted] = useState(false)
     const updatePeersRef = useRef<(() => void) | null>(null)
+    const saltListenerRef = useRef<((changes: { added: number[] }) => void) | null>(null) // MEMORY LEAK FIX
     const isMountedRef = useRef(true)
     const setupRef = useRef<string | null>(null)
+    // FIX BUG-005/006: Track setup instance to prevent race conditions on rapid space switching
+    // This pairs the provider with its listeners so cleanup uses the correct references
+    const setupInstanceRef = useRef<{
+        spaceId: string
+        provider: WebrtcProvider | null
+        saltListener: ((changes: { added: number[] }) => void) | null
+        peerListener: (() => void) | null
+    } | null>(null)
 
     useEffect(() => {
         isMountedRef.current = true
@@ -282,27 +291,6 @@ export function useYDoc(spaceId: string | null) {
         if (setupRef.current === spaceId) return
         setupRef.current = spaceId
 
-        // Initialize encryption BEFORE connecting (fix race condition)
-        const initEncryption = async () => {
-            const settings = localStorage.getItem(`space-settings-${spaceId}`)
-            if (settings) {
-                try {
-                    const parsed = JSON.parse(settings)
-                    if (parsed.encryptionEnabled && parsed.roomPassword) {
-                        // Import and initialize encrypted provider
-                        const { initializeRoomEncryption } = await import('../services/encryptedProvider')
-                        await initializeRoomEncryption(spaceId, parsed.roomPassword)
-                        if (isMountedRef.current) {
-                            setEncrypted(true)
-                            console.log(`[CRDT] Encryption initialized for space ${spaceId}`)
-                        }
-                    }
-                } catch (e) {
-                    console.error('[CRDT] Failed to initialize encryption:', e)
-                }
-            }
-        }
-
         // Helper to track peers (defined here to avoid deep nesting inside setup)
         const updatePeers = (targetProvider: any) => {
             const awareness = targetProvider.awareness
@@ -313,10 +301,8 @@ export function useYDoc(spaceId: string | null) {
             setPeerCount(count)
         }
 
-        // Await encryption before connecting to avoid race condition
+        // Main setup - connect first, then initialize encryption with shared salt
         const setup = async () => {
-            await initEncryption()
-
             if (!isMountedRef.current || setupRef.current !== spaceId) return
 
             // Increment reference count
@@ -324,7 +310,7 @@ export function useYDoc(spaceId: string | null) {
 
             const ydoc = getSpaceDocument(spaceId)
 
-            // Fetch password if encryption is enabled to reconnect with correct room
+            // Fetch password if encryption is enabled
             let passwordValue: string | undefined = undefined
             const settings = localStorage.getItem(`space-settings-${spaceId}`)
             if (settings) {
@@ -338,12 +324,89 @@ export function useYDoc(spaceId: string | null) {
                 }
             }
 
+            // Connect to room first (room name includes password for y-webrtc encryption)
             const yprovider = connectSpace(spaceId, passwordValue)
+
+            // FIX BUG-005/006: Initialize setup instance to track this setup's resources
+            setupInstanceRef.current = {
+                spaceId,
+                provider: yprovider,
+                saltListener: null,
+                peerListener: null
+            }
 
             setDoc(ydoc)
             setProvider(yprovider)
 
             if (!isMountedRef.current) return
+
+            // CRITICAL FIX: Initialize encryption AFTER connecting so we can receive salt from peers
+            // This fixes the issue where each peer generates different salts and can't decrypt each other's messages
+            if (passwordValue) {
+                try {
+                    const { initializeRoomEncryption, getRoomSalt, setRoomSalt } = await import('../services/encryptedProvider')
+
+                    // Wait a brief moment for awareness to sync with existing peers
+                    await new Promise(resolve => setTimeout(resolve, 500))
+
+                    // Check if any existing peer has a salt (they're the room creator)
+                    let receivedSalt: Uint8Array | undefined
+                    const states = yprovider.awareness.getStates()
+                    for (const [clientId, state] of states) {
+                        if (clientId !== yprovider.awareness.clientID && state.roomSalt) {
+                            receivedSalt = new Uint8Array(state.roomSalt)
+                            console.log(`[CRDT] Received encryption salt from peer ${clientId}`)
+                            break
+                        }
+                    }
+
+                    // Initialize encryption with received salt (if any) or generate new
+                    if (receivedSalt) {
+                        setRoomSalt(spaceId, receivedSalt)
+                    }
+                    const ourSalt = await initializeRoomEncryption(spaceId, passwordValue, receivedSalt)
+
+                    // Broadcast our salt via awareness for other peers (current and future)
+                    yprovider.awareness.setLocalStateField('roomSalt', Array.from(ourSalt))
+                    console.log(`[CRDT] Broadcasting encryption salt for space ${spaceId}`)
+
+                    // Listen for salt from peers that join after us (in case we're second to connect)
+                    // MEMORY LEAK FIX: Store listener in ref so it can be cleaned up
+                    const saltListener = async ({ added }: { added: number[] }) => {
+                        if (!isMountedRef.current) return
+                        const currentSalt = getRoomSalt(spaceId)
+
+                        for (const clientId of added) {
+                            const state = yprovider.awareness.getStates().get(clientId)
+                            if (state?.roomSalt && clientId !== yprovider.awareness.clientID) {
+                                const peerSalt = new Uint8Array(state.roomSalt)
+                                // If we don't have a salt yet, or peer's salt is different, re-initialize
+                                // (First peer's salt wins - they're the room creator)
+                                if (!currentSalt) {
+                                    setRoomSalt(spaceId, peerSalt)
+                                    await initializeRoomEncryption(spaceId, passwordValue!, peerSalt)
+                                    yprovider.awareness.setLocalStateField('roomSalt', Array.from(peerSalt))
+                                    console.log(`[CRDT] Adopted salt from peer ${clientId}`)
+                                }
+                                break
+                            }
+                        }
+                    }
+                    saltListenerRef.current = saltListener // Store for cleanup
+                    // FIX BUG-005: Also store in setup instance for proper cleanup
+                    if (setupInstanceRef.current) {
+                        setupInstanceRef.current.saltListener = saltListener
+                    }
+                    yprovider.awareness.on('change', saltListener)
+
+                    if (isMountedRef.current) {
+                        setEncrypted(true)
+                        console.log(`[CRDT] Encryption initialized for space ${spaceId}`)
+                    }
+                } catch (e) {
+                    console.error('[CRDT] Failed to initialize encryption:', e)
+                }
+            }
 
             // Initialize member sync for P2P role/permission management
             const { userId, displayName } = useMemberStore.getState()
@@ -367,6 +430,10 @@ export function useYDoc(spaceId: string | null) {
             // Track peer count avoiding deep nesting callback (ESL-040)
             const listener = () => updatePeers(yprovider)
             updatePeersRef.current = listener
+            // FIX BUG-005: Store in setup instance for proper cleanup
+            if (setupInstanceRef.current) {
+                setupInstanceRef.current.peerListener = listener
+            }
             yprovider.awareness.on('change', listener)
 
             // Check again before initial call to avoid state updates on unmounted component
@@ -381,9 +448,19 @@ export function useYDoc(spaceId: string | null) {
             isMountedRef.current = false
             setupRef.current = null
 
+            // FIX BUG-005/006: Use setup instance to get the correct provider and listeners
+            // This prevents race conditions when switching spaces rapidly
+            const instance = setupInstanceRef.current
+            const instanceProvider = instance?.provider
+            const instancePeerListener = instance?.peerListener
+            const instanceSaltListener = instance?.saltListener
+
+            // Fallback to refs/state only if setup instance doesn't match
+            const currentProvider = instanceProvider || provider || providers.get(spaceId)
+            const currentCallback = instancePeerListener || updatePeersRef.current
+            const currentSaltListener = instanceSaltListener || saltListenerRef.current
+
             // Cleanup peer listener carefully
-            const currentProvider = provider || providers.get(spaceId)
-            const currentCallback = updatePeersRef.current
             if (currentProvider && currentCallback) {
                 try {
                     currentProvider.awareness.off('change', currentCallback)
@@ -392,6 +469,17 @@ export function useYDoc(spaceId: string | null) {
                 }
             }
             updatePeersRef.current = null
+
+            // MEMORY LEAK FIX: Clean up salt listener
+            if (currentProvider && currentSaltListener) {
+                try {
+                    currentProvider.awareness.off('change', currentSaltListener)
+                } catch (e) {
+                    console.debug('[P2P] Failed to remove salt listener:', e)
+                }
+            }
+            saltListenerRef.current = null
+            setupInstanceRef.current = null
 
             // Clean up encryption state with error handling
             import('../services/encryptedProvider').then(({ disableRoomEncryption }) => {

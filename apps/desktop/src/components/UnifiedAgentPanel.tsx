@@ -10,7 +10,9 @@ import { aiService, AIProvider, AIMessage } from '../services/aiService'
 import { offlineLLMService, ChatMessage as OfflineChatMessage } from '../services/offlineLLMService'
 import { useModelStore } from '../stores/modelStore'
 import { useAgent } from '../hooks/useAgent'
-import { executeTool, getToolsDescription, getToolCallJsonSchema, getToolSystemPrompt, getSimplifiedToolSchema, getModelSizeCategory, toolPermissionManager, type ToolCallRequest } from '../services/ideAgentTools'
+import { executeTool, getToolsDescription, getToolCallJsonSchema, getToolSystemPrompt, getSimplifiedToolSchema, getModelSizeCategory, toolPermissionManager, stopActiveTool, type ToolCallRequest } from '../services/ideAgentTools'
+import { agentLoopService } from '../services/agentLoopService'
+import type { AgentStep, AgentLoopEvent } from '../types/agentTypes'
 import { getModelById } from '../types/offlineModels'
 import UnifiedSettingsPanel from './UnifiedSettingsPanel'
 import {
@@ -18,12 +20,57 @@ import {
     Paperclip, Cloud, Terminal as TerminalIcon,
     Scroll, Check, X, Lightbulb, Bot, AlertCircle,
     ChevronDown, Monitor, Loader2, Square,
-    Brain, Bug, Shield, Info
+    Brain, Bug, Shield, Info, Wrench, CheckCircle2,
+    Play, FileCode
 } from 'lucide-react'
 
 // --- Types ---
 type PanelMode = 'collaboration' | 'agent'
 type AIMode = 'cloud' | 'offline'
+
+// FIX BUG-004: Custom error class to distinguish timeout from other errors
+class AnalysisTimeoutError extends Error {
+    constructor(message: string = 'Analysis timed out') {
+        super(message)
+        this.name = 'AnalysisTimeoutError'
+    }
+}
+
+/**
+ * Clean model output by removing special tokens, raw JSON tool calls, and formatting artifacts
+ * This ensures users see clean, readable messages
+ */
+function cleanModelOutput(text: string): string {
+    if (!text) return ''
+
+    return text
+        // Remove special tokens (Qwen/ChatML format)
+        .replace(/<\|im_end\|>/g, '')
+        .replace(/<\|im_start\|>/g, '')
+        .replace(/<\|im_end\|/g, '')
+        .replace(/<\|im_start\|/g, '')
+        .replace(/<\|end_of_text\|>/g, '')
+        .replace(/<\|start_of_role\|>/g, '')
+        .replace(/<\|end_of_role\|>/g, '')
+        // Remove special tokens (Llama/Mistral format)
+        .replace(/<\/s>/g, '')
+        .replace(/<s>/g, '')
+        .replace(/\[INST\]/g, '')
+        .replace(/\[\/INST\]/g, '')
+        // Remove tool call formats (don't show raw JSON to users)
+        .replace(/<tool>[\s\S]*?<\/tool>/gi, '')
+        .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+        .replace(/<function=\w+>[\s\S]*?<\/function>/gi, '')
+        // Remove raw JSON tool calls ({"name": "...", "params": ...})
+        .replace(/\{"name"\s*:\s*"(readFile|listDirectory|writeFile|runCommand|executeCode|createFile|delete)"[\s\S]*?\}/g, '')
+        // Remove standalone tool JSON (simpler pattern)
+        .replace(/\{"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[^}]*\}\s*\}/g, '')
+        // Remove role markers that might leak through
+        .replace(/\n?(user|assistant|system)\s*$/gi, '')
+        // Clean up excessive whitespace
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+}
 
 interface TabProps {
     id: PanelMode
@@ -100,6 +147,12 @@ export default function UnifiedAgentPanel({
     const [isThinking, setIsThinking] = useState(false)
     const [showThinking, setShowThinking] = useState(false)
 
+    // Agent Loop State (ReAct engine)
+    const [agentSteps, setAgentSteps] = useState<AgentStep[]>([])
+    const [agentLoopRunning, setAgentLoopRunning] = useState(false)
+    const [agentIteration, setAgentIteration] = useState<{ current: number; max: number } | null>(null)
+    const [useAgentLoop, setUseAgentLoop] = useState(true) // Toggle between legacy and new agent loop
+
     // Tool Confirmation State
     const [pendingToolRequest, setPendingToolRequest] = useState<ToolCallRequest | null>(null)
     const [toolConfirmationResolver, setToolConfirmationResolver] = useState<{
@@ -114,10 +167,21 @@ export default function UnifiedAgentPanel({
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
     const userId = useRef(crypto.randomUUID())
+    // FIX BUG-008: Track component mount state to prevent setState on unmounted component
+    const isMountedRef = useRef(true)
 
     // --- Initialization & Sync ---
 
+    // FIX BUG-008: Set mounted state on component lifecycle
+    useEffect(() => {
+        isMountedRef.current = true
+        return () => {
+            isMountedRef.current = false
+        }
+    }, [])
+
     // Load encryption
+    // FIX BUG-007: Add proper error handling for encryption initialization
     useEffect(() => {
         if (!currentSpace) return
         const settings = localStorage.getItem(`space-settings-${currentSpace.id}`)
@@ -125,11 +189,17 @@ export default function UnifiedAgentPanel({
             try {
                 const parsed = JSON.parse(settings)
                 if (parsed.encryptionEnabled && parsed.roomPassword) {
-                    encryptionService.setRoomKey(currentSpace.id, parsed.roomPassword).then(() => {
-                        setEncryptionEnabled(true)
-                    })
+                    encryptionService.setRoomKey(currentSpace.id, parsed.roomPassword)
+                        .then(() => {
+                            setEncryptionEnabled(true)
+                        })
+                        .catch((e) => {
+                            console.error('Failed to initialize encryption:', e)
+                            // Don't set encryptionEnabled to true if initialization failed
+                            setEncryptionEnabled(false)
+                        })
                 }
-            } catch (e) { console.error('Failed to load encryption', e) }
+            } catch (e) { console.error('Failed to load encryption settings:', e) }
         }
     }, [currentSpace])
 
@@ -151,25 +221,106 @@ export default function UnifiedAgentPanel({
         }
     }, [aiMessages, currentSpace?.id])
 
+    // Wire up Agent Loop Service events
+    useEffect(() => {
+        // Configure the loop service with current settings
+        agentLoopService.setWorkspacePath(workspacePath || '')
+        agentLoopService.setUseOfflineAI(aiMode === 'offline')
+        agentLoopService.setCloudProvider(currentProvider)
+    }, [workspacePath, aiMode, currentProvider])
+
+    useEffect(() => {
+        const unsubscribe = agentLoopService.on((event: AgentLoopEvent) => {
+            if (!isMountedRef.current) return
+
+            switch (event.type) {
+                case 'started':
+                    setAgentSteps([])
+                    setAgentLoopRunning(true)
+                    setAgentIteration(null)
+                    break
+                case 'step-added':
+                    setAgentSteps(prev => [...prev, event.step])
+                    setTimeout(scrollToBottom, 50)
+                    break
+                case 'streaming':
+                    setStreamingContent(cleanModelOutput(event.text))
+                    break
+                case 'thinking':
+                    setThinkingContent(event.content)
+                    setIsThinking(true)
+                    break
+                case 'iteration':
+                    setAgentIteration({ current: event.iteration, max: event.maxIterations })
+                    break
+                case 'tool-executing':
+                    // Step already added by step-added event
+                    break
+                case 'completed':
+                    setAgentLoopRunning(false)
+                    setIsProcessing(false)
+                    setStreamingContent('')
+                    setIsThinking(false)
+                    setThinkingContent('')
+                    if (event.finalMessage) {
+                        setAiMessages(prev => [...prev, {
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: event.finalMessage,
+                            timestamp: Date.now(),
+                            modelId: loadedModelId || undefined
+                        }])
+                    }
+                    break
+                case 'error':
+                    setAgentLoopRunning(false)
+                    setIsProcessing(false)
+                    setStreamingContent('')
+                    setAiMessages(prev => [...prev, {
+                        id: crypto.randomUUID(),
+                        role: 'assistant',
+                        content: `Error: ${event.error}`,
+                        timestamp: Date.now(),
+                        isError: true
+                    }])
+                    break
+                case 'aborted':
+                    setAgentLoopRunning(false)
+                    setIsProcessing(false)
+                    setStreamingContent('')
+                    setIsThinking(false)
+                    setThinkingContent('')
+                    break
+            }
+        })
+
+        return unsubscribe
+    }, [loadedModelId])
+
     // Register Tool Confirmation Handler
     useEffect(() => {
-        toolPermissionManager.setConfirmationHandler(async (request) => {
-            return new Promise((resolve) => {
+        const handler = async (request: ToolCallRequest) => {
+            return new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
                 setPendingToolRequest(request)
                 setToolConfirmationResolver({
                     resolve: (result) => {
                         resolve(result)
-                        // Trigger scroll to bottom to show the executing tool
+                        setPendingToolRequest(null)
                         setTimeout(scrollToBottom, 100)
                     }
                 })
-                // Scroll to show the approval card
                 setTimeout(scrollToBottom, 100)
             })
-        })
+        }
+
+        toolPermissionManager.setConfirmationHandler(handler)
+        toolPermissionManager.setTrustedMode(false)
+        toolPermissionManager.setReadOnlyAutoAllow(true)
 
         return () => {
-            toolPermissionManager.setConfirmationHandler(async () => ({ approved: false, alwaysAllow: false }))
+            toolPermissionManager.setConfirmationHandler(null as any)
+            toolPermissionManager.setTrustedMode(false)
+            toolPermissionManager.clearSession()
         }
     }, [])
 
@@ -189,28 +340,6 @@ export default function UnifiedAgentPanel({
         if (inputRef.current) inputRef.current.focus()
     }, [activeMode, aiMode])
 
-    // Set up tool permission handler
-    useEffect(() => {
-        toolPermissionManager.setConfirmationHandler(async (request: ToolCallRequest) => {
-            return new Promise((resolve) => {
-                setPendingToolRequest(request)
-                setToolConfirmationResolver({ resolve })
-            })
-        })
-
-        // DISABLE trusted mode to show confirmation dialogs
-        // Users should approve destructive operations
-        toolPermissionManager.setTrustedMode(false)
-
-        // Auto-allow read-only tools (safe operations)
-        toolPermissionManager.setReadOnlyAutoAllow(true)
-
-        return () => {
-            toolPermissionManager.setConfirmationHandler(null as any)
-            toolPermissionManager.setTrustedMode(false)
-            toolPermissionManager.clearSession()
-        }
-    }, [])
 
     // --- P2P Encryption Logic ---
     useEffect(() => {
@@ -277,27 +406,43 @@ export default function UnifiedAgentPanel({
     }
 
     const handleStop = async () => {
-        if (!isProcessing) return
+        if (!isProcessing && !agentLoopRunning) return
 
         try {
+            // 1. Abort agent loop if running
+            if (agentLoopRunning) {
+                await agentLoopService.abort()
+            }
+
             // Cancel backend generation FIRST before resetting UI
             const currentAIMode = showAutonomous ? agentAIMode : aiMode
+
+            // 2. Cancel LLM generation
             if (currentAIMode === 'offline') {
                 await offlineLLMService.cancelGeneration()
             } else {
-                // Cancel cloud AI streams using AbortController
                 aiService.cancelStream()
             }
 
-            // Then reset all generation state
+            // 3. Cancel any executing tools
+            await stopActiveTool()
+
+            // 4. If in autonomous mode, stop the agent
+            if (showAutonomous) {
+                agent.toggleEnabled()
+            }
+
+            // Reset all generation state
             setIsProcessing(false)
+            setAgentLoopRunning(false)
             setStreamingContent('')
             setThinkingContent('')
             setIsThinking(false)
+            setAgentIteration(null)
         } catch (error) {
             console.error('Stop generation error:', error)
-            // Reset UI even if cancel fails
             setIsProcessing(false)
+            setAgentLoopRunning(false)
             setStreamingContent('')
             setThinkingContent('')
             setIsThinking(false)
@@ -339,6 +484,47 @@ export default function UnifiedAgentPanel({
             setInput('')
             setIsProcessing(true)
 
+            // ---- NEW: Use Agent Loop Service (ReAct engine) ----
+            if (useAgentLoop) {
+                setAgentSteps([])
+                agentLoopService.setUseOfflineAI(aiMode === 'offline')
+                agentLoopService.setCloudProvider(currentProvider)
+                agentLoopService.setWorkspacePath(workspacePath || '')
+
+                // Build chat history for context
+                const chatHistory = aiMessages.map(m => ({
+                    role: m.role === 'tool' ? 'assistant' : (m.role || 'user'),
+                    content: m.role === 'tool' ? `Tool ${m.toolName} result: ${m.toolResult?.slice(0, 500)}` : m.content
+                }))
+
+                try {
+                    // The loop service handles everything: tool calls, multi-turn, streaming
+                    // Events are received through the listener registered above
+                    await agentLoopService.run(text, chatHistory, {
+                        trustedMode: toolPermissionManager.isTrustedMode(),
+                        autoApproveReadOnly: true
+                    })
+                } catch (err) {
+                    if (isMountedRef.current) {
+                        setAiMessages(prev => [...prev, {
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: `Error: ${err instanceof Error ? err.message : 'Agent loop failed'}`,
+                            timestamp: Date.now(),
+                            isError: true
+                        }])
+                    }
+                } finally {
+                    if (isMountedRef.current) {
+                        setIsProcessing(false)
+                        setAgentLoopRunning(false)
+                        setStreamingContent('')
+                    }
+                }
+                return
+            }
+
+            // ---- LEGACY: Direct tool loop (kept as fallback) ----
             if (aiMode === 'offline') {
                 setStreamingContent('')
                 try {
@@ -448,8 +634,8 @@ If the user asks you to perform file operations (read, write, list files, etc.),
 
                         // Skip thinking tag parsing when doing tool calls (JSON grammar mode)
                         if (!enableThinkingParsing) {
-                            // Direct streaming for tool calls - just show the raw JSON being generated
-                            setStreamingContent(fullResponse)
+                            // For tool calls, show a status message instead of raw JSON
+                            setStreamingContent('🔧 Processing tool request...')
                             return
                         }
 
@@ -470,11 +656,11 @@ If the user asks you to perform file operations (read, write, list files, etc.),
                             }
                             // Show only content after closing tag
                             const afterThinking = fullResponse.split(thinkCloseTag).pop() ?? ''
-                            // Normal streaming (no thinking tags)
-                            setStreamingContent(afterThinking.replace(/```tool[\s\S]*?```/g, '').trim())
+                            // Clean and show content
+                            setStreamingContent(cleanModelOutput(afterThinking.replace(/```tool[\s\S]*?```/g, '')))
                         } else if (!inThinking) {
-                            // Normal streaming (no thinking tags)
-                            setStreamingContent(fullResponse.replace(/```tool[\s\S]*?```/g, '').trim())
+                            // Normal streaming - clean output for display
+                            setStreamingContent(cleanModelOutput(fullResponse.replace(/```tool[\s\S]*?```/g, '')))
                         }
                     }, options)
 
@@ -486,12 +672,12 @@ If the user asks you to perform file operations (read, write, list files, etc.),
                     const thinkingMatch = thinkingPattern.exec(response)
                     const thinking = thinkingMatch ? thinkingMatch[1].trim() : undefined
 
-                    // Clean main content (no thinking tags, no tool blocks)
-                    const mainContent = response
+                    // Clean main content (no thinking tags, no tool blocks, no special tokens, no raw JSON)
+                    const mainContent = cleanModelOutput(response
                         .replace(/<think>[\s\S]*?<\/think>/g, '')
                         .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
                         .replace(/```tool[\s\S]*?```/g, '')
-                        .trim()
+                    )
 
                     if (mainContent || thinking) {
                         setAiMessages(prev => [...prev, {
@@ -523,6 +709,13 @@ If the user asks you to perform file operations (read, write, list files, etc.),
                         toolMatch = toolPattern.exec(response) ?? toolShortPattern.exec(response)
                     }
 
+                    // Format 2a: JSON code block (NEW)
+                    if (!toolMatch) {
+                        // Look for ```json blocks that strictly contain "name" and "params"
+                        const jsonBlockPattern = /```json\s*\n?({[\s\S]*?"name"\s*:\s*[\s\S]*?"params"\s*:\s*[\s\S]*?})\n?```/i
+                        toolMatch = jsonBlockPattern.exec(response)
+                    }
+
                     // Format 3: Qwen-specific <tool_call> format (NEW)
                     if (!toolMatch) {
                         const qwenPattern = /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/i
@@ -550,33 +743,34 @@ If the user asks you to perform file operations (read, write, list files, etc.),
 
                     // Format 5: Direct JSON without wrapping (NEW - improved)
                     // The regex approach fails with nested braces, so we use JSON.parse instead
+                    // Format 5: Direct JSON without wrapping (NEW - improved)
+                    // The regex approach fails with nested braces, so we use JSON.parse instead
                     if (!toolMatch) {
-                        // Try to find where JSON might start
-                        const jsonStart = response.indexOf('{"name":')
-                        if (jsonStart !== -1) {
-                            // Extract from start position to end of response
-                            const jsonCandidate = response.substring(jsonStart)
+                        // FIX: Use Regex to find start of JSON, allowing for whitespace
+                        // Matches: { "name": or {"name":
+                        const jsonStartMatch = response.match(/\{\s*"name"\s*:/)
 
-                            // Try to parse it - JSON.parse will find the correct end
-                            try {
-                                // Find the matching closing brace by attempting parse
-                                // We'll try progressively longer substrings until parse succeeds
-                                for (let endPos = jsonCandidate.length; endPos >= 50; endPos--) {
-                                    try {
-                                        const potentialJson = jsonCandidate.substring(0, endPos)
-                                        const parsed = JSON.parse(potentialJson)
-                                        // Verify it has the expected structure
-                                        if (parsed.name && parsed.params) {
-                                            toolMatch = [potentialJson, potentialJson]
-                                            break
-                                        }
-                                    } catch {
-                                        // Keep trying shorter strings
-                                        continue
+                        if (jsonStartMatch && jsonStartMatch.index !== undefined) {
+                            // Extract from start position to end of response
+                            const jsonCandidate = response.substring(jsonStartMatch.index)
+
+                            // Optimization: Check for closing braces from the end
+                            // Instead of trying every character, try to find matching closing braces
+                            let endPos = jsonCandidate.lastIndexOf('}')
+
+                            while (endPos > 10) { // Minimal valid length for {"name":"a","params":{}}
+                                try {
+                                    const potentialJson = jsonCandidate.substring(0, endPos + 1)
+                                    const parsed = JSON.parse(potentialJson)
+                                    // Verify it has the expected structure
+                                    if (parsed.name && parsed.params) {
+                                        toolMatch = [potentialJson, potentialJson]
+                                        break
                                     }
+                                } catch {
+                                    // Invalid JSON, try next closing brace
                                 }
-                            } catch (_e) {
-                                console.log('[Agent] Failed to extract JSON from response')
+                                endPos = jsonCandidate.lastIndexOf('}', endPos - 1)
                             }
                         }
                     }
@@ -858,8 +1052,10 @@ When calling tools, wrap your JSON in markdown code blocks:
     // --- Sub-components ---
 
     // BUG #6: Sanitize AI responses to prevent XSS
+    // SECURITY: Encodes all OWASP-recommended characters for HTML context
     const sanitizeContent = (text: string): string => {
         return text
+            .replace(/&/g, '&amp;')   // Must be first to avoid double-encoding
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
@@ -871,13 +1067,51 @@ When calling tools, wrap your JSON in markdown code blocks:
         const isOwn = msg.senderId === userId.current || msg.role === 'user'
 
         if (msg.role === 'tool') {
+            let output = msg.toolResult || ''
+            let isJson = false
+            let jsonResult: any = null
+
+            // Try to parse JSON output (e.g. from executeCode)
+            try {
+                // Ensure output is a valid string before trimming
+                if (output && typeof output === 'string' && output.trim().startsWith('{')) {
+                    jsonResult = JSON.parse(output)
+                    isJson = true
+                }
+            } catch { /* ignore */ }
+
             return (
                 <div className="tool-message">
                     <div className="tool-header">
                         <TerminalIcon size={12} />
                         <span>{msg.toolName}</span>
                     </div>
-                    <pre className="tool-output">{msg.toolResult}</pre>
+                    <div className="tool-output">
+                        {isJson && (jsonResult.stdout !== undefined || jsonResult.stderr !== undefined) ? (
+                            <div className="code-execution-result">
+                                {jsonResult.stdout && (
+                                    <div className="std-out">
+                                        <div className="std-header">Output</div>
+                                        <pre>{jsonResult.stdout}</pre>
+                                    </div>
+                                )}
+                                {jsonResult.stderr && (
+                                    <div className="std-err">
+                                        <div className="std-header">Error</div>
+                                        <pre className="error-text">{jsonResult.stderr}</pre>
+                                    </div>
+                                )}
+                                {jsonResult.exitCode !== undefined && (
+                                    <div className="exit-code">Exit Code: {jsonResult.exitCode}</div>
+                                )}
+                                {jsonResult.error && (
+                                    <div className="exec-error">{jsonResult.error}</div>
+                                )}
+                            </div>
+                        ) : (
+                            <pre>{output}</pre>
+                        )}
+                    </div>
                 </div>
             )
         }
@@ -977,7 +1211,8 @@ When calling tools, wrap your JSON in markdown code blocks:
                                                 {currentOfflineModel ? currentOfflineModel.name : 'Select Model'} <ChevronDown size={12} />
                                             </button>
                                         )}
-                                        <button className="tool-btn" onClick={() => setAiMessages([])} title="Clear history"><Trash2 size={16} /></button>
+                                        <button className={`tool-btn ${useAgentLoop ? 'active' : ''}`} onClick={() => setUseAgentLoop(!useAgentLoop)} title={useAgentLoop ? 'Agent Mode (multi-step)' : 'Simple Chat Mode'}><Play size={16} /></button>
+                                        <button className="tool-btn" onClick={() => { setAiMessages([]); setAgentSteps([]) }} title="Clear history"><Trash2 size={16} /></button>
                                     </>
                                 ) : (
                                     <>
@@ -1017,6 +1252,77 @@ When calling tools, wrap your JSON in markdown code blocks:
                                     )}
                                     {aiMessages.map(m => <MessageBubble key={m.id} msg={m} />)}
 
+                                    {/* Agent Loop Steps (ReAct engine progress) */}
+                                    {agentSteps.length > 0 && (
+                                        <div className="agent-steps-container">
+                                            {agentIteration && (
+                                                <div className="agent-iteration-badge">
+                                                    Step {agentIteration.current}/{agentIteration.max}
+                                                </div>
+                                            )}
+                                            {agentSteps.map(step => (
+                                                <div key={step.id} className={`agent-step step-${step.type}`}>
+                                                    <div className="step-icon">
+                                                        {step.type === 'thinking' && <Brain size={14} />}
+                                                        {step.type === 'tool-call' && <Wrench size={14} />}
+                                                        {step.type === 'tool-result' && <CheckCircle2 size={14} />}
+                                                        {step.type === 'answer' && <Bot size={14} />}
+                                                        {step.type === 'plan' && <FileCode size={14} />}
+                                                        {step.type === 'error' && <AlertCircle size={14} />}
+                                                    </div>
+                                                    <div className="step-content">
+                                                        {step.type === 'tool-call' && (
+                                                            <div className="step-tool-header">
+                                                                <span className="tool-badge">{step.toolName}</span>
+                                                                {step.toolParams && (
+                                                                    <span className="tool-params-summary">
+                                                                        {Object.entries(step.toolParams)
+                                                                            .filter(([, v]) => typeof v === 'string' && (v as string).length < 60)
+                                                                            .map(([k, v]) => `${k}: ${v}`)
+                                                                            .join(', ')
+                                                                            .slice(0, 120)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {step.type === 'tool-result' && (
+                                                            <div className="step-tool-result">
+                                                                <span className="tool-badge result">{step.toolName}</span>
+                                                                <pre className="tool-result-pre">{
+                                                                    typeof step.content === 'string'
+                                                                        ? step.content.slice(0, 500)
+                                                                        : JSON.stringify(step.content).slice(0, 500)
+                                                                }</pre>
+                                                                {step.duration && <span className="step-duration">{step.duration}ms</span>}
+                                                            </div>
+                                                        )}
+                                                        {step.type === 'thinking' && (
+                                                            <div className="step-thinking">{step.content.slice(0, 300)}{step.content.length > 300 ? '...' : ''}</div>
+                                                        )}
+                                                        {step.type === 'error' && (
+                                                            <div className="step-error">{step.content}</div>
+                                                        )}
+                                                        {step.type === 'plan' && (
+                                                            <div className="step-plan">
+                                                                {step.content.split('\n').map((line, i) => (
+                                                                    <div key={i} className="plan-line">{line}</div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {agentLoopRunning && (
+                                                <div className="agent-step step-active">
+                                                    <div className="step-icon"><Loader2 size={14} className="animate-spin" /></div>
+                                                    <div className="step-content">
+                                                        <span className="step-active-text">Agent is working...</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Real-time Thinking Bubble during generation */}
                                     {(isThinking || thinkingContent) && (
                                         <div className={`thinking-bubble ${isThinking ? 'active' : ''}`}>
@@ -1042,61 +1348,35 @@ When calling tools, wrap your JSON in markdown code blocks:
                                         </div>
                                     )}
 
-                                    {/* Inline Tool Approval Card */}
-                                    {pendingToolRequest && (
-                                        <div className="inline-tool-approval">
-                                            <div className="tool-card-header">
-                                                <div className="tool-icon-wrapper execute">
-                                                    <TerminalIcon size={16} />
-                                                </div>
-                                                <span className="tool-name">
-                                                    Requesting: <strong>{pendingToolRequest.toolName}</strong>
-                                                </span>
-                                            </div>
-
-                                            <div className="tool-params">
-                                                {Object.entries(pendingToolRequest.params).map(([key, value]) => (
-                                                    <div key={key} className="param-row">
-                                                        <span className="param-key">{key}:</span>
-                                                        <span className="param-value">
-                                                            {typeof value === 'string' && value.includes('\n') ? (
-                                                                <pre>{value}</pre>
-                                                            ) : (
-                                                                JSON.stringify(value)
-                                                            )}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            <div className="tool-actions">
-                                                <button
-                                                    className="action-btn reject"
-                                                    onClick={() => {
-                                                        toolConfirmationResolver?.resolve({ approved: false, alwaysAllow: false })
-                                                        setPendingToolRequest(null)
-                                                    }}
-                                                >
-                                                    <X size={14} /> Cancel
-                                                </button>
-                                                <button
-                                                    className="action-btn approve"
-                                                    onClick={() => {
-                                                        toolConfirmationResolver?.resolve({ approved: true, alwaysAllow: false })
-                                                        setPendingToolRequest(null)
-                                                    }}
-                                                >
-                                                    <Zap size={14} /> Run Tool
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
                                     <div ref={messagesEndRef} />
                                 </div>
                             </>
                         ) : (
                             // Autonomous Mode
                             <div className="agent-body">
+                                {/* Agent Status Indicator */}
+                                <div className="agent-status-bar">
+                                    <div className={`status-icon state-${agent.state}`}>
+                                        {agent.state === 'thinking' ? <Brain size={14} /> :
+                                            agent.state === 'executing' ? <Zap size={14} /> :
+                                                agent.state === 'waiting-approval' ? <AlertCircle size={14} /> :
+                                                    agent.state === 'observing' ? <Bot size={14} /> :
+                                                        <Monitor size={14} />}
+                                    </div>
+                                    <div className="status-info">
+                                        <div className="status-text main-status">
+                                            {agent.state.replace('-', ' ')}
+                                        </div>
+                                        <div className="status-text sub-status">
+                                            {agent.state === 'observing' ? 'Monitoring workspace for changes...' :
+                                                agent.state === 'thinking' ? 'Analyzing project context...' :
+                                                    agent.state === 'executing' ? 'Performing requested actions...' :
+                                                        agent.state === 'waiting-approval' ? 'Pending your review' :
+                                                            'Idle'}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* Workspace Scan Section */}
                                 {workspacePath && agent.config.enabled && (
                                     <div className="workspace-scan-section">
@@ -1206,6 +1486,12 @@ When calling tools, wrap your JSON in markdown code blocks:
 
                                                     // Analyze each file with 120s timeout
                                                     for (let i = 0; i < filesToAnalyze.length; i++) {
+                                                        // FIX BUG-008: Check if component is still mounted before state updates
+                                                        if (!isMountedRef.current) {
+                                                            console.log('[Scan] Component unmounted, stopping scan')
+                                                            break
+                                                        }
+
                                                         const file = filesToAnalyze[i]
                                                         setScanProgress({ current: i + 1, total: filesToAnalyze.length, currentFile: file.name })
 
@@ -1271,11 +1557,12 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                                                                 })
 
                                                                 // Create timeout that also cancels the generation
+                                                                // FIX BUG-004: Use custom error class for proper timeout detection
                                                                 const timeoutPromise = new Promise<string>((_, reject) => {
                                                                     timeoutId = window.setTimeout(async () => {
                                                                         // Cancel the ongoing generation
                                                                         await offlineLLMService.cancelGeneration()
-                                                                        reject(new Error('Analysis timed out'))
+                                                                        reject(new AnalysisTimeoutError())
                                                                     }, fileTimeoutMs)
                                                                 })
 
@@ -1286,8 +1573,9 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                                                                 }
                                                             } else {
                                                                 // Cloud AI mode with 120s timeout
+                                                                // FIX BUG-004: Use custom error class for proper timeout detection
                                                                 const cloudTimeoutPromise = new Promise<any>((_, reject) => {
-                                                                    timeoutId = window.setTimeout(() => reject(new Error('Analysis timed out')), fileTimeoutMs)
+                                                                    timeoutId = window.setTimeout(() => reject(new AnalysisTimeoutError()), fileTimeoutMs)
                                                                 })
 
                                                                 const chatPromise = aiService.chat([
@@ -1341,12 +1629,14 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                                                                 }
                                                             }
                                                         } catch (e) {
-                                                            const errorMsg = e instanceof Error ? e.message : 'Unknown error'
-                                                            if (errorMsg.includes('timed out')) {
+                                                            // FIX BUG-004: Use instanceof to properly distinguish timeout from other errors
+                                                            if (e instanceof AnalysisTimeoutError) {
                                                                 timedOutFiles++
                                                                 console.warn('Analysis timed out for', file.name)
                                                             } else {
-                                                                console.error('Failed to analyze', file.name, e)
+                                                                // Log the actual error for debugging
+                                                                const errorMsg = e instanceof Error ? e.message : 'Unknown error'
+                                                                console.error('Failed to analyze', file.name, ':', errorMsg)
                                                                 skippedFiles++
                                                             }
                                                         }
@@ -1396,11 +1686,11 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                                                         content: `**Workspace Scan Complete**\n\nSuccessfully analyzed **${analyzedFiles}** of ${filesToAnalyze.length} files.${statusNotes.length > 0 ? `\n_(${statusNotes.join(', ')})_` : ''}\n\n` +
                                                             (allIssues.length > 0
                                                                 ? `Found **${allIssues.length}** issues:\n` +
-                                                                  `- 🐛 Bugs: ${bugCount}\n` +
-                                                                  `- 🔒 Security: ${securityCount}\n` +
-                                                                  `- ⚡ Performance: ${perfCount}\n` +
-                                                                  `- 💡 Improvements: ${improvementCount}\n\n` +
-                                                                  `**Review issues in the Pending Tasks section above** to approve or reject suggestions.`
+                                                                `- 🐛 Bugs: ${bugCount}\n` +
+                                                                `- 🔒 Security: ${securityCount}\n` +
+                                                                `- ⚡ Performance: ${perfCount}\n` +
+                                                                `- 💡 Improvements: ${improvementCount}\n\n` +
+                                                                `**Review issues in the Pending Tasks section above** to approve or reject suggestions.`
                                                                 : '✅ No major issues found! Your code looks good.'),
                                                         timestamp: Date.now()
                                                     }])
@@ -1499,9 +1789,15 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                                         <div className="log-entries">
                                             {agent.activityLog.map(entry => (
                                                 <div key={entry.id} className="log-entry">
-                                                    <span className="entry-icon">{entry.type === 'execution' ? <Zap size={10} /> : <Scroll size={10} />}</span>
+                                                    <span className={`entry-icon ${entry.type}`}>
+                                                        {entry.type === 'execution' ? <Zap size={12} /> :
+                                                            entry.type === 'analysis' ? <Brain size={12} /> :
+                                                                entry.type === 'suggestion' ? <Lightbulb size={12} /> :
+                                                                    entry.type === 'error' ? <AlertCircle size={12} /> :
+                                                                        <Scroll size={12} />}
+                                                    </span>
                                                     <span className="entry-msg">{entry.message}</span>
-                                                    <span className="entry-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                    <span className="entry-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1532,6 +1828,56 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                                 )}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Shared Inline Tool Approval Card */}
+                {pendingToolRequest && (
+                    <div className="shared-tool-approval">
+                        <div className="tool-card-header">
+                            <div className="tool-icon-wrapper execute">
+                                <TerminalIcon size={16} />
+                            </div>
+                            <span className="tool-name">
+                                <strong>{pendingToolRequest.toolName.toUpperCase()}</strong> permission requested
+                            </span>
+                        </div>
+
+                        <div className="tool-params">
+                            {Object.entries(pendingToolRequest.params).map(([key, value]) => (
+                                <div key={key} className="param-row">
+                                    <span className="param-key">{key}:</span>
+                                    <span className="param-value">
+                                        {typeof value === 'string' && value.includes('\n') ? (
+                                            <pre>{value}</pre>
+                                        ) : (
+                                            JSON.stringify(value)
+                                        )}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="tool-actions">
+                            <button
+                                className="action-btn reject"
+                                onClick={() => {
+                                    toolConfirmationResolver?.resolve({ approved: false, alwaysAllow: false })
+                                    setPendingToolRequest(null)
+                                }}
+                            >
+                                <X size={14} /> Deny
+                            </button>
+                            <button
+                                className="action-btn approve"
+                                onClick={() => {
+                                    toolConfirmationResolver?.resolve({ approved: true, alwaysAllow: false })
+                                    setPendingToolRequest(null)
+                                }}
+                            >
+                                <Zap size={14} /> Approve & Run
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -2067,23 +2413,34 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     white-space: nowrap;
                 }
 
-                .agent-status-indicator { display: flex; align-items: center; gap: 12px; }
+                .agent-status-bar { 
+                    display: flex; 
+                    align-items: center; 
+                    gap: 16px; 
+                    padding: var(--space-4); 
+                    background: rgba(255, 255, 255, 0.02);
+                    border-bottom: 1px solid var(--color-border-subtle);
+                    margin-bottom: var(--space-4);
+                }
                 .status-icon {
-                    width: 36px;
-                    height: 36px;
+                    width: 38px;
+                    height: 38px;
                     border-radius: 50%;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     background: var(--color-surface-elevated);
                     border: 2px solid var(--color-border);
+                    flex-shrink: 0;
                 }
                 .status-icon.state-executing { border-color: var(--color-accent); color: var(--color-accent); animation: pulse 1s infinite alternate; }
                 .status-icon.state-waiting-approval { border-color: var(--color-warning); color: var(--color-warning); }
                 .status-icon.state-observing { border-color: var(--color-success); color: var(--color-success); }
+                .status-icon.state-thinking { border-color: #a855f7; color: #a855f7; animation: spin 2s linear infinite; }
                 
-                .status-text.main-status { font-weight: 700; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.5px; }
-                .status-text.sub-status { font-size: 10px; color: var(--color-text-muted); }
+                .status-info { display: flex; flex-direction: column; gap: 2px; }
+                .status-text.main-status { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--color-text); }
+                .status-text.sub-status { font-size: 11px; color: var(--color-text-muted); }
 
                 .toggle-switch {
                     font-size: 10px;
@@ -2178,12 +2535,20 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                 .approve-btn { background: var(--color-success); color: #000; }
                 .approve-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
 
-                .log-section { margin-top: var(--space-6); background: var(--color-surface-subtle); border-radius: var(--radius-md); padding: var(--space-3); }
-                .log-header { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-bottom: 8px; }
-                .clear-link { color: var(--color-text-muted); text-decoration: underline; font-size: 10px; background: none; border: none; cursor: pointer; }
-                .log-entries { display: flex; flex-direction: column; gap: 4px; }
-                .log-entry { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--color-text-secondary); }
-                .entry-time { margin-left: auto; font-family: var(--font-mono); opacity: 0.6; }
+                .log-section { margin-top: var(--space-6); background: rgba(255, 255, 255, 0.03); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); backdrop-filter: blur(8px); }
+                .log-header { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-bottom: 12px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+                .clear-link { color: var(--color-accent); text-decoration: none; font-size: 10px; background: none; border: none; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; }
+                .clear-link:hover { opacity: 1; }
+                .log-entries { display: flex; flex-direction: column; gap: 8px; }
+                .log-entry { display: flex; align-items: flex-start; gap: 10px; font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+                .log-entry:last-child { border-bottom: none; }
+                .entry-icon { flex-shrink: 0; margin-top: 2px; }
+                .entry-icon.analysis { color: #a855f7; }
+                .entry-icon.execution { color: var(--color-accent); }
+                .entry-icon.suggestion { color: var(--color-success); }
+                .entry-icon.error { color: var(--color-error); }
+                .entry-msg { flex: 1; }
+                .entry-time { flex-shrink: 0; font-family: var(--font-mono); opacity: 0.4; font-size: 9px; margin-top: 2px; }
 
                 .empty-state, .agent-intro {
                     height: 100%;
@@ -2211,15 +2576,22 @@ Output JSON with issues array. If no issues, return {"issues": []}`
 
                 @keyframes typing { from { transform: translateY(0); opacity: 0.3; } to { transform: translateY(-4px); opacity: 1; } }
 
-                /* Inline Tool Approval Card */
-                .inline-tool-approval {
+                /* Shared Inline Tool Approval Card */
+                .shared-tool-approval {
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
                     background: var(--color-surface-elevated);
-                    border: 1px solid var(--color-border);
-                    border-radius: var(--radius-lg);
-                    margin: var(--space-3) 0;
-                    overflow: hidden;
-                    animation: slideIn 0.2s ease-out;
-                    box-shadow: var(--shadow-md);
+                    border-top: 2px solid var(--color-accent);
+                    z-index: 1000;
+                    animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    box-shadow: 0 -8px 24px rgba(0,0,0,0.5);
+                }
+
+                @keyframes slideUp {
+                    from { transform: translateY(100%); }
+                    to { transform: translateY(0); }
                 }
 
                 .tool-card-header {
@@ -2309,6 +2681,146 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                 @keyframes slideIn {
                     from { opacity: 0; transform: translateY(10px); }
                     to { opacity: 1; transform: translateY(0); }
+                }
+
+                /* ============================================ */
+                /* Agent Loop Steps (ReAct engine UI)           */
+                /* ============================================ */
+
+                .agent-steps-container {
+                    padding: var(--space-2) var(--space-3);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+
+                .agent-iteration-badge {
+                    font-size: 10px;
+                    color: var(--color-text-tertiary);
+                    text-align: center;
+                    padding: 2px 8px;
+                    margin-bottom: 4px;
+                    opacity: 0.7;
+                }
+
+                .agent-step {
+                    display: flex;
+                    gap: 8px;
+                    padding: 6px 10px;
+                    border-radius: var(--radius-md);
+                    animation: stepFadeIn 0.2s ease-out;
+                    font-size: var(--text-xs);
+                    line-height: 1.4;
+                }
+
+                .agent-step .step-icon {
+                    flex-shrink: 0;
+                    margin-top: 1px;
+                    color: var(--color-text-tertiary);
+                }
+
+                .agent-step .step-content {
+                    flex: 1;
+                    min-width: 0;
+                    overflow: hidden;
+                }
+
+                .step-thinking {
+                    color: var(--color-text-tertiary);
+                    font-style: italic;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                }
+
+                .step-tool-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                }
+
+                .tool-badge {
+                    display: inline-block;
+                    font-size: 10px;
+                    font-weight: 600;
+                    padding: 1px 6px;
+                    border-radius: var(--radius-sm);
+                    background: rgba(59, 130, 246, 0.15);
+                    color: var(--color-accent);
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+
+                .tool-badge.result {
+                    background: rgba(34, 197, 94, 0.15);
+                    color: var(--color-success);
+                }
+
+                .tool-params-summary {
+                    color: var(--color-text-tertiary);
+                    font-size: 10px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .step-tool-result {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                }
+
+                .tool-result-pre {
+                    font-family: var(--font-mono, monospace);
+                    font-size: 10px;
+                    background: var(--color-surface);
+                    border: 1px solid var(--color-border-subtle);
+                    border-radius: var(--radius-sm);
+                    padding: 6px 8px;
+                    max-height: 120px;
+                    overflow: auto;
+                    white-space: pre-wrap;
+                    word-break: break-all;
+                    color: var(--color-text-secondary);
+                    margin: 0;
+                }
+
+                .step-duration {
+                    font-size: 9px;
+                    color: var(--color-text-tertiary);
+                    align-self: flex-end;
+                }
+
+                .step-error {
+                    color: var(--color-error, #ef4444);
+                    font-weight: 500;
+                }
+
+                .step-plan {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+
+                .plan-line {
+                    padding: 2px 0;
+                    color: var(--color-text-secondary);
+                }
+
+                .step-active-text {
+                    color: var(--color-accent);
+                    font-weight: 500;
+                }
+
+                .step-tool-call { background: rgba(59, 130, 246, 0.04); }
+                .step-tool-result { background: rgba(34, 197, 94, 0.04); }
+                .step-error { background: rgba(239, 68, 68, 0.06); }
+                .step-thinking { background: rgba(168, 85, 247, 0.04); }
+                .step-active { background: rgba(59, 130, 246, 0.06); }
+
+                @keyframes stepFadeIn {
+                    from { opacity: 0; transform: translateX(-8px); }
+                    to { opacity: 1; transform: translateX(0); }
                 }
             `}</style>
         </div >

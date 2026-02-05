@@ -16,11 +16,16 @@ export interface AIMessage {
     content: string
 }
 
+// FIX BUG-010: Error types for better error handling and retry logic
+export type AIErrorType = 'network' | 'timeout' | 'auth' | 'rate_limit' | 'api' | 'unknown'
+
 export interface AIResponse {
     content: string
     provider: AIProvider
     model: string
     error?: string
+    // FIX BUG-010: Add error type for distinguishing retriable vs permanent errors
+    errorType?: AIErrorType
     usage?: {
         promptTokens: number
         completionTokens: number
@@ -101,11 +106,29 @@ class AIService {
             if (provider === 'google') return await this.chatGoogle(messages, key, options)
             return { content: '', provider, model: '', error: 'Unknown provider' }
         } catch (error) {
+            // FIX BUG-010: Classify error type for better error handling
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+            let errorType: AIErrorType = 'unknown'
+
+            // Classify based on error message patterns
+            if (error instanceof TypeError || errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('Failed to fetch')) {
+                errorType = 'network'
+            } else if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+                errorType = 'timeout'
+            } else if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Unauthorized') || errorMessage.includes('Invalid API key')) {
+                errorType = 'auth'
+            } else if (errorMessage.includes('429') || errorMessage.includes('rate limit') || errorMessage.includes('Too Many Requests')) {
+                errorType = 'rate_limit'
+            } else if (errorMessage.includes('400') || errorMessage.includes('500') || errorMessage.includes('502') || errorMessage.includes('503')) {
+                errorType = 'api'
+            }
+
             return {
                 content: '',
                 provider,
                 model: '',
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: errorMessage,
+                errorType
             }
         }
     }

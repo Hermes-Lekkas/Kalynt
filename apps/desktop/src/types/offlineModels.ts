@@ -17,6 +17,28 @@ export type ModelQuality = 1 | 2 | 3 | 4 | 5
 export type DownloadStatus = 'not_downloaded' | 'downloading' | 'paused' | 'downloaded' | 'error'
 
 /**
+ * Model capability levels
+ * - chat: Can only chat and answer questions (smallest models)
+ * - read: Can chat + read files (small models)
+ * - write: Can chat + read + write files (medium models)
+ * - full: All capabilities including code execution (large models)
+ */
+export type ModelCapabilityLevel = 'chat' | 'read' | 'write' | 'full'
+
+/**
+ * Detailed model capabilities
+ */
+export interface ModelCapabilities {
+    level: ModelCapabilityLevel
+    canReadFiles: boolean
+    canWriteFiles: boolean
+    canExecuteCode: boolean
+    canRunCommands: boolean
+    maxContextForSpeed: number  // Recommended context for fast responses
+    supportsToolCalling: boolean
+}
+
+/**
  * Configuration for an offline LLM model
  */
 export interface OfflineModel {
@@ -35,6 +57,7 @@ export interface OfflineModel {
     contextLength: number     // Max context in tokens
     promptTemplate: string    // Chat prompt format
     role?: string             // Role in IDE (e.g., "The Flagship Agent")
+    capabilities: ModelCapabilities  // What the model can do
 }
 
 /**
@@ -88,7 +111,7 @@ export const OFFLINE_MODELS: OfflineModel[] = [
     {
         id: 'qwen2.5-coder-1.5b',
         name: 'Qwen2.5-Coder 1.5B',
-        description: 'Fast autocomplete engine. Trained on 5.5T tokens for code generation, reasoning and fixing. Small enough for real-time suggestions. Note: Limited tool-calling ability compared to 7B+ models. Best for code completion, not complex tool orchestration.',
+        description: 'Fast chat assistant for code discussions. Can read files and answer questions. Note: Cannot edit files or execute code - use larger models for those tasks.',
         size: '1.7 GB',
         sizeBytes: 1_700_000_000,
         ramRequired: '4 GB',
@@ -100,13 +123,22 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         tierIndex: 1,
         contextLength: 32768,
         promptTemplate: QWEN_TEMPLATE,
-        role: 'The Autocomplete'
+        role: 'The Chat Assistant',
+        capabilities: {
+            level: 'read',
+            canReadFiles: true,
+            canWriteFiles: false,
+            canExecuteCode: false,
+            canRunCommands: false,
+            maxContextForSpeed: 2048,
+            supportsToolCalling: false  // Limited tool calling ability
+        }
     },
     // 2. The Balanced Model - Qwen2.5-Coder-7B Q4_K_M (RAM-Efficient)
     {
         id: 'qwen2.5-coder-7b-q4',
         name: 'Qwen2.5-Coder 7B Q4_K_M',
-        description: 'RAM-efficient version of Qwen 7B with Q4_K_M quantization. Perfect balance of performance and memory usage. Same capabilities as Q8 version but uses 40% less RAM. Recommended for systems with 8-10GB RAM.',
+        description: 'RAM-efficient coding assistant. Can read files and provide suggestions. Good for code discussions and analysis. Uses 40% less RAM than Q8 version.',
         size: '4.68 GB',
         sizeBytes: 4_680_000_000,
         ramRequired: '8 GB',
@@ -118,13 +150,22 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         tierIndex: 2,
         contextLength: 128000,
         promptTemplate: QWEN_TEMPLATE,
-        role: 'The Balanced Model'
+        role: 'The Balanced Model',
+        capabilities: {
+            level: 'read',
+            canReadFiles: true,
+            canWriteFiles: false,
+            canExecuteCode: false,
+            canRunCommands: false,
+            maxContextForSpeed: 4096,
+            supportsToolCalling: true
+        }
     },
     // 3. The Reasoning Model - Qwen3-4B-Thinking-2507 (Extended Reasoning Specialist)
     {
         id: 'qwen3-4b-thinking',
         name: 'Qwen3-4B-Thinking-2507 Q5_K_XL',
-        description: 'Extended reasoning specialist with 256K context. Designed for complex problem-solving with step-by-step thinking. Native thinking mode for mathematical proofs, code analysis, and logical reasoning. Lightweight at 2.9GB but powerful reasoning. Recommended context: 131K+ for best results.',
+        description: 'Reasoning specialist for complex problem-solving. Uses step-by-step thinking for code analysis. Can read files and provide detailed explanations. Best for understanding complex code.',
         size: '2.9 GB',
         sizeBytes: 2_900_000_000,
         ramRequired: '6 GB',
@@ -136,13 +177,22 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         tierIndex: 3,
         contextLength: 262144,  // 256K native context with YaRN extension
         promptTemplate: QWEN_TEMPLATE,
-        role: 'The Reasoning Model'
+        role: 'The Reasoning Model',
+        capabilities: {
+            level: 'read',
+            canReadFiles: true,
+            canWriteFiles: false,
+            canExecuteCode: false,
+            canRunCommands: false,
+            maxContextForSpeed: 4096,
+            supportsToolCalling: true
+        }
     },
     // 4. The Agent - Qwen2.5-Coder-7B Q8 (Tool-Calling Specialist)
     {
         id: 'qwen2.5-coder-7b',
         name: 'Qwen2.5-Coder 7B Q8',
-        description: 'Excellent tool-calling model trained for agentic coding. 128K context with strong reasoning and function calling abilities. Higher quality Q8 quantization for best results. (SWE-bench Verified: Up to 47%)',
+        description: 'Full-featured coding agent. Can read, write, and edit files. Strong tool-calling abilities for agentic coding. Higher quality Q8 quantization. (SWE-bench: 47%)',
         size: '7.7 GB',
         sizeBytes: 7_700_000_000,
         ramRequired: '12 GB',
@@ -154,13 +204,22 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         tierIndex: 4,
         contextLength: 128000,
         promptTemplate: QWEN_TEMPLATE,
-        role: 'The Agent'
+        role: 'The Agent',
+        capabilities: {
+            level: 'full',
+            canReadFiles: true,
+            canWriteFiles: true,
+            canExecuteCode: true,
+            canRunCommands: true,
+            maxContextForSpeed: 8192,
+            supportsToolCalling: true
+        }
     },
     // 5. The Repo Architect - Devstral Small 2 24B (Agentic Coding Specialist)
     {
         id: 'devstral-small-2-24b',
         name: 'Devstral Small 2 24B',
-        description: 'Agentic coding specialist from Mistral AI. 256K context, vision capabilities, optimized for software engineering agents. (SWE-bench Verified: 68.0%)',
+        description: 'Professional coding agent from Mistral AI. Full IDE capabilities with 128K context. Optimized for software engineering. (SWE-bench: 68%)',
         size: '14.3 GB',
         sizeBytes: 14_330_000_000,
         ramRequired: '20 GB',
@@ -172,13 +231,22 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         tierIndex: 5,
         contextLength: 131072,  // 128K practical limit (model supports 256K)
         promptTemplate: DEVSTRAL_TEMPLATE,
-        role: 'The Repo Architect'
+        role: 'The Repo Architect',
+        capabilities: {
+            level: 'full',
+            canReadFiles: true,
+            canWriteFiles: true,
+            canExecuteCode: true,
+            canRunCommands: true,
+            maxContextForSpeed: 16384,
+            supportsToolCalling: true
+        }
     },
     // 6. The Flagship Agent - Qwen2.5-Coder-14B (The Brain)
     {
         id: 'qwen2.5-coder-14b',
         name: 'Qwen2.5-Coder-14B',
-        description: 'Flagship agentic model. Best for tool-use with 128K context to index entire projects. (SWE-bench Verified: Up to 47%)',
+        description: 'Flagship coding agent. Full IDE control with 128K context for indexing entire projects. Best for complex coding tasks. (SWE-bench: 47%)',
         size: '9.0 GB',
         sizeBytes: 9_000_000_000,
         ramRequired: '16 GB',
@@ -190,7 +258,16 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         tierIndex: 6,
         contextLength: 128000,
         promptTemplate: QWEN_TEMPLATE,
-        role: 'The Flagship Agent'
+        role: 'The Flagship Agent',
+        capabilities: {
+            level: 'full',
+            canReadFiles: true,
+            canWriteFiles: true,
+            canExecuteCode: true,
+            canRunCommands: true,
+            maxContextForSpeed: 16384,
+            supportsToolCalling: true
+        }
     }
 ]
 
@@ -199,6 +276,42 @@ export const OFFLINE_MODELS: OfflineModel[] = [
  */
 export function getModelById(id: string): OfflineModel | undefined {
     return OFFLINE_MODELS.find(m => m.id === id)
+}
+
+/**
+ * Get model capabilities by ID
+ */
+export function getModelCapabilities(id: string): ModelCapabilities | undefined {
+    const model = getModelById(id)
+    return model?.capabilities
+}
+
+/**
+ * Check if a model can perform a specific action
+ */
+export function canModelPerformAction(
+    modelId: string,
+    action: 'read' | 'write' | 'execute' | 'command'
+): boolean {
+    const caps = getModelCapabilities(modelId)
+    if (!caps) return false
+
+    switch (action) {
+        case 'read': return caps.canReadFiles
+        case 'write': return caps.canWriteFiles
+        case 'execute': return caps.canExecuteCode
+        case 'command': return caps.canRunCommands
+        default: return false
+    }
+}
+
+/**
+ * Check if a model is considered "small" (read-only capabilities)
+ */
+export function isReadOnlyModel(modelId: string): boolean {
+    const caps = getModelCapabilities(modelId)
+    if (!caps) return true  // Default to restricted if unknown
+    return caps.level === 'chat' || caps.level === 'read'
 }
 
 /**

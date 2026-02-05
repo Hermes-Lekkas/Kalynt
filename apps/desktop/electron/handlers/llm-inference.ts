@@ -25,6 +25,42 @@ let llamaContext: LlamaContext | null = null
 let nodeLlamaCpp: typeof import('node-llama-cpp')
 let llamaInstance: Llama | null = null
 
+/**
+ * ESM FIX: Create a dynamic import that bundlers can't transform to require()
+ * The Function constructor creates a new scope where the import() is evaluated at runtime,
+ * preventing Rollup/Vite from converting it to require() during bundling.
+ * This is necessary because node-llama-cpp is an ESM-only package.
+ */
+async function dynamicImportESM(modulePath: string): Promise<any> {
+    // SECURITY: Validate module path is within expected locations
+    // Only allow node-llama-cpp from node_modules, resources, or as bare module name
+    const normalizedPath = path.normalize(modulePath).toLowerCase()
+
+    // Allow bare module name 'node-llama-cpp' (used in development mode)
+    // Node.js resolves this through standard module resolution to node_modules
+    const isBareModuleName = modulePath === 'node-llama-cpp'
+
+    const allowedPatterns = [
+        'node_modules/node-llama-cpp',
+        'node_modules\\node-llama-cpp',
+        'resources/node_modules/node-llama-cpp',
+        'resources\\node_modules\\node-llama-cpp'
+    ]
+
+    const isAllowedPath = allowedPatterns.some(pattern =>
+        normalizedPath.includes(pattern.toLowerCase())
+    )
+
+    if (!isBareModuleName && !isAllowedPath) {
+        throw new Error(`Unauthorized module path: ${modulePath}`)
+    }
+
+    // Use Function constructor to prevent bundler transformation
+    // This creates: (async () => await import(modulePath))()
+    const importFn = new Function('modulePath', 'return import(modulePath)')
+    return importFn(modulePath)
+}
+
 const activeGenerations = new Map<string, AbortController>()
 
 export function registerLLMInferenceHandlers(
@@ -104,11 +140,12 @@ export function registerLLMInferenceHandlers(
                             return { success: false, error: 'AI engine files are missing. Please reinstall the application.' }
                         }
 
-                        // Use dynamic import for ES Module compatibility
-                        nodeLlamaCpp = await import(llamaModulePath)
+                        // ESM FIX: Use dynamicImportESM to prevent bundler from converting to require()
+                        nodeLlamaCpp = await dynamicImportESM(llamaModulePath)
                     } else {
                         console.log('[Main] Development mode - using standard import')
-                        nodeLlamaCpp = await import('node-llama-cpp')
+                        // ESM FIX: Use dynamicImportESM to prevent bundler from converting to require()
+                        nodeLlamaCpp = await dynamicImportESM('node-llama-cpp')
                     }
 
                     console.log('[Main] node-llama-cpp v3 loaded successfully')
@@ -162,14 +199,29 @@ export function registerLLMInferenceHandlers(
                 console.log('[Main] Model loaded successfully')
                 console.log('[Main] Model trained context size:', llamaModel.trainContextSize)
 
-                const requestedContext = options.contextLength || 4096
+                // Auto-detect small models and apply speed optimizations
+                const isSmallModel = /1\.5b|1b|3b|4b/i.test(options.modelId)
+                const isTinyModel = /1\.5b|1b/i.test(options.modelId)
+
+                // Use larger context for small models to prevent truncation of code/logs
+                let requestedContext = options.contextLength || 8192
+                if (isTinyModel && requestedContext > 8192) {
+                    console.log('[Main] Tiny model detected - limiting context to 8192 for speed/RAM')
+                    requestedContext = 8192
+                } else if (isSmallModel && requestedContext > 16384) {
+                    console.log('[Main] Small model detected - limiting context to 16384 for speed/RAM')
+                    requestedContext = 16384
+                }
+
                 const maxSafeContext = Math.min(requestedContext, llamaModel.trainContextSize || requestedContext)
 
-                const kvQuantization = options.aimeConfig?.kvCacheQuantization || 'q8'
-                const batchSize = options.aimeConfig?.batchSize || 512
-                const threads = options.aimeConfig?.threads || 4
+                // Apply speed-optimized defaults for small models
+                const kvQuantization = options.aimeConfig?.kvCacheQuantization || (isSmallModel ? 'q4' : 'q8')
+                const batchSize = options.aimeConfig?.batchSize || (isTinyModel ? 64 : isSmallModel ? 128 : 256)
+                const threads = options.aimeConfig?.threads || (isTinyModel ? 2 : isSmallModel ? 4 : 4)
 
                 console.log('[Main] Creating context - requested:', requestedContext, 'safe max:', maxSafeContext)
+                console.log('[Main] Model category:', isTinyModel ? 'tiny' : isSmallModel ? 'small' : 'standard')
                 console.log('[Main] AIME - KV Cache Quantization:', kvQuantization)
                 console.log('[Main] AIME - Batch Size:', batchSize)
                 console.log('[Main] AIME - CPU Threads:', threads)
@@ -295,14 +347,19 @@ export function registerLLMInferenceHandlers(
                 return null
             }
 
+            // Capture model reference at start to detect if it gets unloaded during generation
+            const currentModel = llamaModel
+            let sequence: any = null
             try {
-
-                const sequence = llamaContext!.getSequence()
+                sequence = llamaContext!.getSequence()
                 if (!sequence) {
                     throw new Error('Failed to get sequence from context')
                 }
 
-                const tokens = llamaModel.tokenize(options.prompt)
+                if (!currentModel) {
+                    throw new Error('Model was unloaded before generation started')
+                }
+                const tokens = currentModel.tokenize(options.prompt)
 
                 let grammar: any = undefined
                 if (options.jsonSchema && nodeLlamaCpp) {
@@ -328,7 +385,12 @@ export function registerLLMInferenceHandlers(
                 }
 
                 for await (const token of sequence.evaluate(tokens, evaluateOptions)) {
-                    const text = llamaModel.detokenize([token])
+                    // Check if model was unloaded during generation
+                    if (!llamaModel) {
+                        console.log('[Main] Model was unloaded during generation, stopping')
+                        break
+                    }
+                    const text = currentModel.detokenize([token])
                     accumulatedText += text
 
                     if (accumulatedText.length > options.maxTokens * 4) break
@@ -340,10 +402,18 @@ export function registerLLMInferenceHandlers(
                     }
                 }
             } catch (e: unknown) {
-
                 const err = e as Error
                 if (err.name !== 'AbortError' && !err.message?.includes('abort')) {
                     throw e
+                }
+            } finally {
+                // CRITICAL: Dispose sequence to free resources and prevent "No sequences left" error
+                if (sequence && typeof sequence.dispose === 'function') {
+                    try {
+                        sequence.dispose()
+                    } catch (disposeErr) {
+                        console.warn('[Main] Failed to dispose sequence:', disposeErr)
+                    }
                 }
             }
 
@@ -409,15 +479,20 @@ export function registerLLMInferenceHandlers(
             }
 
             let aborted = false
+            let sequence: any = null
+            // Capture model reference at start to detect if it gets unloaded during generation
+            const currentModel = llamaModel
 
             try {
-
-                const sequence = llamaContext!.getSequence()
+                sequence = llamaContext!.getSequence()
                 if (!sequence) {
                     throw new Error('Failed to get sequence from context')
                 }
 
-                const tokens = llamaModel.tokenize(options.prompt)
+                if (!currentModel) {
+                    throw new Error('Model was unloaded before generation started')
+                }
+                const tokens = currentModel.tokenize(options.prompt)
 
                 let grammar: any = undefined
                 if (options.jsonSchema && nodeLlamaCpp) {
@@ -443,7 +518,12 @@ export function registerLLMInferenceHandlers(
                 }
 
                 for await (const token of sequence.evaluate(tokens, evaluateOptions)) {
-                    const text = llamaModel.detokenize([token])
+                    // Check if model was unloaded during generation
+                    if (!llamaModel) {
+                        console.log('[Main] Model was unloaded during streaming generation, stopping')
+                        break
+                    }
+                    const text = currentModel.detokenize([token])
                     accumulatedText += text
 
                     if (shouldStop(accumulatedText)) {
@@ -465,7 +545,7 @@ export function registerLLMInferenceHandlers(
                         requestId,
                         error: 'Aborted by user'
                     })
-                    return
+                    // Don't return - let finally block run to dispose sequence
                 }
 
                 else if (e.message?.includes('assert') || e.message?.includes('NaN') || e.message?.includes('llsnan')) {
@@ -474,7 +554,7 @@ export function registerLLMInferenceHandlers(
                         requestId,
                         error: '⚠️ Model numerical error. This model has corrupted weights or incompatible quantization. Please try a different model (Qwen2.5-Coder recommended).'
                     })
-                    return
+                    aborted = true
                 }
 
                 else if (e.message?.includes('OutOfDeviceMemory') || e.message?.includes('allocateMemory')) {
@@ -483,7 +563,7 @@ export function registerLLMInferenceHandlers(
                         requestId,
                         error: '⚠️ GPU memory exhausted. Try closing other applications or use a smaller context size.'
                     })
-                    return
+                    aborted = true
                 }
 
                 else if (e.message?.includes('Eval has failed') || e.message?.includes('llama_decode') || e.message?.includes('No sequences left')) {
@@ -492,10 +572,20 @@ export function registerLLMInferenceHandlers(
                         requestId,
                         error: '⚠️ Generation failed. Please try again.'
                     })
-                    return
+                    aborted = true
                 }
                 else {
                     throw err
+                }
+            } finally {
+                // CRITICAL: Always dispose sequence to prevent "No sequences left" error
+                if (sequence && typeof sequence.dispose === 'function') {
+                    try {
+                        sequence.dispose()
+                        console.log('[Main] Sequence disposed successfully')
+                    } catch (disposeErr) {
+                        console.warn('[Main] Failed to dispose sequence:', disposeErr)
+                    }
                 }
             }
 

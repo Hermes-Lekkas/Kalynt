@@ -1170,14 +1170,14 @@ export default function IDEWorkspace() {
         setIsResizingSplit(false)
     }, [])
 
+    // FIX: Simplified listener management to prevent accumulation
+    // Only add listeners when resizing, cleanup removes them
     useEffect(() => {
-        if (isResizingSplit) {
-            window.addEventListener('mousemove', handleResizeSplit)
-            window.addEventListener('mouseup', stopResizingSplit)
-        } else {
-            window.removeEventListener('mousemove', handleResizeSplit)
-            window.removeEventListener('mouseup', stopResizingSplit)
-        }
+        if (!isResizingSplit) return
+
+        window.addEventListener('mousemove', handleResizeSplit)
+        window.addEventListener('mouseup', stopResizingSplit)
+
         return () => {
             window.removeEventListener('mousemove', handleResizeSplit)
             window.removeEventListener('mouseup', stopResizingSplit)
@@ -1185,13 +1185,11 @@ export default function IDEWorkspace() {
     }, [isResizingSplit, handleResizeSplit, stopResizingSplit])
 
     useEffect(() => {
-        if (isResizingSidebar) {
-            window.addEventListener('mousemove', handleResizeSidebar)
-            window.addEventListener('mouseup', stopResizingSidebar)
-        } else {
-            window.removeEventListener('mousemove', handleResizeSidebar)
-            window.removeEventListener('mouseup', stopResizingSidebar)
-        }
+        if (!isResizingSidebar) return
+
+        window.addEventListener('mousemove', handleResizeSidebar)
+        window.addEventListener('mouseup', stopResizingSidebar)
+
         return () => {
             window.removeEventListener('mousemove', handleResizeSidebar)
             window.removeEventListener('mouseup', stopResizingSidebar)

@@ -10,9 +10,13 @@
 import * as Y from 'yjs'
 import { aiService, AIProvider, AIMessage } from './aiService'
 import { offlineLLMService, ChatMessage as OfflineChatMessage } from './offlineLLMService'
-import { getModeConfig, EditorMode } from '../config/editorModes'
-import { executeTool, ToolContext, getToolsDescription } from './ideAgentTools'
+import { EditorMode } from '../config/editorModes'
+import { executeTool, ToolContext, stopActiveTool } from './ideAgentTools'
 import { logger } from '../utils/logger'
+import { getInstructionsForModel, detectModelTier, InstructionConfig } from '../instructions'
+import { useModelStore } from '../stores/modelStore'
+import { aimeService } from './aimeService'
+import { agentLoopService } from './agentLoopService'
 import {
     AgentState,
     AgentSuggestion,
@@ -23,7 +27,8 @@ import {
     WorkspaceContext,
     CreateTaskPayload,
     EditPayload,
-    ToolCallPayload
+    ToolCallPayload,
+    SuggestPayload  // FEAT-001: Added for suggest action
 } from '../types/agentTypes'
 
 type StateCallback = (state: AgentState) => void
@@ -43,6 +48,7 @@ class AgentService {
     private provider: AIProvider = 'openai'
     private useOfflineAI: boolean = false
     private workspacePath: string = ''
+    private missionHistory: AIMessage[] = []
 
     private onStateChange: StateCallback | null = null
     private onSuggestions: SuggestionsCallback | null = null
@@ -61,6 +67,29 @@ class AgentService {
         this.onStateChange = onStateChange
         this.onSuggestions = onSuggestions
         this.onActivity = onActivity
+
+        // FIX BUG-009: Immediately notify with current state and suggestions
+        // This ensures UI is synced even if callbacks are set after start()
+        if (this.state !== 'idle') {
+            onStateChange(this.state)
+        }
+        if (this.suggestions.length > 0) {
+            onSuggestions(this.suggestions)
+        }
+    }
+
+    /**
+     * FIX BUG-009: Get current state for manual sync
+     */
+    getState(): AgentState {
+        return this.state
+    }
+
+    /**
+     * FIX BUG-009: Get current suggestions for manual sync
+     */
+    getSuggestions(): AgentSuggestion[] {
+        return [...this.suggestions]
     }
 
     setConfig(config: Partial<AgentConfig>) {
@@ -81,6 +110,8 @@ class AgentService {
 
     setWorkspacePath(path: string) {
         this.workspacePath = path
+        // Trigger background indexing
+        void aimeService.indexWorkspace(path)
     }
 
     private setState(state: AgentState) {
@@ -97,7 +128,7 @@ class AgentService {
             details
         }
         this.activityLog.unshift(entry)
-        
+
         if (this.activityLog.length > 50) {
             this.activityLog = this.activityLog.slice(0, 50)
         }
@@ -119,7 +150,7 @@ class AgentService {
 
         const tasksArray = doc.getArray('tasks')
         this.tasksObserver = () => {
-            
+
             this.handleEdit()
         }
         tasksArray.observe(this.tasksObserver)
@@ -144,7 +175,7 @@ class AgentService {
             }
         } catch (e) {
             logger.agent.warn('Failed to load agent suggestions from IndexedDB', e)
-            
+
         }
     }
 
@@ -202,6 +233,7 @@ class AgentService {
         }
 
         this.clearTimers()
+        void stopActiveTool() // Also stop any executing tools
         this.doc = null
         this.setState('disabled')
         this.addActivity('analysis', 'Agent stopped')
@@ -225,7 +257,7 @@ class AgentService {
         if (this.analysisTimer) return
 
         this.analysisTimer = setTimeout(() => {
-            this.analysisTimer = null 
+            this.analysisTimer = null
             this.checkIdleAndAnalyze()
         }, this.config.analysisInterval)
     }
@@ -243,7 +275,7 @@ class AgentService {
     }
 
     private async checkIdleAndAnalyze() {
-        
+
         if (!this.doc || this.state === 'disabled') return
 
         if (this.state === 'thinking') return
@@ -281,7 +313,7 @@ class AgentService {
 
         return {
             mode: this.currentMode,
-            editorContent: editorContent.slice(0, this.config.maxContextChars), 
+            editorContent: editorContent.slice(0, this.config.maxContextChars),
             editorWordCount: editorContent.split(/\s+/).filter(Boolean).length,
             tasks,
             recentActivity: this.activityLog.slice(0, 5).map(a => a.message),
@@ -290,90 +322,58 @@ class AgentService {
         }
     }
 
+    /**
+     * Build prompt using tier-specific instruction controllers
+     * Uses getInstructionsForModel() to get optimized prompts based on:
+     * - Small models (<24B): Explicit, minimal tools, strict formatting
+     * - Large models (24B+): Chain-of-thought, full tools
+     * - Flagship (online): Maximum capability, thinking mode
+     */
     private buildPrompt(context: WorkspaceContext): AIMessage[] {
-        const modeConfig = getModeConfig(context.mode)
+        // Get current loaded model ID for tier detection
+        const loadedModelId = this.useOfflineAI
+            ? useModelStore.getState().loadedModelId
+            : null
 
-        const systemPrompt = `You are an autonomous AI assistant integrated into a collaborative workspace.
-Your persona: ${modeConfig.systemPrompt}
+        // Detect model tier for instruction selection
+        const tier = detectModelTier(
+            loadedModelId,
+            this.provider,
+            this.useOfflineAI
+        )
 
-You are observing a "${modeConfig.name}" workspace. Your job is to proactively help the user by:
-1. DETECTING BUGS: Identify syntax errors, logic errors, type mismatches, null reference errors, etc.
-2. SUGGESTING FIXES: Provide concrete code fixes or improvements
-3. CODE QUALITY: Find code smells, unused variables, missing error handling, potential performance issues
-4. BEST PRACTICES: Suggest improvements for readability, maintainability, and security
+        logger.agent.debug('Building prompt for model tier:', {
+            tier,
+            modelId: loadedModelId,
+            provider: this.provider,
+            useOfflineAI: this.useOfflineAI
+        })
 
-AVAILABLE TOOLS: You can call these tools using JSON format.
+        // Build instruction config
+        const instructionConfig: InstructionConfig = {
+            mode: context.mode,
+            workspacePath: this.workspacePath,
+            context,
+            useTools: this.config.enabledActions.includes('tool-call')
+        }
 
-WORKSPACE PATH: ${this.workspacePath || 'Not set'}
+        // Get tier-optimized instructions
+        const instructions = getInstructionsForModel(
+            instructionConfig,
+            loadedModelId,
+            this.provider,
+            this.useOfflineAI
+        )
 
-Tool Definitions:
-${getToolsDescription()}
+        // Update config based on tier recommendations
+        // This allows dynamic adjustment of maxSuggestions, etc.
+        this.config = {
+            ...this.config,
+            maxSuggestions: instructions.maxSuggestions,
+            enabledActions: instructions.enabledActions as any
+        }
 
-To use a tool, create a suggestion with action "tool-call" and payload:
-<tool_call>
-{"tool": "toolName", "params": {"param1": "value1"}}
-</tool_call>
-
-Or use the action format: { "action": "tool-call", "payload": { "tool": "toolName", "params": {...} } }
-
-IMPORTANT: Respond ONLY with valid JSON in this exact format:
-{
-  "suggestions": [
-    {
-      "action": "edit" | "create-task" | "suggest" | "comment" | "organize" | "tool-call",
-      "target": "editor-content" | "tasks" | "messages" | "file-system",
-      "description": "Short description of what to do",
-      "reasoning": "Why this would help the user",
-      "confidence": 0.0-1.0,
-      "payload": { ... action-specific data ... }
-    }
-  ],
-  "summary": "Brief summary of workspace state"
-}
-
-Action payloads:
-- edit: { "content": "text to add/replace", "position": "append" | "prepend" | "replace" }
-- create-task: { "title": "task title", "status": "todo", "priority": "high" | "medium" | "low" }
-- suggest: { "message": "suggestion text", "category": "bug" | "improvement" | "refactor" | "performance" | "security" }
-- comment: { "content": "comment text", "position": 0, "length": 0 }
-- organize: { "sections": [{ "title": "...", "content": "..." }] }
-- tool-call: { "tool": "toolName", "params": { ... } }
-
-Guidelines:
-- PRIORITY: Focus on bugs and errors first
-- Suggest 1-3 actions maximum
-- Be specific and actionable
-- For bugs: Explain the issue clearly and provide the fix
-- For improvements: Explain the benefit
-- Use tools when you need to read files, check project structure, or analyze dependencies
-- If the code is well-written, suggest few or no changes`
-
-        const userPrompt = `Analyze this workspace for bugs, errors, and improvements:
-
-## Current Mode: ${modeConfig.name}
-${modeConfig.icon}
-
-## Editor Content (${context.editorWordCount} words):
-${context.editorContent || '(empty)'}
-
-## Tasks: ${context.tasks.total} total (${context.tasks.todo} todo, ${context.tasks.inProgress} in progress, ${context.tasks.done} done)
-${context.tasks.items.map(t => `- [${t.status}] ${t.title}`).join('\n') || '(no tasks)'}
-
-## User has been idle for ${Math.round(context.idleTime / 1000)} seconds
-
-FOCUS ON:
-1. Syntax errors or bugs in the code
-2. Logic errors that could cause runtime issues
-3. Code quality issues (unused variables, missing error handling)
-4. Potential performance or security problems
-5. Incomplete or inconsistent task implementations
-
-Provide your suggestions as JSON:`
-
-        return [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-        ]
+        return instructions.messages
     }
 
     private async analyze() {
@@ -395,42 +395,58 @@ Provide your suggestions as JSON:`
 
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             try {
-                
+
                 if (attempt > 0) {
                     const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 8000)
                     this.addActivity('analysis', `Retrying analysis (attempt ${attempt + 1}/${MAX_RETRIES})...`)
                     await new Promise(resolve => setTimeout(resolve, backoffMs))
                 }
 
-                const timeoutMs = this.useOfflineAI ? 90000 : 60000 
-                const timeoutPromise = new Promise<any>((_, reject) => {
-                    const timeoutId = setTimeout(() => reject(new Error('AI request timed out')), timeoutMs)
-                    
-                    abortSignal.addEventListener('abort', () => clearTimeout(timeoutId))
+                const timeoutMs = this.useOfflineAI ? 90000 : 60000
+                // PROMISE FIX: Properly handle abort and cleanup the event listener
+                let timeoutId: ReturnType<typeof setTimeout> | null = null
+                let abortHandler: (() => void) | null = null
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error('AI request timed out')), timeoutMs)
+                    abortHandler = () => {
+                        if (timeoutId) clearTimeout(timeoutId)
+                        reject(new Error('Analysis aborted'))
+                    }
+                    abortSignal.addEventListener('abort', abortHandler)
+                }).finally(() => {
+                    // Clean up resources
+                    if (timeoutId) clearTimeout(timeoutId)
+                    if (abortHandler) abortSignal.removeEventListener('abort', abortHandler)
                 })
 
                 const messages = this.buildPrompt(context)
+
+                // If we have a mission history, append it to the prompt
+                const fullMessages = this.missionHistory.length > 0
+                    ? [...messages, ...this.missionHistory]
+                    : messages
+
                 let responseContent: string
 
                 if (this.useOfflineAI) {
 
-                    const offlineMessages: OfflineChatMessage[] = messages.map(m => ({
+                    const offlineMessages: OfflineChatMessage[] = fullMessages.map(m => ({
                         role: m.role,
                         content: m.content
                     }))
 
                     const offlinePromise = offlineLLMService.generate(offlineMessages, {
                         temperature: 0.3,
-                        maxTokens: 1000  
+                        maxTokens: 1000
                     })
 
                     responseContent = await Promise.race([offlinePromise, timeoutPromise])
                 } else {
-                    
-                    const chatPromise = aiService.chat(messages, this.provider, {
+
+                    const chatPromise = aiService.chat(fullMessages, this.provider, {
                         temperature: 0.3,
                         maxTokens: 1500,
-                        thinking: true  
+                        thinking: true
                     })
 
                     const response = await Promise.race([chatPromise, timeoutPromise])
@@ -439,6 +455,13 @@ Provide your suggestions as JSON:`
                         throw new Error(response.error)
                     }
                     responseContent = response.content
+                }
+
+                if (responseContent.includes('"action": "tool-call"') || responseContent.includes('"name":')) {
+                    this.missionHistory.push({
+                        role: 'assistant',
+                        content: responseContent
+                    })
                 }
 
                 const parsed = this.parseResponse(responseContent)
@@ -470,7 +493,7 @@ Provide your suggestions as JSON:`
                         this.suggestions = this.suggestions.slice(0, 100)
                     }
 
-                    this.saveSuggestions() 
+                    this.saveSuggestions()
                     this.onSuggestions?.(this.suggestions)
                     this.setState('waiting-approval')
                     this.addActivity('suggestion', `Generated ${newSuggestions.length} suggestion(s)`)
@@ -500,7 +523,7 @@ Provide your suggestions as JSON:`
 
     private parseResponse(response: string): AgentAIResponse {
         try {
-            
+
             const cleanedResponse = response
                 .replaceAll(/<think>[\s\S]*?<\/think>/gi, '')
                 .replaceAll(/<thinking>[\s\S]*?<\/thinking>/gi, '')
@@ -534,7 +557,7 @@ Provide your suggestions as JSON:`
         if (suggestion?.status !== 'pending') return
 
         suggestion.status = 'approved'
-        this.saveSuggestions() 
+        this.saveSuggestions()
         this.onSuggestions?.(this.suggestions)
         this.addActivity('approval', `Approved: ${suggestion.description}`, { suggestionId: id })
 
@@ -546,7 +569,7 @@ Provide your suggestions as JSON:`
         if (suggestion?.status !== 'pending') return
 
         suggestion.status = 'rejected'
-        this.saveSuggestions() 
+        this.saveSuggestions()
         this.onSuggestions?.(this.suggestions)
         this.addActivity('rejection', `Rejected: ${suggestion.description}`, { suggestionId: id })
 
@@ -561,7 +584,7 @@ Provide your suggestions as JSON:`
                 s.status = 'rejected'
             }
         })
-        this.saveSuggestions() 
+        this.saveSuggestions()
         this.onSuggestions?.(this.suggestions)
         this.addActivity('rejection', 'Rejected all pending suggestions')
         this.setState('idle')
@@ -573,29 +596,40 @@ Provide your suggestions as JSON:`
         this.setState('executing')
 
         try {
-            switch (suggestion.action) {
-                case 'edit':
-                    this.executeEdit(suggestion.payload as EditPayload)
-                    break
-                case 'create-task':
-                    this.executeCreateTask(suggestion.payload as CreateTaskPayload)
-                    break
-                case 'suggest':
-                    
-                    break
-                case 'comment':
-                    this.executeComment(suggestion.payload)
-                    break
-                case 'organize':
-                    this.executeOrganize(suggestion.payload)
-                    break
-                case 'tool-call':
-                    await this.executeToolCall(suggestion.payload as ToolCallPayload)
-                    break
+            if (suggestion.action === 'tool-call') {
+                const result = await this.executeToolCall(suggestion.payload as ToolCallPayload)
+
+                // Autonomous follow-up: If tool was successful, feed result back into the loop
+                if (result.success && this.config.enabled) {
+                    this.missionHistory.push({
+                        role: 'user',
+                        content: `Tool Result (${(suggestion.payload as ToolCallPayload).tool}):\n${JSON.stringify(result.data, null, 2)}`
+                    })
+                    // Trigger next turn
+                    setTimeout(() => this.analyze(), 500)
+                }
+            } else {
+                switch (suggestion.action) {
+                    case 'edit':
+                        this.executeEdit(suggestion.payload as EditPayload)
+                        break
+                    case 'create-task':
+                        this.executeCreateTask(suggestion.payload as CreateTaskPayload)
+                        break
+                    case 'suggest':
+                        this.executeSuggestAction(suggestion)
+                        break
+                    case 'comment':
+                        this.executeComment(suggestion.payload)
+                        break
+                    case 'organize':
+                        this.executeOrganize(suggestion.payload)
+                        break
+                }
             }
 
             suggestion.status = 'executed'
-            this.saveSuggestions() 
+            this.saveSuggestions()
             this.onSuggestions?.(this.suggestions)
             this.addActivity('execution', `Executed: ${suggestion.description}`, { suggestionId: suggestion.id })
 
@@ -605,7 +639,10 @@ Provide your suggestions as JSON:`
         }
 
         if (!this.suggestions.some(s => s.status === 'pending')) {
-            this.setState('idle')
+            // If we are in a mission, we stay in thinking/analyzing state until completion
+            if (this.missionHistory.length === 0) {
+                this.setState('idle')
+            }
         }
     }
 
@@ -640,9 +677,41 @@ Provide your suggestions as JSON:`
         if (!this.doc) return
         const editorText = this.doc.getText('editor-content')
         const comment = `\n// ${payload.content}`
-        
+
         const pos = typeof payload.position === 'number' ? payload.position : editorText.length
         editorText.insert(Math.min(pos, editorText.length), comment)
+    }
+
+    /**
+     * FEAT-001: Execute suggest action
+     * Suggestions are informational - they don't modify code but provide insights
+     * The suggestion is logged and displayed to the user via the activity feed
+     */
+    private executeSuggestAction(suggestion: AgentSuggestion) {
+        const payload = suggestion.payload as SuggestPayload
+
+        // Build a detailed message for the activity log
+        const categoryPrefix = payload.category ? `[${payload.category.toUpperCase()}] ` : ''
+        const locationInfo = payload.filePath
+            ? ` (${payload.filePath}${payload.lineNumber ? `:${payload.lineNumber}` : ''})`
+            : ''
+
+        const message = `${categoryPrefix}${payload.message}${locationInfo}`
+
+        // Log the suggestion as an activity entry so it appears in the UI
+        this.addActivity('suggestion', message, {
+            suggestionId: suggestion.id,
+            category: payload.category,
+            filePath: payload.filePath,
+            lineNumber: payload.lineNumber,
+            reasoning: suggestion.reasoning,
+            confidence: suggestion.confidence
+        })
+
+        logger.agent.info('Suggestion executed:', {
+            category: payload.category,
+            message: payload.message.substring(0, 100)
+        })
     }
 
     private executeOrganize(payload: any) {
@@ -675,7 +744,7 @@ Provide your suggestions as JSON:`
         }])
     }
 
-    private async executeToolCall(payload: ToolCallPayload) {
+    private async executeToolCall(payload: ToolCallPayload): Promise<{ success: boolean, data?: any, error?: string }> {
         logger.agent.info('Executing tool call', { tool: payload.tool, params: payload.params })
 
         const context: ToolContext = {
@@ -691,26 +760,21 @@ Provide your suggestions as JSON:`
                     result: result.data
                 })
                 logger.agent.info('Tool call succeeded', { tool: payload.tool, data: result.data })
+                return { success: true, data: result.data }
             } else {
                 this.addActivity('error', `Tool failed: ${payload.tool} - ${result.error}`, {
                     tool: payload.tool,
                     error: result.error
                 })
                 logger.agent.error('Tool call failed', { tool: payload.tool, error: result.error })
+                return { success: false, error: result.error }
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : 'Unknown error'
             this.addActivity('error', `Tool exception: ${payload.tool} - ${errorMsg}`)
             logger.agent.error('Tool call exception', { tool: payload.tool, error })
+            return { success: false, error: errorMsg }
         }
-    }
-
-    getState(): AgentState {
-        return this.state
-    }
-
-    getSuggestions(): AgentSuggestion[] {
-        return this.suggestions
     }
 
     getActivityLog(): ActivityLogEntry[] {
@@ -756,6 +820,49 @@ Provide your suggestions as JSON:`
         this.onSuggestions?.(this.suggestions)
         this.setState('idle')
         this.addActivity('analysis', 'Cleared all suggestions')
+    }
+
+    /**
+     * Execute an autonomous task using the ReAct agent loop.
+     * This bridges the autonomous monitoring system with the
+     * full agentic loop engine for multi-step task execution.
+     *
+     * @param task - Natural language description of the task
+     * @returns The final response from the agent
+     */
+    async executeAutonomousTask(task: string): Promise<string> {
+        if (this.state === 'disabled') {
+            return 'Agent is disabled'
+        }
+
+        this.setState('executing')
+        this.addActivity('execution', `Starting autonomous task: ${task.slice(0, 100)}`)
+
+        // Configure the loop service with current settings
+        agentLoopService.setWorkspacePath(this.workspacePath)
+        agentLoopService.setUseOfflineAI(this.useOfflineAI)
+
+        if (!this.useOfflineAI) {
+            agentLoopService.setCloudProvider(this.provider)
+        }
+
+        try {
+            const result = await agentLoopService.run(task, [], {
+                maxIterations: 15,
+                trustedMode: true, // Autonomous mode auto-approves tools
+                useRAG: true,
+                autoApproveReadOnly: true
+            })
+
+            this.addActivity('execution', `Task completed: ${result.slice(0, 200)}`)
+            this.setState('idle')
+            return result
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+            this.addActivity('error', `Autonomous task failed: ${errorMsg}`)
+            this.setState('error')
+            return `Error: ${errorMsg}`
+        }
     }
 }
 

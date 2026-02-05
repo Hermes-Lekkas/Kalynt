@@ -1,7 +1,7 @@
 ﻿/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session } from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -28,6 +28,43 @@ import { registerUpdateHandlers, initializeAutoUpdater } from './handlers/update
 // Window and workspace state
 let mainWindow: BrowserWindowType | null = null
 let currentWorkspacePath: string | null = null
+
+// SECURITY: Deep link validation to prevent URL-based attacks
+// Only allow safe paths that match expected patterns
+function validateDeepLink(link: string): string | null {
+    try {
+        const url = new URL(link)
+
+        // Must be kalynt:// protocol
+        if (url.protocol !== 'kalynt:') {
+            console.warn('[Main] Invalid deep link protocol:', url.protocol)
+            return null
+        }
+
+        // Validate pathname: only allow alphanumeric, hyphens, underscores, slashes
+        // Prevent path traversal and special characters
+        const pathPattern = /^\/[a-zA-Z0-9_\-/]*$/
+        if (!pathPattern.test(url.pathname) || url.pathname.includes('..')) {
+            console.warn('[Main] Invalid deep link path:', url.pathname)
+            return null
+        }
+
+        // Validate query params: block dangerous patterns
+        const dangerousPatterns = ['javascript:', 'data:', 'file:', '<script', 'onerror']
+        const searchLower = url.search.toLowerCase()
+        for (const pattern of dangerousPatterns) {
+            if (searchLower.includes(pattern)) {
+                console.warn('[Main] Dangerous pattern in deep link query:', pattern)
+                return null
+            }
+        }
+
+        return link
+    } catch (e) {
+        console.warn('[Main] Failed to parse deep link:', e)
+        return null
+    }
+}
 
 // Environment
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
@@ -76,7 +113,7 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: false
+            sandbox: true  // SECURITY: Enable OS-level process isolation
         },
         transparent: true,
         backgroundColor: '#00000000',
@@ -84,6 +121,26 @@ function createWindow() {
     })
 
     mainWindow = win
+
+    // SECURITY FIX: Add Content Security Policy headers
+    // This prevents XSS attacks from loading external scripts
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [
+                    "default-src 'self';" +
+                    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net http://localhost:8097;" +
+                    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net;" +
+                    "img-src 'self' data: blob: https:;" +
+                    "font-src 'self' data: https://fonts.gstatic.com;" +
+                    "connect-src 'self' ws: wss: https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://*.signaling.yjs.dev http://localhost:8097 ws://localhost:8097;" +
+                    "media-src 'self' blob:;" +
+                    "worker-src 'self' blob:;"
+                ]
+            }
+        })
+    })
 
     win.once('ready-to-show', () => {
         win.show()
@@ -214,7 +271,10 @@ if (!gotTheLock) {
             // Handle deep link on Windows/Linux
             const deepLink = commandLine.find((arg) => arg.startsWith('kalynt://'))
             if (deepLink) {
-                mainWindow.webContents.send('deep-link', deepLink)
+                const validatedLink = validateDeepLink(deepLink)
+                if (validatedLink) {
+                    mainWindow.webContents.send('deep-link', validatedLink)
+                }
             }
         }
     })
@@ -247,7 +307,10 @@ app.on('open-url', (event, url) => {
     if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.focus()
-        mainWindow.webContents.send('deep-link', url)
+        const validatedLink = validateDeepLink(url)
+        if (validatedLink) {
+            mainWindow.webContents.send('deep-link', validatedLink)
+        }
     }
 })
 

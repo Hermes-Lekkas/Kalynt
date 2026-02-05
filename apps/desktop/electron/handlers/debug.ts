@@ -64,7 +64,10 @@ class DebugSessionManager {
     if (fs.existsSync(packageJsonPath)) {
       try {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-        const mainFile = packageJson.main || 'index.js';
+        // SECURITY: Sanitize mainFile to prevent shell command injection
+        // Remove shell metacharacters and path traversal attempts
+        const rawMainFile = packageJson.main || 'index.js';
+        const mainFile = this.sanitizeFilePath(rawMainFile);
 
         configs.push({
           type: 'node',
@@ -327,12 +330,10 @@ class DebugSessionManager {
     }
 
     // Spawn debugger process
+    // SECURITY: Use filtered environment variables to prevent env injection
     const childProcess = spawn(debuggerPath, debuggerArgs, {
       cwd: configuration.cwd || workspacePath,
-      env: {
-        ...process.env,
-        ...configuration.env,
-      },
+      env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
     });
 
     adapter.process = childProcess;
@@ -436,13 +437,143 @@ class DebugSessionManager {
     return foundPath !== null;
   }
 
+  // SECURITY: Allowlist of safe debugger binaries
+  private static readonly SAFE_BINARIES = new Set([
+    'node', 'python', 'python3',      // Interpreters
+    'lldb-vscode', 'gdb', 'dlv',      // Debuggers
+    'debugpy',                         // Python debug module
+  ]);
+
+  // SECURITY: Allowlist of safe Python modules to check
+  private static readonly SAFE_PYTHON_MODULES = new Set([
+    'debugpy', 'pdb', 'ipdb',
+  ]);
+
+  // SECURITY: Allowlist of safe environment variables for debug processes
+  // Prevents injection of dangerous env vars like LD_PRELOAD, DYLD_INSERT_LIBRARIES
+  private static readonly SAFE_DEBUG_ENV_VARS = new Set([
+    // Path and system
+    'PATH', 'PATHEXT', 'COMSPEC', 'SHELL',
+    'HOME', 'USERPROFILE', 'USERNAME', 'USER', 'LOGNAME',
+    'HOMEDRIVE', 'HOMEPATH', 'TEMP', 'TMP', 'TMPDIR',
+    // Locale
+    'LANG', 'LC_ALL', 'LC_CTYPE', 'LANGUAGE', 'TZ',
+    // Language runtimes
+    'NODE_ENV', 'NODE_OPTIONS', 'NODE_PATH',
+    'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
+    'GOPATH', 'GOROOT', 'GOCACHE',
+    'CARGO_HOME', 'RUSTUP_HOME',
+    // Debug-specific
+    'DEBUG', 'NODE_DEBUG', 'RUST_BACKTRACE', 'RUST_LOG',
+    // Windows-specific
+    'SYSTEMROOT', 'WINDIR', 'PROGRAMFILES', 'PROGRAMFILES(X86)',
+    'COMMONPROGRAMFILES', 'APPDATA', 'LOCALAPPDATA',
+    // macOS/Linux
+    'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
+  ]);
+
+  /**
+   * Get safe environment variables for debug processes
+   * SECURITY FIX: Prevents env injection attacks like LD_PRELOAD
+   */
+  private getSafeDebugEnv(userEnv?: Record<string, string>): NodeJS.ProcessEnv {
+    const safeEnv: NodeJS.ProcessEnv = {};
+
+    // Copy only allowed env vars from process.env
+    for (const key of Array.from(DebugSessionManager.SAFE_DEBUG_ENV_VARS)) {
+      if (process.env[key] !== undefined) {
+        safeEnv[key] = process.env[key];
+      }
+    }
+
+    // Also allow user-specified env vars, but filter dangerous ones
+    if (userEnv) {
+      const dangerousPatterns = [
+        'LD_PRELOAD', 'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES',
+        'DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH',
+        'NODE_OPTIONS', // Can be used for code injection
+        'ELECTRON_RUN_AS_NODE', // Dangerous in Electron
+      ];
+
+      for (const [key, value] of Object.entries(userEnv)) {
+        const upperKey = key.toUpperCase();
+        const isDangerous = dangerousPatterns.some(p => upperKey.includes(p));
+        if (!isDangerous && typeof value === 'string') {
+          safeEnv[key] = value;
+        } else if (isDangerous) {
+          console.warn(`[Debug] Blocked dangerous env var: ${key}`);
+        }
+      }
+    }
+
+    return safeEnv;
+  }
+
+  /**
+   * Sanitize file path from untrusted sources (e.g., package.json)
+   * SECURITY FIX: Prevents shell command injection via malicious file paths
+   */
+  private sanitizeFilePath(filePath: string): string {
+    if (typeof filePath !== 'string') return 'index.js';
+
+    // Remove shell metacharacters that could be used for injection
+    let sanitized = filePath
+      .replace(/[;&|`$(){}[\]\\'"!<>]/g, '')  // Remove shell special chars
+      .replace(/\.\.\//g, '')                   // Remove path traversal
+      .replace(/\.\.\\/g, '')                   // Remove Windows path traversal
+      .replace(/\0/g, '')                       // Remove null bytes
+      .trim();
+
+    // Ensure it's a reasonable file path
+    if (!sanitized || sanitized.length === 0) {
+      return 'index.js';
+    }
+
+    // Only allow common file extensions for entry points
+    const allowedExtensions = ['.js', '.ts', '.mjs', '.cjs', '.jsx', '.tsx'];
+    const hasValidExtension = allowedExtensions.some(ext => sanitized.endsWith(ext));
+    if (!hasValidExtension && !sanitized.includes('.')) {
+      // No extension, assume .js
+      sanitized = sanitized + '.js';
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * Validate binary name against allowlist
+   * SECURITY FIX: Prevents command injection by only allowing known-safe binary names
+   */
+  private isBinarySafe(binary: string): boolean {
+    // Extract base name (handle paths)
+    const baseName = binary.split(/[/\\]/).pop() || binary;
+    // Remove extension for Windows
+    const cleanName = baseName.replace(/\.(exe|cmd|bat)$/i, '');
+    return DebugSessionManager.SAFE_BINARIES.has(cleanName.toLowerCase());
+  }
+
+  /**
+   * Validate Python module name
+   * SECURITY FIX: Prevents code injection in Python import statement
+   */
+  private isModuleSafe(moduleName: string): boolean {
+    return DebugSessionManager.SAFE_PYTHON_MODULES.has(moduleName.toLowerCase());
+  }
+
   /**
    * Check if binary is in PATH
    */
   private checkBinaryInPath(binary: string): Promise<boolean> {
+    // SECURITY: Validate binary name before using in shell command
+    if (!this.isBinarySafe(binary)) {
+      console.warn(`[Debug] Blocked unsafe binary check: ${binary}`);
+      return Promise.resolve(false);
+    }
+
     return new Promise((resolve) => {
       const command = process.platform === 'win32' ? 'where' : 'which';
-      const checkProcess = spawn(command, [binary], { shell: true });
+      // SECURITY: shell: false is safer since we validated the binary name
+      const checkProcess = spawn(command, [binary]);
 
       checkProcess.on('close', (code) => {
         resolve(code === 0);
@@ -499,11 +630,18 @@ class DebugSessionManager {
    * Check if a Python module is installed
    */
   private async checkPythonModule(moduleName: string): Promise<boolean> {
+    // SECURITY: Validate module name before using in Python import
+    if (!this.isModuleSafe(moduleName)) {
+      console.warn(`[Debug] Blocked unsafe Python module check: ${moduleName}`);
+      return false;
+    }
+
     // First, try to find Python
     const pythonPath = await this.resolveBinaryPath('python');
 
     return new Promise((resolve) => {
-      const checkProcess = spawn(pythonPath, ['-c', `import ${moduleName}`], { shell: true });
+      // SECURITY: shell: false is safer, and Python doesn't need shell
+      const checkProcess = spawn(pythonPath, ['-c', `import ${moduleName}`]);
 
       checkProcess.on('close', (code) => {
         resolve(code === 0);

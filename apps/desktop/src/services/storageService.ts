@@ -137,9 +137,11 @@ class MemoryStorage {
             this.data.forEach((map, table) => {
                 if (table === 'ydocs') {
                     // Convert Uint8Array to base64
+                    // BUG FIX: Use fromCharCode instead of fromCodePoint for binary data
+                    // fromCodePoint is for Unicode code points, fromCharCode is for bytes
                     serializable[table] = Array.from(map.entries()).map(([k, v]) => [
                         k,
-                        v ? btoa(String.fromCodePoint(...(v as Uint8Array))) : null
+                        v ? btoa(String.fromCharCode(...(v as Uint8Array))) : null
                     ])
                 } else {
                     serializable[table] = Array.from(map.entries())
@@ -162,10 +164,11 @@ class MemoryStorage {
                         ; (entries as [string, any][]).forEach(([k, v]) => {
                             if (table === 'ydocs' && v) {
                                 // Convert base64 back to Uint8Array
+                                // BUG FIX: Use charCodeAt for binary data (bytes 0-255)
                                 const binary = atob(v as string)
                                 const bytes = new Uint8Array(binary.length)
                                 for (let i = 0; i < binary.length; i++) {
-                                    bytes[i] = binary.codePointAt(i) || 0
+                                    bytes[i] = binary.charCodeAt(i)
                                 }
                                 map.set(k, bytes)
                             } else {

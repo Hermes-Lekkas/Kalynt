@@ -382,6 +382,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         readDir: (dirPath: string) => ipcRenderer.invoke('fs:readDir', dirPath),
         stat: (filePath: string) => ipcRenderer.invoke('fs:stat', filePath),
         readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
+        readBinaryFile: (filePath: string) => ipcRenderer.invoke('fs:readBinaryFile', filePath),
         writeFile: (options: any) => ipcRenderer.invoke('fs:writeFile', options),
         createFile: (filePath: string) => ipcRenderer.invoke('fs:createFile', filePath),
         createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
@@ -408,6 +409,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     code: {
         execute: (options: any) => ipcRenderer.invoke('code:execute', options),
         kill: (id: string) => ipcRenderer.invoke('code:kill', id),
+        runCommand: (cwd: string, command: string, id?: string) => ipcRenderer.invoke('code:runCommand', cwd, command, id),
         onOutput: (callback: (data: any) => void) => {
             ipcRenderer.on('code:output', (_event, data) => callback(data))
         },

@@ -50,10 +50,15 @@ class FileTransferService {
     private onPeersChange: PeersCallback | null = null
     private onProgress: ProgressCallback | null = null
     private initialized: boolean = false
+    // RACE CONDITION FIX: Track initialization sequence to prevent stale callbacks
+    private initSequence: number = 0
 
     init(roomId: string, docId: string) {
         // Prevent double init or stale observer issues
         if (this.initialized && this.roomId === roomId) return
+
+        // RACE CONDITION FIX: Increment sequence to invalidate any pending callbacks
+        const currentSequence = ++this.initSequence
 
         // Set state FIRST before any async operations
         this.roomId = roomId
@@ -65,7 +70,11 @@ class FileTransferService {
         // Defer observer setup to next tick to avoid race conditions
         // with Yjs triggering observers immediately from persisted IndexedDB data
         setTimeout(() => {
-            if (!this.initialized || this.docId !== docId) return
+            // RACE CONDITION FIX: Check sequence to ensure this callback is still valid
+            if (!this.initialized || this.docId !== docId || this.initSequence !== currentSequence) {
+                console.log('[FileTransfer] Skipping stale observer setup')
+                return
+            }
 
             const filesMap = this.getFilesMap()
             if (filesMap) {

@@ -347,10 +347,41 @@ export class DependencyManager extends EventEmitter {
         this.mainWindow = window
     }
 
+    // SECURITY: Allowlist of safe package manager commands
+    private static readonly SAFE_COMMANDS = new Set([
+        'npm', 'yarn', 'pnpm', 'bun',           // JavaScript
+        'pip', 'pip3', 'pipx',                   // Python
+        'cargo',                                  // Rust
+        'go',                                     // Go
+        'gem', 'bundle', 'bundler',              // Ruby
+        'composer',                               // PHP
+        'mvn', 'gradle',                          // Java
+        'dotnet',                                 // .NET
+        'pub', 'flutter',                         // Dart/Flutter
+    ])
+
+    /**
+     * Validate that a command is in our allowlist
+     * SECURITY FIX: Prevents command injection by only allowing known-safe commands
+     */
+    private isCommandSafe(command: string): boolean {
+        // Extract base command (handle paths like /usr/bin/npm)
+        const baseCommand = command.split(/[/\\]/).pop() || command
+        // Remove .exe/.cmd suffix for Windows
+        const cleanCommand = baseCommand.replace(/\.(exe|cmd|bat)$/i, '')
+        return DependencyManager.SAFE_COMMANDS.has(cleanCommand.toLowerCase())
+    }
+
     /**
      * Check if a binary is available in PATH
      */
     private async isBinaryAvailable(command: string): Promise<boolean> {
+        // SECURITY: Validate command against allowlist before spawning
+        if (!this.isCommandSafe(command)) {
+            console.warn(`[DependencyManager] Blocked unsafe command: ${command}`)
+            return false
+        }
+
         try {
             await new Promise((resolve, reject) => {
                 spawn(command, ['--version'], { shell: true, env: { ...process.env, PATH: getEnhancedPATH() } })

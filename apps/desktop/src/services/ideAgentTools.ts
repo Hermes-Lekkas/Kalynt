@@ -10,6 +10,7 @@
 
 import { logger } from '../utils/logger'
 import { validatePath } from '../utils/path-validator'
+import { aimeService } from './aimeService'
 
 export interface ToolResult {
     success: boolean
@@ -117,6 +118,30 @@ class ToolPermissionManager {
 }
 
 export const toolPermissionManager = new ToolPermissionManager()
+
+// Track active tool execution for cancellation
+let activeExecId: string | null = null
+
+/**
+ * Stop the currently running tool if it supports cancellation (e.g., code execution)
+ */
+export async function stopActiveTool(): Promise<boolean> {
+    if (!activeExecId) return false
+
+    try {
+        ensureElectron()
+        const result = await globalThis.window.electronAPI?.code.kill(activeExecId)
+        if (result?.success) {
+            logger.agent.info('Active tool execution stopped', { activeExecId })
+            activeExecId = null
+            return true
+        }
+        return false
+    } catch (err) {
+        logger.agent.error('Failed to stop active tool', { activeExecId, error: err })
+        return false
+    }
+}
 
 export interface Tool {
     name: string
@@ -423,7 +448,7 @@ const deleteTool: Tool = {
 // Execute code tool
 const executeCodeTool: Tool = {
     name: 'executeCode',
-    description: 'Execute code in any supported programming language',
+    description: 'Execute an arbitrary code snippet (e.g., a script or test). To run an EXISTING file in the workspace, use "runFile" instead.',
     parameters: [
         {
             name: 'code',
@@ -470,7 +495,94 @@ const executeCodeTool: Tool = {
             }
 
             const execId = `agent-exec-${Date.now()}`
+            activeExecId = execId
+
             const result = await globalThis.window.electronAPI?.code.execute({ id: execId, code, language, cwd })
+
+            if (activeExecId === execId) activeExecId = null
+
+            if (result?.success) {
+                return {
+                    success: true,
+                    data: {
+                        stdout: result.stdout,
+                        stderr: result.stderr,
+                        exitCode: result.exitCode
+                    }
+                }
+            }
+            return { success: false, error: result?.error || 'Execution failed' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+// Run existing file tool
+const runFileTool: Tool = {
+    name: 'runFile',
+    description: 'Run an existing file in the workspace. Automatically detects language and executes it.',
+    parameters: [
+        {
+            name: 'path',
+            type: 'string',
+            description: 'Path into the file to run',
+            required: true
+        }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const path = params.path as string
+            if (!path) return { success: false, error: 'Path is required' }
+
+            // SECURITY FIX: Validate path to prevent traversal attacks
+            const validation = validatePath(path, context.workspacePath)
+            if (!validation.valid) {
+                logger.agent.warn('Path validation failed in runFile', { path, error: validation.error })
+                return { success: false, error: validation.error || 'Invalid file path' }
+            }
+
+            const validatedPath = validation.normalizedPath!
+
+            // Read file content
+            const readResult = await globalThis.window.electronAPI?.fs.readFile(validatedPath)
+            if (!readResult?.success) {
+                return { success: false, error: readResult?.error || 'Failed to read file' }
+            }
+
+            const content = readResult.content as string
+            if (!content) return { success: false, error: 'File is empty' }
+
+            // Detect language
+            const ext = validatedPath.split('.').pop()?.toLowerCase() || ''
+            const langMap: Record<string, string> = {
+                'js': 'javascript', 'jsx': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
+                'py': 'python', 'pyw': 'python',
+                'rs': 'rust',
+                'go': 'go',
+                'java': 'java',
+                'c': 'c', 'h': 'c',
+                'cpp': 'cpp', 'hpp': 'cpp', 'cc': 'cpp',
+                'cs': 'csharp',
+                'php': 'php',
+                'rb': 'ruby',
+                'sh': 'bash', 'bash': 'bash',
+                'ps1': 'powershell'
+            }
+
+            const language = langMap[ext]
+            if (!language) {
+                return { success: false, error: `Unsupported file extension: .${ext}` }
+            }
+
+            const execId = `agent-run-file-${Date.now()}`
+            const cwd = context.workspacePath
+            activeExecId = execId
+
+            const result = await globalThis.window.electronAPI?.code.execute({ id: execId, code: content, language, cwd })
+
+            if (activeExecId === execId) activeExecId = null
 
             if (result?.success) {
                 return {
@@ -516,7 +628,12 @@ const runCommandTool: Tool = {
             if (!cwd) return { success: false, error: 'Working directory is required' }
             if (!command) return { success: false, error: 'Command is required' }
 
-            const result = await globalThis.window.electronAPI?.code.runCommand(cwd, command)
+            const execId = `agent-cmd-${Date.now()}`
+            activeExecId = execId
+
+            const result = await globalThis.window.electronAPI?.code.runCommand(cwd, command, execId)
+
+            if (activeExecId === execId) activeExecId = null
             if (result?.success) {
                 return { success: true, data: result.output }
             }
@@ -613,6 +730,87 @@ const searchFilesTool: Tool = {
                 return { success: true, data: { matches: [], message: 'No matches found' } }
             }
             return { success: false, error: result?.error || 'Search failed' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+// Search Relevant Context tool (RAG)
+const searchRelevantContextTool: Tool = {
+    name: 'searchRelevantContext',
+    description: 'Search the entire codebase for semantic context related to a query. Uses local indexing to find relevant files, functions, and classes.',
+    parameters: [
+        {
+            name: 'query',
+            type: 'string',
+            description: 'The semantic query or symbol name to search for',
+            required: true
+        }
+    ],
+    execute: async (params, _context) => {
+        try {
+            const query = params.query as string
+            if (!query) return { success: false, error: 'Query is required' }
+
+            const context = await aimeService.retrieveContext(query)
+            return { success: true, data: context }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+// Get File Tree tool
+const getFileTreeTool: Tool = {
+    name: 'getFileTree',
+    description: 'Get a recursive list of all files in the workspace (excluding node_modules, etc.). Use this for high-level structure exploration.',
+    parameters: [
+        {
+            name: 'path',
+            type: 'string',
+            description: 'Starting directory (defaults to workspace root)',
+            required: false
+        },
+        {
+            name: 'depth',
+            type: 'number',
+            description: 'Maximum recursion depth (default: 3)',
+            required: false,
+        }
+    ],
+    execute: async (params, context) => {
+        try {
+            const startPath = params.path as string || context.workspacePath
+            const maxDepth = (params.depth as number) || 3
+
+            if (!globalThis.window.electronAPI) {
+                throw new Error('This tool is only available in the desktop application')
+            }
+
+            const buildTree = async (currentPath: string, currentDepth: number): Promise<any> => {
+                if (currentDepth > maxDepth) return null
+
+                const res = await globalThis.window.electronAPI?.fs.readDir(currentPath)
+                if (!res?.success || !res.items) return null
+
+                const items = []
+                const EXCLUDE = new Set(['node_modules', '.git', 'dist', 'build', '.next'])
+
+                for (const item of res.items) {
+                    if (EXCLUDE.has(item.name)) continue
+
+                    const itemData: any = { name: item.name, isDirectory: item.isDirectory }
+                    if (item.isDirectory && currentDepth < maxDepth) {
+                        itemData.children = await buildTree(`${currentPath}/${item.name}`, currentDepth + 1)
+                    }
+                    items.push(itemData)
+                }
+                return items
+            }
+
+            const tree = await buildTree(startPath, 1)
+            return { success: true, data: tree }
         } catch (err) {
             return { success: false, error: String(err) }
         }
@@ -809,6 +1007,296 @@ const fileStatsTool: Tool = {
     }
 }
 
+// ============================================================
+// Fuzzy Search/Replace Tool (per research report Section 6)
+// Uses content matching with whitespace normalization and
+// Levenshtein distance for resilient code editing.
+// ============================================================
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+function levenshteinDistance(a: string, b: string): number {
+    const matrix: number[][] = []
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i]
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1]
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                )
+            }
+        }
+    }
+    return matrix[b.length][a.length]
+}
+
+/**
+ * Find the best fuzzy match for a search block within file content.
+ * Strategy order: exact → whitespace-normalized → sliding window Levenshtein.
+ */
+function fuzzyFind(
+    fileContent: string,
+    searchBlock: string,
+    maxDistance: number = 0.15
+): { start: number; end: number; distance: number } | null {
+    const searchLines = searchBlock.split('\n')
+    const fileLines = fileContent.split('\n')
+    const searchLen = searchLines.length
+
+    if (searchLen === 0 || fileLines.length === 0) return null
+
+    // Strategy 1: Exact match
+    const exactIdx = fileContent.indexOf(searchBlock)
+    if (exactIdx !== -1) {
+        return { start: exactIdx, end: exactIdx + searchBlock.length, distance: 0 }
+    }
+
+    // Strategy 2: Whitespace-normalized match
+    const normalizeWS = (s: string) => s.split('\n').map(l => l.trim()).join('\n')
+    const normFile = normalizeWS(fileContent)
+    const normSearch = normalizeWS(searchBlock)
+    const normIdx = normFile.indexOf(normSearch)
+
+    if (normIdx !== -1) {
+        // Map normalized position back to original using line counting
+        const normLines = normFile.substring(0, normIdx).split('\n').length - 1
+        const origLineStart = fileLines.slice(0, normLines).join('\n').length + (normLines > 0 ? 1 : 0)
+        const origLineEnd = fileLines.slice(0, normLines + searchLen).join('\n').length
+        return { start: origLineStart, end: origLineEnd, distance: 0 }
+    }
+
+    // Strategy 3: Sliding window with Levenshtein distance
+    let bestMatch: { start: number; end: number; distance: number } | null = null
+    let bestDist = Infinity
+
+    for (let i = 0; i <= fileLines.length - searchLen; i++) {
+        const window = fileLines.slice(i, i + searchLen).join('\n')
+        const dist = levenshteinDistance(normalizeWS(window), normalizeWS(searchBlock))
+        const relDist = dist / Math.max(searchBlock.length, 1)
+
+        if (relDist < maxDistance && dist < bestDist) {
+            bestDist = dist
+            const startIdx = fileLines.slice(0, i).join('\n').length + (i > 0 ? 1 : 0)
+            const endIdx = fileLines.slice(0, i + searchLen).join('\n').length
+            bestMatch = { start: startIdx, end: endIdx, distance: relDist }
+        }
+    }
+
+    return bestMatch
+}
+
+const fuzzyReplaceTool: Tool = {
+    name: 'fuzzyReplace',
+    description: 'Find and replace code using fuzzy matching. More resilient than replaceInFile - handles whitespace differences and minor typos. Provide the SEARCH block (code to find) and REPLACE block (new code).',
+    parameters: [
+        { name: 'path', type: 'string', description: 'Path to the file to edit', required: true },
+        { name: 'search', type: 'string', description: 'The code block to find (fuzzy matched)', required: true },
+        { name: 'replace', type: 'string', description: 'The code to replace it with', required: true }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const path = params.path as string
+            const search = params.search as string
+            const replace = params.replace as string
+
+            if (!path) return { success: false, error: 'Path is required' }
+            if (!search) return { success: false, error: 'Search block is required' }
+
+            const validation = validatePath(path, context.workspacePath)
+            if (!validation.valid) return { success: false, error: validation.error || 'Invalid path' }
+            const validatedPath = validation.normalizedPath!
+
+            const readResult = await globalThis.window.electronAPI?.fs.readFile(validatedPath)
+            if (!readResult?.success) return { success: false, error: readResult?.error || 'Failed to read file' }
+
+            const content = readResult.content as string
+            const match = fuzzyFind(content, search)
+
+            if (!match) {
+                return {
+                    success: false,
+                    error: 'Could not find a matching code block. Try reading the file first with readFile to see exact content.'
+                }
+            }
+
+            const newContent = content.substring(0, match.start) + replace + content.substring(match.end)
+            const writeResult = await globalThis.window.electronAPI?.fs.writeFile({ path: validatedPath, content: newContent })
+
+            if (writeResult?.success) {
+                return {
+                    success: true,
+                    data: {
+                        path: validatedPath,
+                        matchDistance: match.distance,
+                        matchType: match.distance === 0 ? 'exact' : 'fuzzy',
+                        message: match.distance === 0
+                            ? 'Exact match found and replaced'
+                            : `Fuzzy match (${(match.distance * 100).toFixed(1)}% edit distance) replaced`
+                    }
+                }
+            }
+            return { success: false, error: writeResult?.error || 'Failed to write file' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+// ============================================================
+// Git Tools (diff, log, commit, add)
+// ============================================================
+
+const gitDiffTool: Tool = {
+    name: 'gitDiff',
+    description: 'Show git diff for the workspace (staged and unstaged changes)',
+    parameters: [
+        { name: 'staged', type: 'boolean', description: 'If true, show only staged changes (default: false)', required: false },
+        { name: 'path', type: 'string', description: 'Specific file to diff (optional)', required: false }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const repoPath = context.workspacePath
+            if (!repoPath) return { success: false, error: 'Workspace path required' }
+
+            const staged = params.staged as boolean || false
+            const filePath = params.path as string || ''
+            const result = await globalThis.window.electronAPI?.git.diff(repoPath, staged, filePath)
+            if (result?.success) return { success: true, data: result.diff || '(no changes)' }
+            return { success: false, error: result?.error || 'Git diff failed' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+const gitLogTool: Tool = {
+    name: 'gitLog',
+    description: 'Show recent git commit history',
+    parameters: [
+        { name: 'count', type: 'number', description: 'Number of commits to show (default: 10)', required: false }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const repoPath = context.workspacePath
+            if (!repoPath) return { success: false, error: 'Workspace path required' }
+
+            const count = (params.count as number) || 10
+            const result = await globalThis.window.electronAPI?.git.log(repoPath, count)
+            if (result?.success) return { success: true, data: result.log }
+            return { success: false, error: result?.error || 'Git log failed' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+const gitAddTool: Tool = {
+    name: 'gitAdd',
+    description: 'Stage files for git commit',
+    parameters: [
+        { name: 'files', type: 'string', description: 'File paths to stage (comma-separated), or "." for all', required: true }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const repoPath = context.workspacePath
+            if (!repoPath) return { success: false, error: 'Workspace path required' }
+
+            const files = (params.files as string).split(',').map(f => f.trim())
+            const result = await globalThis.window.electronAPI?.git.add(repoPath, files)
+            if (result?.success) return { success: true, data: { staged: files } }
+            return { success: false, error: result?.error || 'Git add failed' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+const gitCommitTool: Tool = {
+    name: 'gitCommit',
+    description: 'Create a git commit with staged changes',
+    parameters: [
+        { name: 'message', type: 'string', description: 'Commit message', required: true }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const repoPath = context.workspacePath
+            if (!repoPath) return { success: false, error: 'Workspace path required' }
+
+            const message = params.message as string
+            if (!message) return { success: false, error: 'Commit message required' }
+
+            const result = await globalThis.window.electronAPI?.git.commit(repoPath, message)
+            if (result?.success) return { success: true, data: { message, hash: result.hash } }
+            return { success: false, error: result?.error || 'Git commit failed' }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
+// ============================================================
+// Diagnostics Tool
+// ============================================================
+
+const getDiagnosticsTool: Tool = {
+    name: 'getDiagnostics',
+    description: 'Check a file for syntax/type errors by running a quick lint. Useful for verifying code after modifications.',
+    parameters: [
+        { name: 'path', type: 'string', description: 'Path to the file to check', required: true }
+    ],
+    execute: async (params, context) => {
+        try {
+            ensureElectron()
+            const path = params.path as string
+            if (!path) return { success: false, error: 'Path is required' }
+
+            const validation = validatePath(path, context.workspacePath)
+            if (!validation.valid) return { success: false, error: validation.error || 'Invalid path' }
+
+            const ext = path.split('.').pop()?.toLowerCase() || ''
+            const cwd = context.workspacePath
+
+            let command = ''
+            if (['ts', 'tsx'].includes(ext)) {
+                command = `npx tsc --noEmit --pretty "${validation.normalizedPath}" 2>&1`
+            } else if (['js', 'jsx'].includes(ext)) {
+                command = `node --check "${validation.normalizedPath}" 2>&1`
+            } else if (ext === 'py') {
+                command = `python -m py_compile "${validation.normalizedPath}" 2>&1`
+            } else {
+                return { success: true, data: { message: 'No diagnostic tool for this file type', errors: [] } }
+            }
+
+            const result = await globalThis.window.electronAPI?.code.runCommand(cwd, command)
+            const output = result?.output || result?.error || ''
+            const hasErrors = output.includes('error') || output.includes('Error') || (result?.exitCode && result.exitCode !== 0)
+
+            return {
+                success: true,
+                data: {
+                    hasErrors,
+                    output: output.slice(0, 2000),
+                    message: hasErrors ? 'Errors found' : 'No errors detected'
+                }
+            }
+        } catch (err) {
+            return { success: false, error: String(err) }
+        }
+    }
+}
+
 // All available tools
 export const ideTools: Tool[] = [
     readFileTool,
@@ -819,11 +1307,20 @@ export const ideTools: Tool[] = [
     deleteTool,
     executeCodeTool,
     runCommandTool,
+    runFileTool,
     gitStatusTool,
     searchFilesTool,
+    searchRelevantContextTool,
+    getFileTreeTool,
     replaceInFileTool,
+    fuzzyReplaceTool,
     insertAtLineTool,
-    fileStatsTool
+    fileStatsTool,
+    gitDiffTool,
+    gitLogTool,
+    gitAddTool,
+    gitCommitTool,
+    getDiagnosticsTool
 ]
 
 // Get tool by name
@@ -897,6 +1394,11 @@ function normalizeParams(toolName: string, params: Record<string, unknown>): Rec
             'workingDirectory': 'cwd',
             'workDir': 'cwd',
         },
+        runFile: {
+            'file': 'path',
+            'filename': 'path',
+            'filePath': 'path',
+        },
         runCommand: {
             'cmd': 'command',
             'shell': 'command',
@@ -924,6 +1426,43 @@ function normalizeParams(toolName: string, params: Record<string, unknown>): Rec
             'filePath': 'path',
         },
         fileStats: {
+            'filePath': 'path',
+            'file': 'path',
+        },
+        fuzzyReplace: {
+            'find': 'search',
+            'searchBlock': 'search',
+            'searchText': 'search',
+            'old': 'search',
+            'oldText': 'search',
+            'replaceBlock': 'replace',
+            'replaceText': 'replace',
+            'new': 'replace',
+            'newText': 'replace',
+            'filePath': 'path',
+            'file': 'path',
+        },
+        gitDiff: {
+            'onlyStaged': 'staged',
+            'cachedOnly': 'staged',
+            'filePath': 'path',
+            'file': 'path',
+        },
+        gitLog: {
+            'limit': 'count',
+            'max': 'count',
+            'n': 'count',
+        },
+        gitAdd: {
+            'paths': 'files',
+            'filePaths': 'files',
+            'file': 'files',
+        },
+        gitCommit: {
+            'msg': 'message',
+            'commitMessage': 'message',
+        },
+        getDiagnostics: {
             'filePath': 'path',
             'file': 'path',
         },
@@ -1102,33 +1641,46 @@ export function getToolSystemPrompt(workspacePath: string, compact: boolean = fa
     const toolNames = ideTools.map(t => t.name).join(', ')
 
     if (compact) {
-        // Ultra-compact version for very small models or limited context
-        return `You are Kalynt, an AI coding assistant. Workspace: ${workspacePath || 'None'}
+        // Ultra-compact version for small models (highly aggressive on JSON-only format)
+        return `You are Kalynt.
 
-When asked to perform file/code operations, respond ONLY with JSON:
-{"name": "TOOL_NAME", "params": {"param1": "value1"}}
+IF ACTION (files, code, terminal):
+- Respond ONLY with JSON: {"name": "TOOL_NAME", "params": {...}}
+- NO text, NO explanation, NO chat.
+
+IF CHAT:
+- Respond normally.
+
+CRITICAL RULES:
+- NEVER truncate code. Execute EXACTLY as requested.
+- Python: Only use "import unittest" for unit tests. NEVER for normal scripts.
+- Python unit test: End with "if __name__ == '__main__': unittest.main()". Do NOT wrap in a function.
+- Multiline code: Use \\n for newlines.
+- RUNNING FILES: If the user asks to run an existing file (e.g., "run main.py"), use "runFile", NOT "executeCode".
 
 Tools: ${toolNames}
 
-CRITICAL RULES:
-- executeCode REQUIRES "language" parameter (supported: python, javascript, typescript, node, deno, bun, rust, go, java, dotnet, csharp, fsharp, ruby, php, c, cpp, gcc, kotlin, swift, scala, perl, lua, haskell, elixir, r, julia, dart, zig, clojure, groovy, ocaml, erlang, v, nim, html)
-- For multi-line code, use \\n for newlines (NOT one-liners!)
-- readFile/writeFile need "path" parameter
-
 Examples:
-User: "list files" → {"name": "listDirectory", "params": {"path": "."}}
-User: "read package.json" → {"name": "readFile", "params": {"path": "package.json"}}
-User: "run python code" → {"name": "executeCode", "params": {"language": "python", "code": "print('hello')\\nprint('world')"}}
-User: "execute rust code" → {"name": "executeCode", "params": {"language": "rust", "code": "fn main() {\\n    println!(\\"Hello\\");\\n}"}}
-User: "remove comments from file.py" → {"name": "readFile", "params": {"path": "file.py"}}
-
-For questions/chat, respond normally. For actions, use JSON tool format.`
+User: "read file.txt" → {"name": "readFile", "params": {"path": "file.txt"}}
+User: "run code" → {"name": "executeCode", "params": {"language": "python", "code": "print('ok')"}}`
     }
 
     // Full version with detailed tool descriptions for larger models
     return `You are Kalynt, an AI coding assistant with file system access.
 
 WORKSPACE: ${workspacePath || 'Not set'}
+
+## IMPORTANT RULES (READ CAREFULLY)
+1. NEVER truncate, simplify, or summarize code for execution. Execute EXACTLY what is provided.
+2. ALWAYS include all necessary imports (e.g., "import unittest", "import os") at the top of any script you generate.
+3. Python unittest: IF AND ONLY IF writing a unit test, include "import unittest" and end with "if __name__ == '__main__': unittest.main()". NEVER wrap unit tests in a custom function like "test_main()".
+4. For regular Python scripts (NOT tests), do NOT include the unittest boilerplate.
+5. When an action is requested, respond with ONLY the JSON tool call - no other text.
+6. After a tool executes, I'll give you the result - then summarize what happened.
+7. Use relative paths when inside the workspace.
+8. To modify a file, first use readFile to get contents, then writeFile with changes.
+9. For multi-line code, use \\n for newlines (e.g., "line1\\nline2\\nline3").
+10. RUNNING FILES: If the user asks to run a file that already exists in the workspace (e.g., "run test.py"), ALWAYS use the "runFile" tool. Do NOT use "executeCode" to re-write the file content.
 
 ## TOOL CALLING FORMAT
 When you need to perform an action (read files, list directories, run commands, etc.), respond with ONLY a JSON object:
@@ -1161,17 +1713,11 @@ Assistant: {"name": "createFile", "params": {"path": "utils.ts"}}
 User: "Run this Python code to print numbers"
 Assistant: {"name": "executeCode", "params": {"language": "python", "code": "for i in range(5):\\n    print(i)"}}
 
-User: "Execute this Rust code"
-Assistant: {"name": "executeCode", "params": {"language": "rust", "code": "fn main() {\\n    println!(\\"Hello from Rust!\\");\\n}"}}
+User: "Run main.py"
+Assistant: {"name": "runFile", "params": {"path": "main.py"}}
 
-## IMPORTANT RULES
-1. When an action is requested, respond with ONLY the JSON tool call - no other text
-2. For questions or conversation, respond normally in natural language
-3. After a tool executes, I'll give you the result - then summarize what happened
-4. Use relative paths when inside the workspace
-5. executeCode supports ALL major languages: python, javascript, typescript, node, deno, bun, rust, go, java, dotnet, csharp, fsharp, ruby, php, c, cpp, gcc, kotlin, swift, scala, perl, lua, haskell, elixir, r, julia, dart, zig, clojure, groovy, ocaml, erlang, v, nim, html
-6. For multi-line code, use \\n for newlines (e.g., "line1\\nline2\\nline3")
-7. To modify a file, first use readFile to get contents, then writeFile with changes`
+User: "Execute this Rust code"
+Assistant: {"name": "executeCode", "params": {"language": "rust", "code": "fn main() {\\n    println!(\\"Hello from Rust!\\");\\n}"}}`
 }
 
 /**

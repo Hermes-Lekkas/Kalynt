@@ -105,6 +105,8 @@ class MemberSyncService {
     private spaceDocs: Map<string, Y.Doc> = new Map()
     private spaceAwareness: Map<string, Awareness> = new Map()
     private unsubscribers: Map<string, () => void> = new Map()
+    // FIX BUG-002/003: Track which actions are being processed to prevent double-processing
+    private processingActions: Set<string> = new Set()
 
     constructor() {
         // BUG-048: Process pending actions from store
@@ -112,7 +114,26 @@ class MemberSyncService {
             Object.entries(state.spaceMembers).forEach(([spaceId, spaceInfo]) => {
                 if (spaceInfo.pendingActions.length > 0) {
                     const action = spaceInfo.pendingActions[0]
+                    // FIX BUG-003: Create unique key to prevent double-processing
+                    const actionKey = `${spaceId}:${action.type}:${action.targetUserId}:${action.timestamp}`
+
+                    // Skip if already processing this action
+                    if (this.processingActions.has(actionKey)) {
+                        return
+                    }
+
+                    // Mark as processing before starting
+                    this.processingActions.add(actionKey)
+
+                    // FIX BUG-002: Handle promise rejection and always clean up
                     this.processAction(spaceId, action)
+                        .catch((error) => {
+                            console.error('[MemberSync] Failed to process action:', error)
+                        })
+                        .finally(() => {
+                            // Always remove from processing set
+                            this.processingActions.delete(actionKey)
+                        })
                 }
             })
         })
@@ -176,6 +197,12 @@ class MemberSyncService {
         userId: string,
         displayName: string
     ): Promise<void> {
+        // Prevent duplicate initialization (React Strict Mode, etc.)
+        if (this.spaceDocs.has(spaceId)) {
+            console.log('[MemberSync] Already initialized for space:', spaceId)
+            return
+        }
+
         console.log('[MemberSync] Initializing for space:', spaceId)
 
         this.spaceDocs.set(spaceId, doc)
@@ -291,19 +318,23 @@ class MemberSyncService {
                 const state = states.get(clientId)
 
                 // SECURITY FIX V-006: Register peer identity
-                if (state?.peerIdentity) {
+                // Only process new peers (added), not updates to existing peers
+                if (state?.peerIdentity && added.includes(clientId)) {
                     const { peerId, publicKey, timestamp } = state.peerIdentity
                     // Validate timestamp (reject if too old)
                     const MAX_AGE_MS = 5 * 60 * 1000
                     if (Date.now() - timestamp < MAX_AGE_MS) {
-                        const registered = await registerPeer(
-                            spaceId,
-                            peerId,
-                            publicKey,
-                            state.user?.name
-                        )
-                        if (registered) {
-                            console.log('[MemberSync] Registered peer:', peerId.substring(0, 8))
+                        // Check if peer is already trusted before registering
+                        if (!isPeerTrusted(spaceId, peerId)) {
+                            const registered = await registerPeer(
+                                spaceId,
+                                peerId,
+                                publicKey,
+                                state.user?.name
+                            )
+                            if (registered) {
+                                console.log('[MemberSync] Registered peer:', peerId.substring(0, 8))
+                            }
                         }
                     } else {
                         console.warn('[MemberSync] Rejected stale peer identity from:', peerId?.substring(0, 8))

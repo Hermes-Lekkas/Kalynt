@@ -305,6 +305,13 @@ export async function registerPeer(
         roomPeers.set(roomId, new Map())
     }
 
+    // Check if peer is already registered to avoid duplicate logs
+    const existingPeer = roomPeers.get(roomId)!.get(peerId)
+    if (existingPeer) {
+        // Peer already registered, skip
+        return true
+    }
+
     const identity: PeerIdentity = {
         peerId,
         publicKey,

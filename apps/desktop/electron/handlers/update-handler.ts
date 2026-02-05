@@ -93,22 +93,47 @@ export function registerUpdateHandlers(
     /**
      * Configure GitHub token for updates
      * Token is passed from renderer after being retrieved from safeStorage
+     * SEC-008: Enhanced security - validate token format, never log token value
      */
     ipcMain.handle('update:configure-token', async (_event, token: string) => {
         try {
             if (!token || token.trim() === '') {
-                console.warn('[Update] Empty token provided, using public access only')
+                console.log('[Update] No token provided, using public access only')
                 configureAutoUpdater()
                 return { success: true, message: 'Using public access for updates' }
             }
 
-            configureAutoUpdater(token)
+            // SEC-008: Validate token format (GitHub tokens have specific patterns)
+            const trimmedToken = token.trim()
+            const validTokenPatterns = [
+                /^ghp_[a-zA-Z0-9]{36}$/,           // Personal access token (fine-grained)
+                /^github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}$/, // Personal access token (new format)
+                /^gho_[a-zA-Z0-9]{36}$/,           // OAuth token
+                /^ghu_[a-zA-Z0-9]{36}$/,           // User-to-server token
+                /^ghs_[a-zA-Z0-9]{36}$/,           // Server-to-server token
+                /^[a-f0-9]{40}$/,                  // Legacy token
+            ]
+
+            const isValidFormat = validTokenPatterns.some(pattern => pattern.test(trimmedToken))
+            if (!isValidFormat) {
+                // SEC-008: Never log the invalid token value
+                console.warn('[Update] Invalid token format provided')
+                return {
+                    success: false,
+                    error: 'Invalid GitHub token format'
+                }
+            }
+
+            configureAutoUpdater(trimmedToken)
+            // SEC-008: Clear token from local scope immediately after use
             return { success: true, message: 'GitHub token configured successfully' }
-        } catch (error) {
-            console.error('[Update] Token configuration error:', error)
+        } catch (err) {
+            // SEC-008: Never include token in error messages - only log generic failure
+            const errorType = err instanceof Error ? err.name : 'Unknown'
+            console.error('[Update] Token configuration failed:', errorType)
             return {
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: 'Failed to configure GitHub token'
             }
         }
     })

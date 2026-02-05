@@ -199,6 +199,35 @@ class PeerRateLimiter {
         this.connectionCounters.clear()
         this.bannedPeers.clear()
     }
+
+    /**
+     * FIX BUG-012: Proactively clean up expired bans and stale counters
+     * Prevents unbounded memory growth in long-running sessions
+     */
+    cleanup(): void {
+        const now = Date.now()
+
+        // Clean expired bans
+        for (const [peerId, banExpiry] of this.bannedPeers) {
+            if (now > banExpiry) {
+                this.bannedPeers.delete(peerId)
+            }
+        }
+
+        // Clean expired message counters (older than 5 seconds)
+        for (const [peerId, counter] of this.messageCounters) {
+            if (now > counter.resetTime + 5000) {
+                this.messageCounters.delete(peerId)
+            }
+        }
+
+        // Clean expired connection counters (older than 2 minutes)
+        for (const [peerId, counter] of this.connectionCounters) {
+            if (now > counter.resetTime + 60000) {
+                this.connectionCounters.delete(peerId)
+            }
+        }
+    }
 }
 
 // Singleton rate limiter
@@ -218,6 +247,28 @@ class P2PService {
 
     // SECURITY FIX V-009: Rate limiter reference
     private rateLimiter = peerRateLimiter
+
+    // FIX BUG-012: Periodic cleanup interval
+    private cleanupIntervalId: ReturnType<typeof setInterval> | null = null
+
+    constructor() {
+        // FIX BUG-012: Start periodic cleanup every 30 seconds
+        this.cleanupIntervalId = setInterval(() => {
+            this.rateLimiter.cleanup()
+        }, 30000)
+    }
+
+    /**
+     * Clean up resources (call before destroying service)
+     */
+    destroy(): void {
+        if (this.cleanupIntervalId) {
+            clearInterval(this.cleanupIntervalId)
+            this.cleanupIntervalId = null
+        }
+        this.disconnectAll()
+        this.rateLimiter.clear()
+    }
 
     setConfig(config: Partial<P2PConfig>) {
         this.config = { ...this.config, ...config }
@@ -376,9 +427,9 @@ class P2PService {
     }
 
     getPeerCount(roomId: string): number {
-        const provider = this.providers.get(roomId)
-        if (!provider) return 0
-        return provider.awareness.getStates().size - 1 // Exclude self
+        // FIX BUG-011: Use getConnectedPeers for consistency
+        // This ensures getPeerCount and getConnectedPeers always return consistent values
+        return this.getConnectedPeers(roomId).length
     }
 
     isConnected(roomId: string): boolean {
@@ -391,30 +442,41 @@ class P2PService {
 
     // SECURITY FIX V-002: Use URL fragment (#) instead of query string (?)
     // Fragment is NOT sent in HTTP Referer headers, not logged by servers
-    generateRoomLink(roomId: string, password?: string): string {
+    generateRoomLink(roomId: string, password?: string, spaceName?: string): string {
         const base = `kalynt://join/${roomId}`
+
+        // Build fragment params (client-side only, never sent to servers)
+        const params: string[] = []
         if (password) {
-            // Use fragment (#p=) instead of query string (?p=) for security
-            // Fragments are client-side only and never sent to servers
-            return `${base}#p=${encodeURIComponent(password)}`
+            params.push(`p=${encodeURIComponent(password)}`)
+        }
+        if (spaceName) {
+            // Include workspace name so joiners see the correct name
+            params.push(`n=${encodeURIComponent(spaceName)}`)
+        }
+
+        if (params.length > 0) {
+            return `${base}#${params.join('&')}`
         }
         return base
     }
 
     // Parse a room link (supports both kalynt and legacy collabforge)
     // SECURITY FIX V-002: Parse password from URL fragment for security
-    parseRoomLink(link: string): { roomId: string; password?: string } | null {
+    parseRoomLink(link: string): { roomId: string; password?: string; spaceName?: string } | null {
         try {
             const url = new URL(link)
             const roomId = url.pathname.split('/').pop()
 
             // SECURITY: First check fragment (secure), then query string (legacy/insecure)
             let password: string | undefined
+            let spaceName: string | undefined
 
             // Check URL fragment first (secure method)
             if (url.hash) {
                 const hashParams = new URLSearchParams(url.hash.slice(1))
                 password = hashParams.get('p') || undefined
+                spaceName = hashParams.get('n') || undefined
             }
 
             // Fallback to query string for backward compatibility (legacy/insecure)
@@ -426,7 +488,7 @@ class P2PService {
             }
 
             if (roomId) {
-                return { roomId, password }
+                return { roomId, password, spaceName }
             }
         } catch (error) {
             // URL parsing failed, try simple regex format for both kalynt and legacy collabforge
@@ -436,8 +498,11 @@ class P2PService {
                 // Check fragment first (secure), then query string (legacy)
                 const fragmentMatch = /#p=([^&]+)/.exec(link)
                 const queryMatch = /[?&]p=([^&#]+)/.exec(link)
+                const nameMatch = /[#&]n=([^&]+)/.exec(link)
 
                 let password: string | undefined
+                let spaceName: string | undefined
+
                 if (fragmentMatch) {
                     password = decodeURIComponent(fragmentMatch[1])
                 } else if (queryMatch) {
@@ -445,9 +510,14 @@ class P2PService {
                     logger.p2p.warn('Room link uses insecure query string for password')
                 }
 
+                if (nameMatch) {
+                    spaceName = decodeURIComponent(nameMatch[1])
+                }
+
                 return {
                     roomId: roomMatch[1],
-                    password
+                    password,
+                    spaceName
                 }
             }
         }

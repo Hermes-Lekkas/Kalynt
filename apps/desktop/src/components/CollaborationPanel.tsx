@@ -184,7 +184,9 @@ function InviteView({ spaceId }: { spaceId: string }) {
 
     const generate = async () => {
         // SECURITY #9: Do not embed passwords in URLs
-        const link = p2pService.generateRoomLink(spaceId)
+        // Include workspace name in link so joiners see correct name
+        const { currentSpace } = useAppStore.getState()
+        const link = p2pService.generateRoomLink(spaceId, undefined, currentSpace?.name)
         setInviteLink(link)
         setRoomCode(spaceId.toUpperCase())
     }
@@ -414,7 +416,7 @@ function JoinView({ onClose }: { onClose: () => void }) {
     const [password, setPassword] = useState('')
     const [error, setError] = useState('')
     const [joining, setJoining] = useState(false)
-    const [parsedInvite, setParsedInvite] = useState<{ spaceId: string, password?: string } | null>(null)
+    const [parsedInvite, setParsedInvite] = useState<{ spaceId: string, password?: string, spaceName?: string } | null>(null)
 
     // Listen for deep links
     useEffect(() => {
@@ -451,7 +453,7 @@ function JoinView({ onClose }: { onClose: () => void }) {
         const parsed = p2pService.parseRoomLink(text)
 
         if (parsed) {
-            setParsedInvite({ spaceId: parsed.roomId, password: parsed.password })
+            setParsedInvite({ spaceId: parsed.roomId, password: parsed.password, spaceName: parsed.spaceName })
             if (parsed.password) setPassword(parsed.password)
         } else if (text.length > 0 && text.length <= 50) {
             // Treat as raw room code
@@ -468,17 +470,24 @@ function JoinView({ onClose }: { onClose: () => void }) {
             // Initialize encryption if password present
             const pwdToUse = password || parsedInvite.password
 
+            // CRITICAL FIX: Store password in localStorage BEFORE setting current space
+            // This fixes a race condition where useYDoc would connect to the room
+            // before the password was stored, causing users to join different rooms
+            // (one with password suffix, one without)
+            if (pwdToUse) {
+                localStorage.setItem(`space-settings-${parsedInvite.spaceId}`, JSON.stringify({ encryptionEnabled: true, roomPassword: pwdToUse }))
+            }
+
             const existing = spaces.find(s => s.id === parsedInvite.spaceId)
             if (existing) {
                 setCurrentSpace(existing)
             } else {
-                const newSpace = createSpace('Shared Space', parsedInvite.spaceId)
+                // Use workspace name from invite link, fallback to 'Shared Space'
+                const spaceName = parsedInvite.spaceName || 'Shared Space'
+                const newSpace = createSpace(spaceName, parsedInvite.spaceId)
                 setCurrentSpace(newSpace)
             }
 
-            if (pwdToUse) {
-                localStorage.setItem(`space-settings-${parsedInvite.spaceId}`, JSON.stringify({ encryptionEnabled: true, roomPassword: pwdToUse }))
-            }
             onClose()
         } catch (_e) {
             setError('Failed to join')

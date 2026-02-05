@@ -52,15 +52,18 @@ export function registerSafeStorageHandlers(
     })
 
     // Store an encrypted value
+    // SECURITY FIX: Refuse to store credentials when encryption is unavailable
+    // Base64 encoding is NOT encryption and provides no security
     ipcMain.handle('safeStorage:set', async (_event, options: { key: string; value: string }) => {
         try {
             if (!safeStorage.isEncryptionAvailable()) {
-                console.warn('[SafeStorage] Encryption not available, storing in plain text')
-                // Fallback: store base64 encoded (not secure, but works)
-                const keys = loadKeys(getUserDataPath())
-                keys[options.key] = Buffer.from(options.value).toString('base64')
-                saveKeys(getUserDataPath(), keys)
-                return { success: true, encrypted: false }
+                // SECURITY: Do not fall back to insecure storage
+                console.error('[SafeStorage] Encryption not available - refusing to store credentials insecurely')
+                return {
+                    success: false,
+                    error: 'Secure storage is not available on this system. Cannot store credentials securely.',
+                    encrypted: false
+                }
             }
 
             const encrypted = safeStorage.encryptString(options.value)
@@ -77,6 +80,7 @@ export function registerSafeStorageHandlers(
     })
 
     // Retrieve and decrypt a value
+    // SECURITY FIX: Refuse to retrieve when encryption is unavailable
     ipcMain.handle('safeStorage:get', async (_event, key: string) => {
         try {
             const keys = loadKeys(getUserDataPath())
@@ -87,9 +91,15 @@ export function registerSafeStorageHandlers(
             }
 
             if (!safeStorage.isEncryptionAvailable()) {
-                // Fallback: decode base64
-                const value = Buffer.from(encryptedBase64, 'base64').toString('utf-8')
-                return { success: true, value, encrypted: false }
+                // SECURITY: Do not attempt to decode potentially encrypted data
+                // This prevents misuse of unencrypted fallback data
+                console.error('[SafeStorage] Encryption not available - cannot retrieve credentials')
+                return {
+                    success: false,
+                    value: null,
+                    error: 'Secure storage is not available on this system. Cannot retrieve credentials.',
+                    encrypted: false
+                }
             }
 
             const encrypted = Buffer.from(encryptedBase64, 'base64')

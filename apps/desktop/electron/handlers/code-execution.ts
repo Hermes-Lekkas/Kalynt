@@ -2,10 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import path from 'path'
-import fs from 'fs'
-import { spawn, ChildProcess } from 'child_process'
-import { execFileSync } from 'node:child_process'
+import path from 'node:path'
+import fs from 'node:fs'
+import { spawn, ChildProcess, execFileSync } from 'node:child_process'
 import { shell } from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import treeKill from 'tree-kill'
@@ -16,6 +15,48 @@ const runningProcesses = new Map<string, ChildProcess>()
 // Binary path cache for faster subsequent executions
 // Maps binary name -> resolved path (or null if not found)
 const binaryPathCache = new Map<string, string | null>()
+
+// SECURITY FIX: Whitelist of safe environment variables to pass to child processes
+// This prevents leaking sensitive credentials like API keys to user-executed code
+const SAFE_ENV_VARS = new Set([
+    // System paths
+    'PATH', 'PATHEXT', 'COMSPEC', 'SHELL',
+    // User/system info (non-sensitive)
+    'HOME', 'USERPROFILE', 'USERNAME', 'USER', 'LOGNAME',
+    'HOMEDRIVE', 'HOMEPATH', 'TEMP', 'TMP', 'TMPDIR',
+    // Localization
+    'LANG', 'LC_ALL', 'LC_CTYPE', 'LANGUAGE', 'TZ',
+    // Development tools
+    'NODE_ENV', 'NODE_OPTIONS', 'NODE_PATH',
+    'RUSTUP_HOME', 'CARGO_HOME', 'GOPATH', 'GOROOT',
+    'JAVA_HOME', 'PYTHONPATH', 'PYTHONHOME',
+    'GEM_HOME', 'GEM_PATH', 'BUNDLE_PATH',
+    // Program locations
+    'ProgramFiles', 'ProgramFiles(x86)', 'ProgramData',
+    'APPDATA', 'LOCALAPPDATA', 'CommonProgramFiles',
+    'SystemRoot', 'SystemDrive', 'windir',
+    // Terminal
+    'TERM', 'COLORTERM', 'TERM_PROGRAM', 'FORCE_COLOR',
+    // Editor/IDE
+    'EDITOR', 'VISUAL', 'GIT_EDITOR',
+])
+
+/**
+ * Create a safe environment object for child processes
+ * SECURITY: Only includes whitelisted environment variables
+ * Prevents leaking sensitive data like API keys to user code
+ */
+function getSafeEnv(): NodeJS.ProcessEnv {
+    const safeEnv: NodeJS.ProcessEnv = {}
+    Array.from(SAFE_ENV_VARS).forEach(key => {
+        if (process.env[key] !== undefined) {
+            safeEnv[key] = process.env[key]
+        }
+    })
+    // Always include enhanced PATH
+    safeEnv.PATH = getEnhancedPATH()
+    return safeEnv
+}
 
 // Path validation helper - prevents path traversal attacks
 function validatePath(base: string, target: string): string {
@@ -37,38 +78,38 @@ function getEnhancedPATH(): string {
         return currentPath
     }
 
-    const userProfile = process.env.USERPROFILE || 'C:\\Users\\Default'
-    const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
-    const appData = process.env.APPDATA || `${userProfile}\\AppData\\Roaming`
-    const _localAppData = process.env.LOCALAPPDATA || `${userProfile}\\AppData\\Local`
+    const userProfile = process.env.USERPROFILE || String.raw`C:\Users\Default`
+    const programFiles = process.env['ProgramFiles'] || String.raw`C:\Program Files`
+    const appData = process.env.APPDATA || path.join(userProfile, 'AppData', 'Roaming')
+    const _localAppData = process.env.LOCALAPPDATA || path.join(userProfile, 'AppData', 'Local')
 
     const additionalPaths = [
         // Python
-        `${userProfile}\\AppData\\Local\\Programs\\Python\\Python313`,
-        `${userProfile}\\AppData\\Local\\Programs\\Python\\Python313\\Scripts`,
-        `${userProfile}\\AppData\\Local\\Programs\\Python\\Python312`,
-        `${userProfile}\\AppData\\Local\\Programs\\Python\\Python312\\Scripts`,
-        `${userProfile}\\AppData\\Local\\Programs\\Python\\Python311`,
-        `${userProfile}\\AppData\\Local\\Programs\\Python\\Python311\\Scripts`,
+        path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python313'),
+        path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python313', 'Scripts'),
+        path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python312'),
+        path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'Scripts'),
+        path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python311'),
+        path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'Scripts'),
 
         // Rust/Cargo
-        `${userProfile}\\.cargo\\bin`,
+        path.join(userProfile, '.cargo', 'bin'),
 
         // Node.js / npm
-        `${programFiles}\\nodejs`,
+        path.join(programFiles, 'nodejs'),
         `${appData}\\npm`,
 
         // Java
-        `${programFiles}\\Java\\jdk-21\\bin`,
-        `${programFiles}\\Eclipse Adoptium\\jdk-21\\bin`,
+        path.join(programFiles, 'Java', 'jdk-21', 'bin'),
+        path.join(programFiles, 'Eclipse Adoptium', 'jdk-21', 'bin'),
 
         // Go
-        `${userProfile}\\go\\bin`,
-        `${programFiles}\\Go\\bin`,
+        path.join(userProfile, 'go', 'bin'),
+        path.join(programFiles, 'Go', 'bin'),
 
         // Git
-        `${programFiles}\\Git\\cmd`,
-        `${programFiles}\\Git\\bin`,
+        path.join(programFiles, 'Git', 'cmd'),
+        path.join(programFiles, 'Git', 'bin'),
     ]
 
     let enhancedPath = currentPath
@@ -140,10 +181,10 @@ async function findBinary(name: string, workspacePath?: string | null): Promise<
     }
 
     // Priority 3: Check common global npm/node locations AND language-specific paths
-    const userProfile = process.env.USERPROFILE || 'C:\\Users\\Default'
-    const localAppData = process.env.LOCALAPPDATA || `${userProfile}\\AppData\\Local`
-    const appData = process.env.APPDATA || `${userProfile}\\AppData\\Roaming`
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files'
+    const userProfile = process.env.USERPROFILE || String.raw`C:\Users\Default`
+    const localAppData = process.env.LOCALAPPDATA || path.join(userProfile, 'AppData', 'Local')
+    const appData = process.env.APPDATA || path.join(userProfile, 'AppData', 'Roaming')
+    const programFiles = process.env.ProgramFiles || String.raw`C:\Program Files`
 
     const commonPaths = isWindows
         ? [
@@ -160,9 +201,9 @@ async function findBinary(name: string, workspacePath?: string | null): Promise<
                 path.join(programFiles, 'Python314', 'python.exe'),
                 path.join(programFiles, 'Python312', 'python.exe'),
                 path.join(programFiles, 'Python311', 'python.exe'),
-                'C:\\Python314\\python.exe',
-                'C:\\Python312\\python.exe',
-                'C:\\Python311\\python.exe',
+                String.raw`C:\Python314\python.exe`,
+                String.raw`C:\Python312\python.exe`,
+                String.raw`C:\Python311\python.exe`,
             ] : []),
 
             // Rust / Cargo
@@ -278,8 +319,8 @@ function killProcessTree(proc: ChildProcess): Promise<void> {
                     } else {
                         process.kill(-proc.pid!, 'SIGKILL')
                     }
-                } catch (fallbackErr) {
-                    console.error('[Main] Fallback kill also failed:', fallbackErr)
+                } catch (error_) {
+                    console.error('[Main] Fallback kill also failed:', error_)
                     proc.kill('SIGKILL')
                 }
             }
@@ -620,10 +661,7 @@ export function registerCodeExecutionHandlers(
                     const compileProc = spawn(wrappedCompile.command, wrappedCompile.args, {
                         cwd: tempDir,
                         shell: false,
-                        env: {
-                            ...process.env,
-                            PATH: getEnhancedPATH()
-                        }
+                        env: getSafeEnv()
                     })
 
                     // BUG #8: Add to running processes
@@ -661,10 +699,7 @@ export function registerCodeExecutionHandlers(
                         const proc = spawn(wrappedRun.command, wrappedRun.args, {
                             cwd: tempDir,
                             shell: false,
-                            env: {
-                                ...process.env,
-                                PATH: getEnhancedPATH()
-                            }
+                            env: getSafeEnv()
                         })
 
                         runningProcesses.set(id, proc)
@@ -739,8 +774,8 @@ export function registerCodeExecutionHandlers(
                 if (cwd && currentWorkspacePath) {
                     try {
                         safeCwd = validatePath(currentWorkspacePath, cwd)
-                    } catch (e) {
-                        console.error('[Main] Invalid CWD for code execution, falling back to temp:', e)
+                    } catch (error_) {
+                        console.error('[Main] Invalid CWD for code execution, falling back to temp:', error_)
                         safeCwd = tempDir
                     }
                 }
@@ -752,8 +787,7 @@ export function registerCodeExecutionHandlers(
                     cwd: safeCwd,
                     shell: false,
                     env: {
-                        ...process.env,
-                        PATH: getEnhancedPATH(),
+                        ...getSafeEnv(),
                         NODE_NO_WARNINGS: '1',
                         NO_UPDATE_NOTIFIER: '1'
                     }
@@ -806,7 +840,7 @@ export function registerCodeExecutionHandlers(
     })
 
     // Run a shell command (with allowlist)
-    ipcMain.handle('code:runCommand', async (_event, cwd: string, commandString: string) => {
+    ipcMain.handle('code:runCommand', async (_event, cwd: string, commandString: string, id?: string) => {
         try {
             const ALLOWED = [
                 'npm', 'git', 'node', 'python', 'ls', 'dir', 'echo', 'cat', 'type',
@@ -822,7 +856,7 @@ export function registerCodeExecutionHandlers(
             if (currentWorkspacePath) {
                 try {
                     safeCwd = validatePath(currentWorkspacePath, cwd)
-                } catch (_e) {
+                } catch (error_) {
                     return { success: false, error: 'Invalid Working Directory' }
                 }
             }
@@ -843,17 +877,28 @@ export function registerCodeExecutionHandlers(
                     cwd: safeCwd,
                     shell: false,
                     env: {
-                        ...process.env,
+                        ...getSafeEnv(),
                         NO_UPDATE_NOTIFIER: '1'
                     }
                 })
+
+                if (id) {
+                    runningProcesses.set(id, proc)
+                }
+
                 let output = ''
                 proc.stdout?.on('data', (data) => output += data.toString())
                 proc.stderr?.on('data', (data) => output += data.toString())
                 proc.on('close', (code) => {
+                    if (id) {
+                        runningProcesses.delete(id)
+                    }
                     resolve({ success: code === 0, output })
                 })
                 proc.on('error', (err) => {
+                    if (id) {
+                        runningProcesses.delete(id)
+                    }
                     resolve({ success: false, error: err.message })
                 })
                 // 30 second timeout
@@ -862,8 +907,8 @@ export function registerCodeExecutionHandlers(
                     resolve({ success: false, error: 'Command timed out' })
                 }, 30000)
             })
-        } catch (_err) {
-            return { success: false, error: String(_err) }
+        } catch (error_) {
+            return { success: false, error: String(error_) }
         }
     })
 

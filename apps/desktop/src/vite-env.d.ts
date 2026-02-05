@@ -16,6 +16,16 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
+declare module '*.wasm?url' {
+  const content: string;
+  export default content;
+}
+
+declare module '*.wasm' {
+  const content: string;
+  export default content;
+}
+
 export interface FileSystemItem {
   name: string
   path: string

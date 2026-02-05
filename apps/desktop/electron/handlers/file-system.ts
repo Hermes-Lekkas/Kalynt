@@ -11,11 +11,33 @@ import type { BrowserWindow as BrowserWindowType } from 'electron'
 const watchers = new Map<string, chokidar.FSWatcher>()
 
 // Path validation helper - prevents path traversal attacks
+// SECURITY FIX: Use fs.realpathSync to resolve symlinks and prevent symlink-based escapes
 function validatePath(base: string, target: string): string {
     const resolvedTarget = path.resolve(base, target)
-    if (!resolvedTarget.startsWith(path.resolve(base))) {
+    const resolvedBase = path.resolve(base)
+
+    // First check: resolved path must be within base (catches ../../../ attacks)
+    if (!resolvedTarget.startsWith(resolvedBase + path.sep) && resolvedTarget !== resolvedBase) {
         throw new Error('Path traversal detected')
     }
+
+    // If target exists, also verify its real path (catches symlink attacks)
+    // Note: We only check if the file exists to avoid errors on new file creation
+    if (fs.existsSync(resolvedTarget)) {
+        try {
+            const realTarget = fs.realpathSync(resolvedTarget)
+            const realBase = fs.realpathSync(resolvedBase)
+            if (!realTarget.startsWith(realBase + path.sep) && realTarget !== realBase) {
+                throw new Error('Path traversal via symlink detected')
+            }
+        } catch (e) {
+            // If realpath fails (broken symlink, permission denied), reject to be safe
+            if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+                throw new Error('Path validation failed: ' + (e as Error).message)
+            }
+        }
+    }
+
     return resolvedTarget
 }
 
@@ -152,6 +174,23 @@ export function registerFileSystemHandlers(
             const safePath = validatePath(currentWorkspacePath, filePath)
             const content = await fs.promises.readFile(safePath, 'utf-8')
             return { success: true, content }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
+
+    // Read binary file contents (returns Uint8Array)
+    ipcMain.handle('fs:readBinaryFile', async (_event, filePath: string) => {
+        try {
+            // Note: We might need to access node_modules which could be outside current workspace
+            // but for now we assume it's within or we'll adjust validation.
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath) {
+                return { success: false, error: 'No workspace open' }
+            }
+            const safePath = validatePath(currentWorkspacePath, filePath)
+            const content = await fs.promises.readFile(safePath)
+            return { success: true, content: new Uint8Array(content) }
         } catch (error) {
             return { success: false, error: String(error) }
         }
