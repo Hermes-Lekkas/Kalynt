@@ -19,11 +19,19 @@ function validatePath(base: string, target: string): string {
     return resolvedTarget
 }
 
-let loadedModelId: string | null = null
+// State for active model
+let llamaInstance: Llama | null = null
 let llamaModel: LlamaModel | null = null
 let llamaContext: LlamaContext | null = null
+let loadedModelId: string | null = null
 let nodeLlamaCpp: typeof import('node-llama-cpp')
-let llamaInstance: Llama | null = null
+
+// State for speculative decoding
+let draftModel: LlamaModel | null = null
+let draftContext: LlamaContext | null = null // Persist context to avoid reallocation
+let draftModelId: string | null = null
+
+const activeGenerations = new Map<string, AbortController>()
 
 /**
  * ESM FIX: Create a dynamic import that bundlers can't transform to require()
@@ -299,7 +307,81 @@ export function registerLLMInferenceHandlers(
         llamaContext = null
         llamaModel = null
         loadedModelId = null
+        // Also unload draft model when main model is unloaded
+        draftModel = null
+        draftModelId = null
         return { success: true }
+    })
+
+    // Speculative Decoding: Load a small draft model alongside the target
+    ipcMain.handle('load-draft-model', async (_event, options: {
+        modelId: string
+        path: string
+    }) => {
+        console.log('[Main] Loading draft model for speculative decoding:', options.modelId)
+        try {
+            if (!llamaInstance) {
+                return { success: false, error: 'Main Llama instance not initialized. Load a target model first.' }
+            }
+
+            const MODELS_DIR = getModelsDir()
+            const safePath = validatePath(MODELS_DIR, path.basename(options.path))
+
+            if (!fs.existsSync(safePath)) {
+                return { success: false, error: `Draft model file not found: ${safePath}` }
+            }
+
+            // Unload previous draft model
+            if (draftModel) {
+                console.log('[Main] Unloading previous draft model:', draftModelId)
+                if (draftContext) {
+                    try { await draftContext.dispose() } catch (e) { console.error('Error disposing draft context:', e) }
+                    draftContext = null
+                }
+                draftModel = null
+                draftModelId = null
+            }
+
+            draftModel = await llamaInstance.loadModel({
+                modelPath: safePath,
+                gpuLayers: 0, // Draft model runs on CPU for minimal VRAM usage
+                useMmap: true
+            })
+
+            // Initialize context immediately to reserve memory and fail early if full
+            console.log('[Main] Creating draft context...')
+            draftContext = await draftModel.createContext({
+                contextSize: { min: 512, max: 4096 },
+                batchSize: 512 // Limit batch size for stability
+            })
+
+            draftModelId = options.modelId
+            console.log('[Main] Draft model & context loaded successfully:', options.modelId)
+            return { success: true }
+        } catch (err) {
+            console.error('[Main] Failed to load draft model:', err)
+            const errorMessage = err instanceof Error ? err.message : String(err)
+            return { success: false, error: `Failed to load draft model: ${errorMessage}` }
+        }
+    })
+
+    ipcMain.handle('unload-draft-model', async () => {
+        console.log('[Main] Unloading draft model:', draftModelId)
+        if (draftContext) {
+            try { await draftContext.dispose() } catch (e) { console.error('Error disposing draft context:', e) }
+            draftContext = null
+        }
+        draftModel = null
+        draftModelId = null
+        return { success: true }
+    })
+
+    ipcMain.handle('get-draft-model-status', async () => {
+        return {
+            success: true,
+            loaded: draftModel !== null,
+            modelId: draftModelId
+        }
     })
 
     ipcMain.handle('generate-completion', async (_event, options: {
@@ -350,6 +432,8 @@ export function registerLLMInferenceHandlers(
             // Capture model reference at start to detect if it gets unloaded during generation
             const currentModel = llamaModel
             let sequence: any = null
+            let draftContext: any = null
+            let draftSequence: any = null
             try {
                 sequence = llamaContext!.getSequence()
                 if (!sequence) {
@@ -360,6 +444,19 @@ export function registerLLMInferenceHandlers(
                     throw new Error('Model was unloaded before generation started')
                 }
                 const tokens = currentModel.tokenize(options.prompt)
+
+                // Speculative Decoding: Set up draft model sequence for acceleration
+                // Speculative Decoding: Set up draft model sequence for acceleration
+                if (draftModel && draftContext) {
+                    try {
+                        // Create a sequence from the existing context
+                        draftSequence = draftContext.getSequence()
+                        console.log('[Main] Speculative decoding enabled with draft model:', draftModelId)
+                    } catch (draftErr) {
+                        console.warn('[Main] Failed to get draft sequence for speculation, continuing without:', draftErr)
+                        draftSequence = null
+                    }
+                }
 
                 let grammar: any = undefined
                 if (options.jsonSchema && nodeLlamaCpp) {
@@ -382,6 +479,11 @@ export function registerLLMInferenceHandlers(
 
                 if (grammar) {
                     evaluateOptions.grammar = grammar
+                }
+
+                // Attach draft sequence for speculative decoding if available
+                if (draftSequence) {
+                    evaluateOptions.draftSequence = draftSequence
                 }
 
                 for await (const token of sequence.evaluate(tokens, evaluateOptions)) {
@@ -415,6 +517,11 @@ export function registerLLMInferenceHandlers(
                         console.warn('[Main] Failed to dispose sequence:', disposeErr)
                     }
                 }
+                // Clean up draft model resources for this generation
+                if (draftSequence && typeof draftSequence.dispose === 'function') {
+                    try { draftSequence.dispose() } catch { /* best effort */ }
+                }
+                // Do NOT dispose draftContext here as it is now persisted across generations
             }
 
             let finalResponse = accumulatedText
@@ -480,6 +587,8 @@ export function registerLLMInferenceHandlers(
 
             let aborted = false
             let sequence: any = null
+            let streamDraftContext: any = null
+            let streamDraftSequence: any = null
             // Capture model reference at start to detect if it gets unloaded during generation
             const currentModel = llamaModel
 
@@ -493,6 +602,19 @@ export function registerLLMInferenceHandlers(
                     throw new Error('Model was unloaded before generation started')
                 }
                 const tokens = currentModel.tokenize(options.prompt)
+
+                // Speculative Decoding: Set up draft model sequence for streaming
+                if (draftModel) {
+                    try {
+                        streamDraftContext = await draftModel.createContext({ contextSize: { min: 512, max: 4096 } })
+                        streamDraftSequence = streamDraftContext.getSequence()
+                        console.log('[Main] Speculative decoding enabled for streaming with draft model:', draftModelId)
+                    } catch (draftErr) {
+                        console.warn('[Main] Failed to init draft model for streaming, continuing without:', draftErr)
+                        streamDraftContext = null
+                        streamDraftSequence = null
+                    }
+                }
 
                 let grammar: any = undefined
                 if (options.jsonSchema && nodeLlamaCpp) {
@@ -515,6 +637,11 @@ export function registerLLMInferenceHandlers(
 
                 if (grammar) {
                     evaluateOptions.grammar = grammar
+                }
+
+                // Attach draft sequence for speculative decoding if available
+                if (streamDraftSequence) {
+                    evaluateOptions.draftSequence = streamDraftSequence
                 }
 
                 for await (const token of sequence.evaluate(tokens, evaluateOptions)) {
@@ -586,6 +713,13 @@ export function registerLLMInferenceHandlers(
                     } catch (disposeErr) {
                         console.warn('[Main] Failed to dispose sequence:', disposeErr)
                     }
+                }
+                // Clean up draft model resources for this streaming generation
+                if (streamDraftSequence && typeof streamDraftSequence.dispose === 'function') {
+                    try { streamDraftSequence.dispose() } catch { /* best effort */ }
+                }
+                if (streamDraftContext && typeof streamDraftContext.dispose === 'function') {
+                    try { streamDraftContext.dispose() } catch { /* best effort */ }
                 }
             }
 

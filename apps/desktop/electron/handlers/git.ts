@@ -37,7 +37,7 @@ export function registerGitHandlers(ipcMain: Electron.IpcMain, getCurrentWorkspa
         }
     })
 
-    ipcMain.handle('git:diff', async (_event, options: { repoPath: string, file?: string }) => {
+    ipcMain.handle('git:diff', async (_event, options: { repoPath: string, file?: string, staged?: boolean }) => {
         try {
             const currentWorkspacePath = getCurrentWorkspacePath()
             if (!currentWorkspacePath || !options.repoPath.startsWith(currentWorkspacePath)) {
@@ -47,9 +47,10 @@ export function registerGitHandlers(ipcMain: Electron.IpcMain, getCurrentWorkspa
                 return { success: false, error: 'Not a git repository' }
             }
             const git: SimpleGit = simpleGit(options.repoPath)
-            const diff = options.file
-                ? await git.diff(['--', options.file])
-                : await git.diff()
+            const args: string[] = []
+            if (options.staged) args.push('--cached')
+            if (options.file) args.push('--', options.file)
+            const diff = args.length > 0 ? await git.diff(args) : await git.diff()
             if (diff.length > 5 * 1024 * 1024) {
                 return { success: false, error: 'Diff too large to display' }
             }

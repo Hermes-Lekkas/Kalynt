@@ -517,6 +517,57 @@ function GeneralTab({ apiKeys, setAPIKey, removeAPIKey }: any) {
           </div>
         )}
       </div>
+
+      {/* Speculative Decoding (Draft Models) */}
+      <div className="collapsible-section" style={{ marginTop: '16px' }}>
+        <button className="collapsible-header" onClick={() => setShowOfflineModels(true)}>
+          <div className="header-left">
+            <Sparkles size={20} />
+            <div>
+              <h3>Speculative Decoding</h3>
+              <p>Accelerate agent coding by 3-4x using a Draft Model</p>
+            </div>
+          </div>
+        </button>
+
+        <div className="collapsible-content">
+          <div className="setting-card">
+            <div className="setting-row">
+              <div className="setting-info">
+                <label>Draft Model</label>
+                <p>Select a small model (e.g., 0.5B or 1.5B) to act as a "sketch artist" for the main model.</p>
+              </div>
+              <div className="select-wrapper">
+                <select
+                  value={useModelStore.getState().draftModelId || ''}
+                  onChange={async (e) => {
+                    const id = e.target.value
+                    if (id) await offlineLLMService.loadDraftModel(id)
+                    else await offlineLLMService.unloadDraftModel()
+                  }}
+                  disabled={!loadedModelId || isLoading}
+                  className="model-select"
+                  style={{
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'white',
+                    padding: '8px',
+                    borderRadius: '8px'
+                  }}
+                >
+                  <option value="">Disabled</option>
+                  {OFFLINE_MODELS.filter(m => m.tierIndex <= 1 || m.sizeBytes < 3 * 1024 * 1024 * 1024).map(m => (
+                    <option key={m.id} value={m.id} disabled={!downloadedModels[m.id]}>
+                      {m.name} ({m.size}) {downloadedModels[m.id] ? '✓' : '(Not Downloaded)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {!loadedModelId && <p className="hint warning" style={{ color: '#ff453a', marginTop: '8px' }}>Load a main model first to enable speculative decoding.</p>}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -920,6 +971,44 @@ function AdvancedTab({
             <AIMESettings />
           </div>
         )}
+      </div>
+
+      {/* Shadow Workspace (Safety Net) */}
+      <div className="collapsible-section" style={{ marginTop: '16px' }}>
+        <button className="collapsible-header" onClick={() => { /* always open */ }}>
+          <div className="header-left">
+            <Shield size={20} />
+            <div>
+              <h3>Safety & Validation</h3>
+              <p>Configure agent safety nets and auto-validation</p>
+            </div>
+          </div>
+        </button>
+
+        <div className="collapsible-content">
+          <div className="setting-card">
+            <div className="setting-row">
+              <div className="setting-info">
+                <label>Shadow Workspace Impact Analysis</label>
+                <p>Automatically validate agent edits using compilers/linters before applying.</p>
+              </div>
+              <div className="toggle-switch">
+                <input
+                  type="checkbox"
+                  defaultChecked={true}
+                  onChange={(e) => {
+                    const { shadowWorkspaceService } = require('../services/shadowWorkspaceService')
+                    shadowWorkspaceService.setEnabled(e.target.checked)
+                  }}
+                />
+                <span className="toggle-slider"></span>
+              </div>
+            </div>
+            <p className="hint">
+              Detects build errors (typescript, python, rust, go) immediately after agent writes code.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Danger Zone */}

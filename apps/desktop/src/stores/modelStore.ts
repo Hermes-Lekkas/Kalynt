@@ -20,6 +20,7 @@ interface ModelState {
 
     // Currently loaded model
     loadedModelId: string | null
+    draftModelId: string | null // Speculative decoding model
     isLoading: boolean
     loadError: string | null
 
@@ -40,6 +41,7 @@ interface ModelState {
 
     // Model loading
     setLoadedModel: (modelId: string | null) => void
+    setDraftModelId: (modelId: string | null) => void
     setLoading: (loading: boolean) => void
     setLoadError: (error: string | null) => void
 
@@ -56,6 +58,7 @@ export const useModelStore = create<ModelState>()(
             downloadedModels: {},
             activeDownloads: {},
             loadedModelId: null,
+            draftModelId: null,
             isLoading: false,
             loadError: null,
 
@@ -231,6 +234,11 @@ export const useModelStore = create<ModelState>()(
             setLoadedModel: (modelId) => {
                 set({ loadedModelId: modelId, loadError: null })
                 console.log('[ModelStore] Loaded model:', modelId)
+            },
+
+            setDraftModelId: (modelId) => {
+                set({ draftModelId: modelId })
+                console.log('[ModelStore] Set draft model:', modelId)
             },
 
             setLoading: (loading) => {

@@ -216,6 +216,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     cancelGeneration: (requestId: string) => ipcRenderer.invoke('cancel-generation', requestId),
 
+    // Speculative Decoding - Draft Model
+    loadDraftModel: (options: { modelId: string; path: string }) => ipcRenderer.invoke('load-draft-model', options),
+    unloadDraftModel: () => ipcRenderer.invoke('unload-draft-model'),
+    getDraftModelStatus: () => ipcRenderer.invoke('get-draft-model-status'),
+
     // ==========================================
     // Enhanced Terminal API
     // ==========================================
