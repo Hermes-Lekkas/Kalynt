@@ -116,20 +116,14 @@ class CollaborativeEngine {
             this.undoManagers.set(docId, undoManager)
 
             // Track updates with error boundary
-            doc.on('update', (update: Uint8Array, origin: unknown) => {
+            doc.on('update', (update: Uint8Array, _origin: unknown) => {
                 try {
                     this.onUpdate?.(docId, update)
                     // BUG-057: Trigger stats update on content change
                     this.onStats?.(docId, this.getStats(docId))
                 } catch (error) {
                     console.error(`[CollabEngine] Error in update handler for ${docId}:`, error)
-                    // Don't re-throw to prevent Yjs from breaking
                 }
-            })
-
-            // Track sync errors
-            doc.on('error', (error: Error) => {
-                console.error(`[CollabEngine] Document error for ${docId}:`, error)
             })
 
 
@@ -180,13 +174,9 @@ class CollaborativeEngine {
                 ]
             })
 
-            // Handle connection errors
-            provider.on('status', (event: { status: string }) => {
-                console.log(`[CollabEngine] P2P status for ${docId}:`, event.status)
-            })
-
-            provider.on('connection-error', (event: { error: Error }) => {
-                console.error(`[CollabEngine] P2P connection error for ${docId}:`, event.error)
+            // Handle sync events
+            provider.on('synced', (event: { synced: boolean }) => {
+                console.log(`[CollabEngine] P2P sync for ${docId}:`, event.synced ? 'synced' : 'syncing')
             })
 
             // Track cursor positions with error boundary

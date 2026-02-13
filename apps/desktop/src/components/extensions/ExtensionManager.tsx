@@ -7,15 +7,28 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { 
   Puzzle, Search, Download, Trash2, RefreshCw, 
   CheckCircle, XCircle, AlertCircle, Star, 
-  TrendingUp, Package, ExternalLink, Settings,
+  TrendingUp, Package, ExternalLink,
   Play, Square, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { extensionService } from '../../services/extensions/extensionService'
 import { marketplaceService } from '../../services/extensions/marketplaceService'
-import { ExtensionMetadata, ExtensionGallery, ExtensionContribution } from '../../types/extensions'
+import { ExtensionGallery, ExtensionContributes } from '../../types/extensions'
 import './ExtensionManager.css'
 
 type ViewMode = 'installed' | 'marketplace' | 'recommended'
+
+interface ExtensionMetadata {
+  id: string
+  name: string
+  displayName?: string
+  description?: string
+  version: string
+  publisher?: string | { displayName: string; publisherName: string }
+  icon?: string
+  categories?: string[]
+  isBuiltin?: boolean
+  contributes?: ExtensionContributes
+}
 
 interface ExtensionManagerProps {
   onClose?: () => void
@@ -32,7 +45,7 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ onClose }) =
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedExtension, setSelectedExtension] = useState<ExtensionMetadata | ExtensionGallery | null>(null)
-  const [contributions, setContributions] = useState<ExtensionContribution>({})
+  const [_contributions, setContributions] = useState<ExtensionContributes>({})
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['commands']))
   const [installing, setInstalling] = useState<Set<string>>(new Set())
   const [activating, setActivating] = useState<Set<string>>(new Set())
@@ -310,7 +323,7 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ onClose }) =
             {installed
               .filter(ext => 
                 searchQuery === '' || 
-                ext.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (ext.displayName || ext.name).toLowerCase().includes(searchQuery.toLowerCase()) ||
                 ext.id.toLowerCase().includes(searchQuery.toLowerCase())
               )
               .map(ext => (
@@ -493,7 +506,7 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ onClose }) =
                 </div>
                 <div>
                   <label>Publisher</label>
-                  <span>{'publisher' in selectedExtension ? selectedExtension.publisher : selectedExtension.publisher.publisherName}</span>
+                  <span>{'publisher' in selectedExtension && selectedExtension.publisher ? (typeof selectedExtension.publisher === 'string' ? selectedExtension.publisher : selectedExtension.publisher.displayName) : 'Unknown'}</span>
                 </div>
               </div>
 

@@ -3,17 +3,22 @@
  */
 /// <reference types="vite/client" />
 
-interface ImportMetaEnv {
-  readonly VITE_OPENAI_API_URL?: string
-  readonly VITE_ANTHROPIC_API_URL?: string
-  readonly VITE_GOOGLE_API_URL?: string
-  readonly VITE_GITHUB_API_URL?: string
-  readonly VITE_MODEL_REGISTRY_URL?: string
-  readonly VITE_MODEL_UPDATE_URL?: string
-}
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_OPENAI_API_URL?: string
+    readonly VITE_ANTHROPIC_API_URL?: string
+    readonly VITE_GOOGLE_API_URL?: string
+    readonly VITE_GITHUB_API_URL?: string
+    readonly VITE_MODEL_REGISTRY_URL?: string
+    readonly VITE_MODEL_UPDATE_URL?: string
+    readonly VITE_TURN_URL?: string
+    readonly VITE_TURN_USERNAME?: string
+    readonly VITE_TURN_CREDENTIAL?: string
+  }
 
-interface ImportMeta {
-  readonly env: ImportMetaEnv
+  interface ImportMeta {
+    readonly env: ImportMetaEnv
+  }
 }
 
 declare module '*.wasm?url' {

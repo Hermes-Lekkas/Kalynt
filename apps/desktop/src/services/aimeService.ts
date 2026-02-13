@@ -47,8 +47,8 @@ class AIMEService {
         
         try {
             this.worker = new AIMEWorker()
-            this.worker.onmessage = (event) => this.handleWorkerMessage(event.data)
-            this.worker.onerror = (error) => {
+            this.worker!.onmessage = (event) => this.handleWorkerMessage(event.data)
+            this.worker!.onerror = (error) => {
                 console.error('[AIME] Worker error:', error)
                 this.useWorker = false // Fall back to main thread
             }
