@@ -25,8 +25,9 @@ import './styles/window-animations.css'
 function App() {
   const { currentSpace, initialize, _hasHydrated, startupStatus } = useAppStore()
   const { initialize: initializeUpdates } = useUpdateStore()
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSplashComplete, setIsSplashComplete] = useState(false)
+  const isWebMode = !window.electronAPI || (window as any).electronAPI?.platform === 'browser'
+  const [isLoading, setIsLoading] = useState(!isWebMode)
+  const [isSplashComplete, setIsSplashComplete] = useState(isWebMode)
   const [activeTab, setActiveTab] = useState<Tab>('editor')
   const [showExtensions, setShowExtensions] = useState(false)
 
@@ -86,9 +87,14 @@ function App() {
     if (_hasHydrated) {
       clearTimeout(timeoutId)
       const init = async () => {
-        logger.general.info('Initializing after hydration')
-        await initialize()
-        setTimeout(() => setIsLoading(false), 300)
+        try {
+          logger.general.info('Initializing after hydration')
+          await initialize()
+        } catch (error) {
+          logger.general.error('Initialization error', error)
+        } finally {
+          setTimeout(() => setIsLoading(false), 300)
+        }
       }
       init()
     }
