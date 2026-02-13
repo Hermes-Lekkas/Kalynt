@@ -674,15 +674,15 @@ const gitStatusTool: Tool = {
     }
 }
 
-// Search files tool (grep-like)
+// Search files tool (grep-like) - CROSS-PLATFORM using Node.js fs
 const searchFilesTool: Tool = {
     name: 'searchFiles',
-    description: 'Search for a pattern in files within a directory (like grep). Returns matching lines with file paths and line numbers.',
+    description: 'Search for a pattern in files within a directory (like grep). Returns matching lines with file paths and line numbers. Works on Windows, macOS, and Linux.',
     parameters: [
         {
             name: 'pattern',
             type: 'string',
-            description: 'Text pattern or regex to search for',
+            description: 'Text pattern to search for (case-insensitive)',
             required: true
         },
         {
@@ -708,27 +708,25 @@ const searchFilesTool: Tool = {
             if (!pattern) return { success: false, error: 'Search pattern is required' }
             if (!searchPath) return { success: false, error: 'Search path is required' }
 
-            // Use runCommand to execute grep-like search
-            const command = filePattern
-                ? `findstr /S /N /C:"${pattern}" ${filePattern}`
-                : `findstr /S /N /C:"${pattern}" *.*`
+            // Use the cross-platform search IPC handler
+            const result = await globalThis.window.electronAPI?.fs.search({
+                searchPath: searchPath,
+                pattern: pattern,
+                filePattern: filePattern,
+                maxResults: 100
+            })
 
-            const result = await globalThis.window.electronAPI?.code.runCommand(searchPath, command)
             if (result?.success) {
-                // Limit results to prevent overwhelming output
-                const lines = (result.output || '').split('\n').slice(0, 50)
                 return {
                     success: true,
                     data: {
-                        matches: lines.filter((l: string) => l.trim()),
-                        truncated: (result.output || '').split('\n').length > 50
+                        matches: result.results || [],
+                        truncated: result.truncated || false,
+                        total: result.results?.length || 0
                     }
                 }
             }
-            // No matches found is not an error
-            if (result?.error?.includes('errorlevel 1') || result?.output === '') {
-                return { success: true, data: { matches: [], message: 'No matches found' } }
-            }
+            
             return { success: false, error: result?.error || 'Search failed' }
         } catch (err) {
             return { success: false, error: String(err) }

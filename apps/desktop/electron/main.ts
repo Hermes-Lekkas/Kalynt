@@ -24,6 +24,7 @@ import { registerDependencyHandlers } from './handlers/dependency'
 import { setupBuildHandlers } from './handlers/build'
 import { setupDebugHandlers } from './handlers/debug'
 import { registerUpdateHandlers, initializeAutoUpdater } from './handlers/update-handler'
+import { extensionHostManager } from './extensions/extensionHostManager'
 
 // Window and workspace state
 let mainWindow: BrowserWindowType | null = null
@@ -75,6 +76,7 @@ let RUNTIMES_DIR: string
 
 // Initialize services (will be set after app is ready)
 let runtimeManager: RuntimeManager
+let EXTENSIONS_DIR: string
 
 // Ensure models directory exists
 function ensureModelsDir() {
@@ -94,6 +96,17 @@ function ensureRuntimesDir() {
     } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
             console.error('[Main] Failed to ensure runtimes dir:', err)
+        }
+    }
+}
+
+// Ensure extensions directory exists
+function ensureExtensionsDir() {
+    try {
+        fs.mkdirSync(EXTENSIONS_DIR, { recursive: true })
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+            console.error('[Main] Failed to ensure extensions dir:', err)
         }
     }
 }
@@ -134,7 +147,7 @@ function createWindow() {
                     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net;" +
                     "img-src 'self' data: blob: https:;" +
                     "font-src 'self' data: https://fonts.gstatic.com;" +
-                    "connect-src 'self' ws: wss: https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://*.signaling.yjs.dev http://localhost:8097 ws://localhost:8097;" +
+                    "connect-src 'self' ws: wss: https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://*.signaling.yjs.dev http://localhost:8097 ws://localhost:8097 https://open-vsx.org;" +
                     "media-src 'self' blob:;" +
                     "worker-src 'self' blob:;"
                 ]
@@ -222,6 +235,9 @@ function registerAllHandlers() {
     // Auto-update system
     registerUpdateHandlers(ipcMain, () => mainWindow)
 
+    // Extension system
+    registerExtensionHandlers()
+
     // Window controls
     ipcMain.handle('minimize-window', () => {
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -243,6 +259,16 @@ function registerAllHandlers() {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.close()
         }
+    })
+}
+
+// Extension handlers
+function registerExtensionHandlers() {
+    // Extension host is already set up in extensionHostManager
+    // Additional handlers for file operations
+    ipcMain.handle('dialog:showOpenDialog', async (_, options) => {
+        if (!mainWindow) return { canceled: true }
+        return dialog.showOpenDialog(mainWindow, options)
     })
 }
 
@@ -283,14 +309,21 @@ if (!gotTheLock) {
         // Initialize directory paths
         MODELS_DIR = path.join(app.getPath('userData'), 'models')
         RUNTIMES_DIR = path.join(app.getPath('userData'), 'runtimes')
+        EXTENSIONS_DIR = path.join(app.getPath('userData'), 'extensions')
 
         // Initialize services
         runtimeManager = new RuntimeManager(RUNTIMES_DIR)
 
         ensureModelsDir()
         ensureRuntimesDir()
+        ensureExtensionsDir()
         createWindow()
         registerAllHandlers()
+        
+        // Initialize extension host
+        extensionHostManager.start().catch(err => {
+            console.error('[Main] Failed to start extension host:', err)
+        })
 
         // Initialize auto-updater (after window is created)
         if (mainWindow) {

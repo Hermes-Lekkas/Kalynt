@@ -1,0 +1,63 @@
+{
+  "name": "kalynt-test-extension",
+  "displayName": "Kalynt Test Extension",
+  "description": "A test extension for Kalynt's VS Code extension system",
+  "version": "1.0.0",
+  "publisher": "kalynt",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:kalyntTest.hello",
+    "onCommand:kalyntTest.showDate"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kalyntTest.hello",
+        "title": "Hello World",
+        "category": "Kalynt Test"
+      },
+      {
+        "command": "kalyntTest.showDate",
+        "title": "Show Current Date",
+        "category": "Kalynt Test"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "kalyntTest.hello",
+          "group": "z_commands"
+        },
+        {
+          "command": "kalyntTest.showDate",
+          "group": "z_commands"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kalynt Test Extension",
+      "properties": {
+        "kalyntTest.greetingMessage": {
+          "type": "string",
+          "default": "Hello from Kalynt!",
+          "description": "The greeting message to display"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^5.0.0"
+  }
+}

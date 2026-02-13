@@ -341,6 +341,105 @@ export function registerFileSystemHandlers(
         return { success: true }
     })
 
+    // NEW: Search files (cross-platform grep-like functionality)
+    ipcMain.handle('fs:search', async (_event, options: { 
+        searchPath: string
+        pattern: string
+        filePattern?: string
+        maxResults?: number
+    }) => {
+        try {
+            const currentWorkspacePath = getCurrentWorkspacePath()
+            if (!currentWorkspacePath) {
+                return { success: false, error: 'No workspace open' }
+            }
+            
+            const safePath = validatePath(currentWorkspacePath, options.searchPath)
+            const results: { file: string; line: number; content: string }[] = []
+            const maxResults = options.maxResults || 100
+            
+            // Escape special regex characters for safety
+            const escapeRegex = (str: string): string => {
+                return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            }
+            
+            // Create search regex
+            const searchRegex = new RegExp(escapeRegex(options.pattern), 'i')
+            
+            // File pattern matching
+            const shouldSearchFile = (fileName: string): boolean => {
+                if (!options.filePattern) return true
+                // Simple glob to regex conversion
+                const pattern = options.filePattern
+                    .replace(/\./g, '\\.')
+                    .replace(/\*/g, '.*')
+                    .replace(/\?/g, '.')
+                const regex = new RegExp(pattern, 'i')
+                return regex.test(fileName)
+            }
+            
+            // Recursive search function
+            const searchDirectory = async (dirPath: string, relativePath: string): Promise<void> => {
+                if (results.length >= maxResults) return
+                
+                const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+                
+                for (const entry of entries) {
+                    if (results.length >= maxResults) break
+                    
+                    const entryName = entry.name
+                    const entryRelativePath = path.join(relativePath, entryName)
+                    const entryFullPath = path.join(dirPath, entryName)
+                    
+                    // Skip hidden dirs, node_modules, etc.
+                    if (entry.isDirectory()) {
+                        if (entryName.startsWith('.') || entryName === 'node_modules' || entryName === 'dist' || entryName === 'build') {
+                            continue
+                        }
+                        await searchDirectory(entryFullPath, entryRelativePath)
+                    } else if (entry.isFile() && shouldSearchFile(entryName)) {
+                        // Skip binary files and very large files
+                        const ext = path.extname(entryName).toLowerCase()
+                        const binaryExts = new Set(['.exe', '.dll', '.so', '.dylib', '.bin', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.rar', '.7z', '.mp3', '.mp4', '.avi', '.mov', '.woff', '.woff2', '.ttf', '.otf'])
+                        
+                        if (binaryExts.has(ext)) continue
+                        
+                        try {
+                            const stats = await fs.promises.stat(entryFullPath)
+                            if (stats.size > 5 * 1024 * 1024) continue // Skip files > 5MB
+                            
+                            const content = await fs.promises.readFile(entryFullPath, 'utf-8')
+                            const lines = content.split('\n')
+                            
+                            lines.forEach((line, index) => {
+                                if (results.length >= maxResults) return
+                                if (searchRegex.test(line)) {
+                                    results.push({
+                                        file: entryRelativePath,
+                                        line: index + 1,
+                                        content: line.trim().substring(0, 200) // Limit line length
+                                    })
+                                }
+                            })
+                        } catch {
+                            // Skip files that can't be read
+                        }
+                    }
+                }
+            }
+            
+            await searchDirectory(safePath, '')
+            
+            return { 
+                success: true, 
+                results,
+                truncated: results.length >= maxResults
+            }
+        } catch (error) {
+            return { success: false, error: String(error) }
+        }
+    })
+
     // NEW: Backup workspace
     ipcMain.handle('fs:backup', async () => {
         try {
@@ -379,6 +478,28 @@ export function registerFileSystemHandlers(
             return { success: true, path: destPath }
         } catch (error) {
             console.error('[Main] Backup failed:', error)
+            return { success: false, error: String(error) }
+        }
+    })
+
+    // Write file (with optional base64 encoding for binary data)
+    ipcMain.handle('fs:writeFile', async (_event, filePath: string, data: string, options?: { encoding?: 'utf-8' | 'base64' }) => {
+        try {
+            // Ensure directory exists
+            const dir = path.dirname(filePath)
+            await fs.promises.mkdir(dir, { recursive: true })
+
+            // Write file
+            if (options?.encoding === 'base64') {
+                const buffer = Buffer.from(data, 'base64')
+                await fs.promises.writeFile(filePath, buffer)
+            } else {
+                await fs.promises.writeFile(filePath, data, 'utf-8')
+            }
+
+            return { success: true }
+        } catch (error) {
+            console.error('[Main] Write file failed:', error)
             return { success: false, error: String(error) }
         }
     })

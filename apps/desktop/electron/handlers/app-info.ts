@@ -27,4 +27,8 @@ export function registerAppInfoHandlers(ipcMain: Electron.IpcMain, app: Electron
     ipcMain.handle('get-realtime-stats', () => {
         return getRealTimeStats()
     })
+
+    ipcMain.handle('app:getPath', (_event, name: string) => {
+        return app.getPath(name as any)
+    })
 }

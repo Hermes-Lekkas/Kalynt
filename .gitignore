@@ -14,13 +14,14 @@ node_modules/
 
 # Logs
 *.log
-*.txt
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 eslint-output.txt
 tsc_output.txt
 validation-output.txt
+
+# Temp/Misc
 bugs.md
 Applied_Fixes.md
 implement.md
@@ -28,6 +29,8 @@ CROSS_PLATFORM_BUILD.md
 .eslintrc.json
 eslint-report.json
 snyk_report.json
+.vercel
+.turbo
 
 # Environment
 .env
@@ -43,13 +46,11 @@ snyk_report.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Sub-projects (if managed separately)
 Kalynt Website/
 
 # Internal Scripts
 /scripts/clean-proprietary-files.js
-node_modules
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
-
-
-

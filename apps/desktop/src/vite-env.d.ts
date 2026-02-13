@@ -230,6 +230,42 @@ export interface ElectronAPI {
   dbQuery?: (sql: string, params: unknown[]) => Promise<unknown[]>
   dbRun?: (sql: string, params: unknown[]) => Promise<void>
   on: (channel: string, callback: (...args: any[]) => void) => void
+
+  // Extension System APIs
+  extensions: {
+    scan: () => Promise<any[]>
+    activate: (id: string) => Promise<any>
+    deactivate: (id: string) => Promise<void>
+    install: (vsixPath: string) => Promise<any>
+    uninstall: (id: string) => Promise<void>
+    list: () => Promise<any[]>
+    active: () => Promise<any[]>
+    contributions: () => Promise<any>
+    startHost: () => Promise<void>
+    stopHost: () => Promise<void>
+    download: (url: string, targetPath: string) => Promise<void>
+    onExtensionActivated: (callback: (data: { id: string }) => void) => void
+    onExtensionDeactivated: (callback: (data: { id: string }) => void) => void
+    onShowMessage: (callback: (data: { type: string; message: string }) => void) => void
+    removeListeners: () => void
+  }
+
+  // Dialog APIs
+  dialog: {
+    showOpenDialog: (options: any) => Promise<any>
+  }
+
+  // App APIs
+  app: {
+    getPath: (name: string) => Promise<string>
+  }
+
+  // IPC Renderer
+  ipcRenderer: {
+    invoke: (channel: string, ...args: any[]) => Promise<any>
+    on: (channel: string, callback: (event: any, ...args: any[]) => void) => void
+    removeAllListeners: (channel: string) => void
+  }
 }
 
 declare global {

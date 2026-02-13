@@ -5,6 +5,7 @@
 import * as Y from 'yjs'
 import { WebrtcProvider } from 'y-webrtc'
 import { logger } from '../utils/logger'
+import { p2pLog, securityLog } from './auditLogService'
 
 export interface PeerInfo {
     id: string
@@ -251,6 +252,14 @@ class P2PService {
     // FIX BUG-012: Periodic cleanup interval
     private cleanupIntervalId: ReturnType<typeof setInterval> | null = null
 
+    // Stats tracking for each room
+    private roomStats: Map<string, {
+        bytesReceived: number
+        bytesSent: number
+        lastPingTime: number
+        latencies: number[] // Ring buffer of last N ping times
+    }> = new Map()
+
     constructor() {
         // FIX BUG-012: Start periodic cleanup every 30 seconds
         this.cleanupIntervalId = setInterval(() => {
@@ -339,6 +348,9 @@ class P2PService {
             // Handle sync events
             provider.on('synced', ({ synced }: { synced: boolean }) => {
                 callbacks.onSync?.(synced)
+                if (synced) {
+                    p2pLog.connected(roomId, this.getPeerCount(roomId))
+                }
             })
 
             // Handle peer connections with rate limiting
@@ -348,16 +360,32 @@ class P2PService {
                     // Check connection rate limit
                     if (!this.rateLimiter.checkConnectionRate(id)) {
                         logger.p2p.warn('Peer connection rate limited:', { peerId: id })
+                        securityLog.rateLimitTriggered(id, 'connection')
                         return // Skip banned/rate-limited peer
                     }
+                    p2pLog.peerJoined(id, roomId)
                     callbacks.onConnection?.(id, true)
                 })
-                removed.forEach(id => callbacks.onConnection?.(id, false))
+                removed.forEach(id => {
+                    p2pLog.peerLeft(id, roomId)
+                    callbacks.onConnection?.(id, false)
+                })
                 this.updatePeerList(provider, roomId)
             })
 
             // Track provider
             this.providers.set(roomId, provider)
+
+            // Initialize stats tracking for this room
+            this.roomStats.set(roomId, {
+                bytesReceived: 0,
+                bytesSent: 0,
+                lastPingTime: Date.now(),
+                latencies: []
+            })
+
+            // Set up stats tracking via awareness ping/pong
+            this.setupStatsTracking(provider, roomId)
 
             return provider
         } catch (err) {
@@ -372,6 +400,8 @@ class P2PService {
             provider.destroy()
             this.providers.delete(roomId)
             this.roomCallbacks.delete(roomId)
+            this.roomStats.delete(roomId) // Clean up stats
+            p2pLog.disconnected(roomId)
         }
     }
 
@@ -381,6 +411,7 @@ class P2PService {
         })
         this.providers.clear()
         this.roomCallbacks.clear()
+        this.roomStats.clear() // Clean up all stats
     }
 
     private updatePeerList(provider: WebrtcProvider, roomId: string) {
@@ -524,13 +555,62 @@ class P2PService {
         return null
     }
 
+    // Set up stats tracking via awareness protocol
+    private setupStatsTracking(provider: WebrtcProvider, roomId: string) {
+        const stats = this.roomStats.get(roomId)
+        if (!stats) return
+
+        // Send periodic ping via awareness
+        const pingInterval = setInterval(() => {
+            if (!this.providers.has(roomId)) {
+                clearInterval(pingInterval)
+                return
+            }
+            
+            const pingTime = Date.now()
+            provider.awareness.setLocalStateField('ping', pingTime)
+            stats.lastPingTime = pingTime
+        }, 5000) // Ping every 5 seconds
+
+        // Listen for pings from other peers
+        provider.awareness.on('change', () => {
+            const states = provider.awareness.getStates()
+            const localClientId = provider.awareness.clientID
+            
+            states.forEach((state, clientId) => {
+                if (clientId !== localClientId && state.ping) {
+                    const pongTime = Date.now()
+                    const latency = pongTime - state.ping
+                    
+                    // Store latency (keep last 10 measurements)
+                    if (stats.latencies.length >= 10) {
+                        stats.latencies.shift()
+                    }
+                    stats.latencies.push(latency)
+                }
+            })
+        })
+
+        // Track approximate data transfer via Yjs updates
+        // Note: This is approximate since WebRTC encrypts and adds overhead
+        const doc = provider.doc
+        doc.on('update', (update: Uint8Array) => {
+            stats.bytesSent += update.length
+        })
+    }
+
     // Get stats for a room
     getStats(roomId: string): P2PStats {
+        const stats = this.roomStats.get(roomId)
+        const avgLatency = stats && stats.latencies.length > 0
+            ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
+            : 0
+
         return {
             connectedPeers: this.getPeerCount(roomId),
-            totalBytesReceived: 0, // Would need custom tracking
-            totalBytesSent: 0,
-            averageLatency: 0
+            totalBytesReceived: stats?.bytesReceived || 0,
+            totalBytesSent: stats?.bytesSent || 0,
+            averageLatency: avgLatency
         }
     }
 

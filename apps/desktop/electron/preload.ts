@@ -405,7 +405,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         removeListeners: () => {
             ipcRenderer.removeAllListeners('fs:change')
         },
-        backupWorkspace: () => ipcRenderer.invoke('fs:backup')
+        backupWorkspace: () => ipcRenderer.invoke('fs:backup'),
+        search: (options: { searchPath: string; pattern: string; filePattern?: string; maxResults?: number }) => 
+            ipcRenderer.invoke('fs:search', options)
     },
 
     // ==========================================
@@ -548,6 +550,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getCallStack: (sessionId: string, threadId?: number) => ipcRenderer.invoke('debug:getCallStack', sessionId, threadId),
         getVariables: (sessionId: string, variablesReference: number) => ipcRenderer.invoke('debug:getVariables', sessionId, variablesReference),
         evaluate: (sessionId: string, expression: string, frameId?: number) => ipcRenderer.invoke('debug:evaluate', sessionId, expression, frameId),
+        addWatch: (sessionId: string, expression: string) => ipcRenderer.invoke('debug:addWatch', sessionId, expression),
+        removeWatch: (sessionId: string, watchId: string) => ipcRenderer.invoke('debug:removeWatch', sessionId, watchId),
+        getWatches: (sessionId: string) => ipcRenderer.invoke('debug:getWatches', sessionId),
+        updateWatches: (sessionId: string, frameId?: number) => ipcRenderer.invoke('debug:updateWatches', sessionId, frameId),
+        clearWatches: (sessionId: string) => ipcRenderer.invoke('debug:clearWatches', sessionId),
         onStarted: (callback: (data: any) => void) => {
             const subscription = (_event: IpcRendererEvent, data: any) => callback(data)
             ipcRenderer.on('debug:started', subscription)
@@ -701,12 +708,72 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // ==========================================
+    // Extension System APIs
+    // ==========================================
+    extensions: {
+        scan: () => ipcRenderer.invoke('extensions:scan'),
+        activate: (id: string) => ipcRenderer.invoke('extensions:activate', id),
+        deactivate: (id: string) => ipcRenderer.invoke('extensions:deactivate', id),
+        install: (vsixPath: string) => ipcRenderer.invoke('extensions:install', vsixPath),
+        uninstall: (id: string) => ipcRenderer.invoke('extensions:uninstall', id),
+        list: () => ipcRenderer.invoke('extensions:list'),
+        active: () => ipcRenderer.invoke('extensions:active'),
+        contributions: () => ipcRenderer.invoke('extensions:contributions'),
+        startHost: () => ipcRenderer.invoke('extensions:start-host'),
+        stopHost: () => ipcRenderer.invoke('extensions:stop-host'),
+        download: (url: string, targetPath: string) => ipcRenderer.invoke('extensions:download', url, targetPath),
+
+        // Events
+        onExtensionActivated: (callback: (data: { id: string }) => void) => {
+            ipcRenderer.on('extension:extension-activated', (_event: IpcRendererEvent, data: any) => callback(data))
+        },
+        onExtensionDeactivated: (callback: (data: { id: string }) => void) => {
+            ipcRenderer.on('extension:extension-deactivated', (_event: IpcRendererEvent, data: any) => callback(data))
+        },
+        onShowMessage: (callback: (data: { type: string; message: string }) => void) => {
+            ipcRenderer.on('extension:show-message', (_event: IpcRendererEvent, data: any) => callback(data))
+        },
+        removeListeners: () => {
+            ipcRenderer.removeAllListeners('extension:extension-activated')
+            ipcRenderer.removeAllListeners('extension:extension-deactivated')
+            ipcRenderer.removeAllListeners('extension:show-message')
+        }
+    },
+
+    // ==========================================
     // Generic IPC listener for deep links
     // ==========================================
     on: (channel: string, callback: (...args: any[]) => void) => {
-        const validChannels = ['deep-link']
+        const validChannels = ['deep-link', 'extension:extension-activated', 'extension:extension-deactivated', 'extension:show-message']
         if (validChannels.includes(channel)) {
             ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+        }
+    },
+
+    // ==========================================
+    // Dialog APIs
+    // ==========================================
+    dialog: {
+        showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options)
+    },
+
+    // ==========================================
+    // App APIs
+    // ==========================================
+    app: {
+        getPath: (name: string) => ipcRenderer.invoke('app:getPath', name)
+    },
+
+    // ==========================================
+    // IPC Renderer for custom channels
+    // ==========================================
+    ipcRenderer: {
+        invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+        on: (channel: string, callback: (event: IpcRendererEvent, ...args: any[]) => void) => {
+            ipcRenderer.on(channel, callback)
+        },
+        removeAllListeners: (channel: string) => {
+            ipcRenderer.removeAllListeners(channel)
         }
     }
 })

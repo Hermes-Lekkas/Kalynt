@@ -3,6 +3,7 @@
  */
 // Encryption Service - E2E encryption for P2P communication
 // Uses Web Crypto API for browser-native encryption
+import { securityLog } from './auditLogService'
 
 export interface EncryptedPayload {
     iv: string // Base64 initialization vector
@@ -267,18 +268,26 @@ class EncryptionService {
             }
         }
 
-        const { key } = await this.deriveKeyFromPassword(password, salt)
-        this.roomKeys.set(roomId, key)
-        this.roomSalts.set(roomId, salt)
+        try {
+            const { key } = await this.deriveKeyFromPassword(password, salt)
+            this.roomKeys.set(roomId, key)
+            this.roomSalts.set(roomId, salt)
 
-        // Update access order (most recently accessed at end)
-        this.keyAccessOrder = this.keyAccessOrder.filter(id => id !== roomId)
-        this.keyAccessOrder.push(roomId)
-        // SECURITY FIX V-008: Track access time for expiration
-        this.keyAccessTimes.set(roomId, Date.now())
+            // Update access order (most recently accessed at end)
+            this.keyAccessOrder = this.keyAccessOrder.filter(id => id !== roomId)
+            this.keyAccessOrder.push(roomId)
+            // SECURITY FIX V-008: Track access time for expiration
+            this.keyAccessTimes.set(roomId, Date.now())
 
-        // Return salt so it can be stored/shared with room metadata
-        return salt
+            // Audit log: encryption enabled for room
+            securityLog.encryptionEnabled(roomId, { saltLength: salt.length })
+
+            // Return salt so it can be stored/shared with room metadata
+            return salt
+        } catch (error) {
+            securityLog.encryptionFailed(roomId, String(error))
+            throw error
+        }
     }
 
     // Get salt for a room (needed for sharing with peers)

@@ -11,8 +11,9 @@ import CommandPalette, { FileItem, IDECommand } from './CommandPalette'
 import { createDefaultCommands } from '../../services/ideCommands'
 import type { FileSystemItem } from '../../vite-env'
 import {
-    FolderOpen, Wand2
+    FolderOpen, Wand2, Puzzle
 } from 'lucide-react'
+import { ExtensionManager } from '../extensions'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { logger } from '../../utils/logger'
 import { validatePath } from '../../utils/path-validator'
@@ -180,6 +181,9 @@ export default function IDEWorkspace() {
     // Command Palette state
     const [paletteOpen, setPaletteOpen] = useState(false)
     const [paletteMode, setPaletteMode] = useState<'commands' | 'files'>('commands')
+    
+    // Extension Manager state
+    const [showExtensions, setShowExtensions] = useState(false)
     const [unsavedDialog, setUnsavedDialog] = useState<{ isOpen: boolean, filePath: string | null }>({ isOpen: false, filePath: null })
     const [deletedFileDialog, setDeletedFileDialog] = useState<{ isOpen: boolean, filePath: string | null }>({ isOpen: false, filePath: null })
     const [workspaceFiles, setWorkspaceFiles] = useState<FileItem[]>([])
@@ -1072,8 +1076,13 @@ export default function IDEWorkspace() {
         }
     }
 
+    // Add extension command
+    const handleShowExtensions = useCallback(() => {
+        setShowExtensions(true)
+    }, [])
+    
     const ideCommands = useMemo<IDECommand[]>(() => {
-        return createDefaultCommands({
+        const baseCommands = createDefaultCommands({
             newFile: handleNewFile,
             saveFile: handleSaveFile,
             closeFile: () => { if (activeFile) handleCloseFile(activeFile) },
@@ -1096,7 +1105,19 @@ export default function IDEWorkspace() {
             aiExplain: () => setAgentOpen(true),
             aiRefactor: () => { } // Handled via Inline AI tool
         })
-    }, [activeFile, workspacePath, handleNewFile, handleSaveFile, handleCloseFile, handleRunCode, handleDebugCode, handleBuildCode, agentOpen])
+        
+        // Add extension command
+        const extensionCommand: IDECommand = {
+            id: 'view.extensions',
+            title: 'Extensions: Show Extension Manager',
+            shortcut: 'Ctrl+Shift+X',
+            category: 'view',
+            icon: <Puzzle size={16} />,
+            action: handleShowExtensions
+        }
+        
+        return [...baseCommands, extensionCommand]
+    }, [activeFile, workspacePath, handleNewFile, handleSaveFile, handleCloseFile, handleRunCode, handleDebugCode, handleBuildCode, agentOpen, handleShowExtensions])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1106,6 +1127,7 @@ export default function IDEWorkspace() {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') { e.preventDefault(); setPaletteMode('commands'); setPaletteOpen(true) }
             if (e.key === 'F1') { e.preventDefault(); setPaletteMode('commands'); setPaletteOpen(true) }
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') { e.preventDefault(); setActivePanel('search') }
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'X') { e.preventDefault(); setShowExtensions(true) }
             if ((e.ctrlKey || e.metaKey) && e.key === '`') { e.preventDefault(); setShowTerminal(prev => !prev) }
             // Run/Debug/Build shortcuts
             if (e.key === 'F5' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -1440,6 +1462,8 @@ export default function IDEWorkspace() {
                 commands={ideCommands}
                 workspacePath={workspacePath || undefined}
             />
+
+            {showExtensions && <ExtensionManager onClose={() => setShowExtensions(false)} />}
 
             <InlineEditWidget
                 visible={inlineEditVisible}

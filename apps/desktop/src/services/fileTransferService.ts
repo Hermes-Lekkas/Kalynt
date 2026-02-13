@@ -65,7 +65,10 @@ class FileTransferService {
         this.docId = docId
         this.initialized = true
 
-        collabEngine.connectP2P(docId, roomId)
+        const provider = collabEngine.connectP2P(docId, roomId)
+        if (!provider) {
+            console.error('[FileTransfer] Failed to connect P2P, file sharing may not work')
+        }
 
         // Defer observer setup to next tick to avoid race conditions
         // with Yjs triggering observers immediately from persisted IndexedDB data
@@ -168,6 +171,26 @@ class FileTransferService {
     async shareFile(file: File, uploaderName: string, requestedTier: TransferTier = 'small'): Promise<{ success: boolean; actualTier?: TransferTier; error?: string }> {
         if (!this.docId) return { success: false, error: 'Not initialized' }
 
+        // Validate file
+        if (!file) return { success: false, error: 'No file provided' }
+        if (file.size < 0) return { success: false, error: 'Invalid file size' }
+        if (file.size === 0) return { success: false, error: 'Cannot upload empty file' }
+        
+        // Check maximum size (200MB)
+        const MAX_FILE_SIZE = 200 * 1024 * 1024
+        if (file.size > MAX_FILE_SIZE) {
+            return { 
+                success: false, 
+                error: `File size ${(file.size / 1024 / 1024).toFixed(1)}MB exceeds maximum of 200MB` 
+            }
+        }
+
+        // Check available storage (IndexedDB has ~50-100MB limit in some browsers)
+        const estimatedStorage = file.size * 1.4 // Base64 overhead
+        if (estimatedStorage > 50 * 1024 * 1024) {
+            console.warn('[FileTransfer] Large file may exceed browser storage limits')
+        }
+
         try {
             const actualTier = this.determineTier(file.size, requestedTier)
             const fileId = crypto.randomUUID()
@@ -240,17 +263,37 @@ class FileTransferService {
         const chunks: FileChunk[] = []
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
-        for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE
-            const end = Math.min(start + CHUNK_SIZE, file.size)
-            const blob = file.slice(start, end)
-            const data = await this.blobToBase64(blob)
+        // Limit maximum chunks to prevent memory issues
+        const MAX_CHUNKS = 1000
+        if (totalChunks > MAX_CHUNKS) {
+            throw new Error(`File would create ${totalChunks} chunks, maximum is ${MAX_CHUNKS}. Try a smaller file.`)
+        }
 
-            chunks.push({
-                fileId,
-                index: i,
-                data
-            })
+        for (let i = 0; i < totalChunks; i++) {
+            try {
+                const start = i * CHUNK_SIZE
+                const end = Math.min(start + CHUNK_SIZE, file.size)
+                const blob = file.slice(start, end)
+                const data = await this.blobToBase64(blob)
+
+                // Validate chunk data
+                if (!data || data.length === 0) {
+                    throw new Error(`Failed to encode chunk ${i}: empty data`)
+                }
+
+                chunks.push({
+                    fileId,
+                    index: i,
+                    data
+                })
+
+                // Yield to event loop every 10 chunks to prevent blocking
+                if (i % 10 === 0 && i > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0))
+                }
+            } catch (error) {
+                throw new Error(`Failed to process chunk ${i}: ${error}`)
+            }
         }
 
         return chunks
@@ -259,12 +302,33 @@ class FileTransferService {
     private blobToBase64(blob: Blob): Promise<string> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader()
+            const timeout = setTimeout(() => {
+                reader.abort()
+                reject(new Error('Blob read timeout (10s)'))
+            }, 10000)
+
             reader.readAsDataURL(blob)
             reader.onload = () => {
-                const result = reader.result as string
-                resolve(result.split(',')[1])
+                clearTimeout(timeout)
+                try {
+                    const result = reader.result as string
+                    if (!result || !result.includes(',')) {
+                        reject(new Error('Invalid blob data'))
+                        return
+                    }
+                    resolve(result.split(',')[1])
+                } catch (error) {
+                    reject(new Error(`Failed to process blob: ${error}`))
+                }
             }
-            reader.onerror = () => reject(new Error('FileReader error'))
+            reader.onerror = () => {
+                clearTimeout(timeout)
+                reject(new Error(`BlobReader error: ${reader.error?.message || 'unknown'}`))
+            }
+            reader.onabort = () => {
+                clearTimeout(timeout)
+                reject(new Error('Blob read aborted'))
+            }
         })
     }
 
@@ -394,12 +458,33 @@ class FileTransferService {
     private fileToBase64(file: File): Promise<string> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader()
+            const timeout = setTimeout(() => {
+                reader.abort()
+                reject(new Error('File read timeout (30s)'))
+            }, 30000)
+
             reader.readAsDataURL(file)
             reader.onload = () => {
-                const result = reader.result as string
-                resolve(result.split(',')[1])
+                clearTimeout(timeout)
+                try {
+                    const result = reader.result as string
+                    if (!result || !result.includes(',')) {
+                        reject(new Error('Invalid FileReader result'))
+                        return
+                    }
+                    resolve(result.split(',')[1])
+                } catch (error) {
+                    reject(new Error(`Failed to process file data: ${error}`))
+                }
             }
-            reader.onerror = () => reject(new Error('FileReader error'))
+            reader.onerror = () => {
+                clearTimeout(timeout)
+                reject(new Error(`FileReader error: ${reader.error?.message || 'unknown error'}`))
+            }
+            reader.onabort = () => {
+                clearTimeout(timeout)
+                reject(new Error('File read aborted'))
+            }
         })
     }
 

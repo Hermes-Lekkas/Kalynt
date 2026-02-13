@@ -65,6 +65,11 @@ export default function FileExplorer({
     const [focusedIndex, setFocusedIndex] = useState<number>(-1)
     const [error, setError] = useState<string | null>(null)
     const [dragOverPath, setDragOverPath] = useState<string | null>(null)
+    
+    // Virtualization: Track expanded file limits per directory
+    const [dirFileLimits, setDirFileLimits] = useState<Map<string, number>>(new Map())
+    const MAX_FILES_PER_DIR = 100 // Initial files to show
+    const FILES_PER_PAGE = 50 // Additional files per "Show more" click
 
 
 
@@ -684,7 +689,33 @@ export default function FileExplorer({
                     <div className="children">
                         {/* Guide line for nested items */}
                         <div className="guide-line" style={{ left: 19 + node.level * 16 }}></div>
-                        {node.children.map((child) => renderNode(child))}
+                        
+                        {/* Pagination for large directories */}
+                        {(() => {
+                            const limit = dirFileLimits.get(node.path) || MAX_FILES_PER_DIR
+                            const visibleChildren = node.children.slice(0, limit)
+                            const hasMore = node.children.length > limit
+                            
+                            return (
+                                <>
+                                    {visibleChildren.map((child) => renderNode(child))}
+                                    {hasMore && (
+                                        <div 
+                                            className="file-item show-more"
+                                            style={{ paddingLeft: 12 + (node.level + 1) * 16 }}
+                                            onClick={() => {
+                                                setDirFileLimits(prev => new Map(prev.set(node.path, limit + FILES_PER_PAGE)))
+                                            }}
+                                        >
+                                            <span className="expand-icon" style={{ width: '14px' }}></span>
+                                            <span className="file-name text-muted">
+                                                Show {Math.min(FILES_PER_PAGE, node.children.length - limit)} more... ({node.children.length - limit} remaining)
+                                            </span>
+                                        </div>
+                                    )}
+                                </>
+                            )
+                        })()}
                     </div>
                 )}
             </div>

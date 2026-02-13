@@ -69,8 +69,6 @@ async function dynamicImportESM(modulePath: string): Promise<any> {
     return importFn(modulePath)
 }
 
-const activeGenerations = new Map<string, AbortController>()
-
 export function registerLLMInferenceHandlers(
     ipcMain: Electron.IpcMain,
     getModelsDir: () => string
@@ -331,35 +329,78 @@ export function registerLLMInferenceHandlers(
                 return { success: false, error: `Draft model file not found: ${safePath}` }
             }
 
-            // Unload previous draft model
+            // Unload previous draft model with better cleanup
             if (draftModel) {
                 console.log('[Main] Unloading previous draft model:', draftModelId)
                 if (draftContext) {
-                    try { await draftContext.dispose() } catch (e) { console.error('Error disposing draft context:', e) }
+                    try { 
+                        await draftContext.dispose() 
+                        // Force garbage collection hint
+                        if (global.gc) global.gc()
+                    } catch (e) { console.error('Error disposing draft context:', e) }
                     draftContext = null
                 }
                 draftModel = null
                 draftModelId = null
+                // Small delay to ensure memory is freed
+                await new Promise(resolve => setTimeout(resolve, 100))
             }
 
+            // Try to load draft model with CPU-only settings to save VRAM
+            console.log('[Main] Loading draft model with CPU-only settings...')
             draftModel = await llamaInstance.loadModel({
                 modelPath: safePath,
                 gpuLayers: 0, // Draft model runs on CPU for minimal VRAM usage
-                useMmap: true
+                useMmap: true,
+                useMlock: false // Don't lock memory
             })
 
-            // Initialize context immediately to reserve memory and fail early if full
-            console.log('[Main] Creating draft context...')
-            draftContext = await draftModel.createContext({
-                contextSize: { min: 512, max: 4096 },
-                batchSize: 512 // Limit batch size for stability
-            })
+            // Try to create context with progressive fallback
+            console.log('[Main] Creating draft context with memory-safe settings...')
+            const contextAttempts = [
+                { contextSize: { min: 512, max: 2048 }, batchSize: 256, threads: 2 },
+                { contextSize: { min: 512, max: 1024 }, batchSize: 128, threads: 2 },
+                { contextSize: { min: 256, max: 512 }, batchSize: 64, threads: 1 }
+            ]
+
+            let lastError: Error | null = null
+            for (const attempt of contextAttempts) {
+                try {
+                    draftContext = await draftModel.createContext({
+                        ...attempt,
+                        failedCreationRemedy: {
+                            retries: 2,
+                            autoContextSizeShrink: 0.5
+                        }
+                    })
+                    console.log('[Main] Draft context created successfully with:', attempt)
+                    break
+                } catch (e) {
+                    lastError = e as Error
+                    console.warn(`[Main] Draft context attempt failed:`, attempt, e)
+                    // Wait a bit before retry
+                    await new Promise(resolve => setTimeout(resolve, 50))
+                }
+            }
+
+            if (!draftContext) {
+                // Clean up model if context creation failed
+                draftModel = null
+                throw lastError || new Error('Failed to create draft context after all attempts')
+            }
 
             draftModelId = options.modelId
             console.log('[Main] Draft model & context loaded successfully:', options.modelId)
             return { success: true }
         } catch (err) {
             console.error('[Main] Failed to load draft model:', err)
+            // Clean up any partial state
+            if (draftContext) {
+                try { await draftContext.dispose() } catch { /* ignore */ }
+                draftContext = null
+            }
+            draftModel = null
+            draftModelId = null
             const errorMessage = err instanceof Error ? err.message : String(err)
             return { success: false, error: `Failed to load draft model: ${errorMessage}` }
         }

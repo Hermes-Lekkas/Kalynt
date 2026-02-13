@@ -26,10 +26,23 @@ interface DebugAdapter {
   pendingRequests: Map<number, { resolve: (response: DAPResponse) => void; reject: (error: Error) => void }>;
 }
 
+interface WatchExpression {
+  id: string;
+  expression: string;
+  result?: string;
+  type?: string;
+  error?: string;
+}
+
+interface DebugSessionManager {
+  watchExpressions: Map<string, WatchExpression[]>; // sessionId -> expressions
+}
+
 class DebugSessionManager {
   private sessions: Map<string, DebugSession> = new Map();
   private adapters: Map<string, DebugAdapter> = new Map();
   private sessionIdCounter = 0;
+  private watchExpressions: Map<string, WatchExpression[]> = new Map();
 
   /**
    * Load launch.json from workspace
@@ -992,6 +1005,68 @@ class DebugSessionManager {
   }
 
   /**
+   * Add a watch expression
+   */
+  addWatchExpression(sessionId: string, expression: string): WatchExpression {
+    const expressions = this.watchExpressions.get(sessionId) || [];
+    const watch: WatchExpression = {
+      id: `watch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      expression,
+    };
+    expressions.push(watch);
+    this.watchExpressions.set(sessionId, expressions);
+    return watch;
+  }
+
+  /**
+   * Remove a watch expression
+   */
+  removeWatchExpression(sessionId: string, watchId: string): boolean {
+    const expressions = this.watchExpressions.get(sessionId);
+    if (!expressions) return false;
+    
+    const index = expressions.findIndex(w => w.id === watchId);
+    if (index === -1) return false;
+    
+    expressions.splice(index, 1);
+    return true;
+  }
+
+  /**
+   * Get all watch expressions for a session
+   */
+  getWatchExpressions(sessionId: string): WatchExpression[] {
+    return this.watchExpressions.get(sessionId) || [];
+  }
+
+  /**
+   * Update all watch expressions for a session (call when execution stops)
+   */
+  async updateWatchExpressions(sessionId: string, frameId?: number): Promise<void> {
+    const expressions = this.watchExpressions.get(sessionId);
+    if (!expressions || expressions.length === 0) return;
+
+    for (const watch of expressions) {
+      try {
+        const result = await this.evaluate(sessionId, watch.expression, frameId);
+        watch.result = result?.result;
+        watch.type = result?.type;
+        watch.error = undefined;
+      } catch (error) {
+        watch.error = error instanceof Error ? error.message : 'Evaluation failed';
+        watch.result = undefined;
+      }
+    }
+  }
+
+  /**
+   * Clear watch expressions for a session
+   */
+  clearWatchExpressions(sessionId: string): void {
+    this.watchExpressions.delete(sessionId);
+  }
+
+  /**
    * Resolve configuration variables like ${workspaceFolder}
    */
   private resolveConfigurationVariables(
@@ -1195,4 +1270,51 @@ export function setupDebugHandlers(
       }
     }
   );
+
+  // Watch Expressions
+  ipc.handle('debug:addWatch', async (_, sessionId: string, expression: string) => {
+    try {
+      const watch = debugSessionManager.addWatchExpression(sessionId, expression);
+      return { success: true, watch };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipc.handle('debug:removeWatch', async (_, sessionId: string, watchId: string) => {
+    try {
+      const removed = debugSessionManager.removeWatchExpression(sessionId, watchId);
+      return { success: removed };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipc.handle('debug:getWatches', async (_, sessionId: string) => {
+    try {
+      const watches = debugSessionManager.getWatchExpressions(sessionId);
+      return { success: true, watches };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipc.handle('debug:updateWatches', async (_, sessionId: string, frameId?: number) => {
+    try {
+      await debugSessionManager.updateWatchExpressions(sessionId, frameId);
+      const watches = debugSessionManager.getWatchExpressions(sessionId);
+      return { success: true, watches };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipc.handle('debug:clearWatches', async (_, sessionId: string) => {
+    try {
+      debugSessionManager.clearWatchExpressions(sessionId);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
 }

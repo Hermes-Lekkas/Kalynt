@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { EncryptionBadge } from '../hooks/useEncryption'
-import { Package, Minimize, Square, X } from 'lucide-react'
+import { Package, Minimize, Square, X, Puzzle } from 'lucide-react'
 import PluginsPanel from './PluginsPanel'
 import UpdateButton from './UpdateButton'
 
@@ -13,9 +13,10 @@ type Tab = 'editor' | 'tasks' | 'files' | 'history'
 interface TitlebarProps {
   activeTab: Tab
   onTabChange: (tab: Tab) => void
+  onShowExtensions?: () => void
 }
 
-export default function Titlebar({ activeTab, onTabChange }: TitlebarProps) {
+export default function Titlebar({ activeTab, onTabChange, onShowExtensions }: TitlebarProps) {
   const { version, connectedPeers, apiKeys } = useAppStore()
   const [showPlugins, setShowPlugins] = useState(false)
 
@@ -65,6 +66,9 @@ export default function Titlebar({ activeTab, onTabChange }: TitlebarProps) {
       <div className="titlebar-right no-drag">
         <button className="plugins-btn" onClick={() => setShowPlugins(true)} title="Language Plugins">
           <Package size={16} />
+        </button>
+        <button className="extensions-btn" onClick={onShowExtensions} title="Extensions (Ctrl+Shift+X)">
+          <Puzzle size={16} />
         </button>
         <EncryptionBadge showDetails={false} />
         <div className="api-status">

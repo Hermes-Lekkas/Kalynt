@@ -115,11 +115,21 @@ class CollaborativeEngine {
             })
             this.undoManagers.set(docId, undoManager)
 
-            // Track updates
-            doc.on('update', (update: Uint8Array) => {
-                this.onUpdate?.(docId, update)
-                // BUG-057: Trigger stats update on content change
-                this.onStats?.(docId, this.getStats(docId))
+            // Track updates with error boundary
+            doc.on('update', (update: Uint8Array, origin: unknown) => {
+                try {
+                    this.onUpdate?.(docId, update)
+                    // BUG-057: Trigger stats update on content change
+                    this.onStats?.(docId, this.getStats(docId))
+                } catch (error) {
+                    console.error(`[CollabEngine] Error in update handler for ${docId}:`, error)
+                    // Don't re-throw to prevent Yjs from breaking
+                }
+            })
+
+            // Track sync errors
+            doc.on('error', (error: Error) => {
+                console.error(`[CollabEngine] Document error for ${docId}:`, error)
             })
 
 
@@ -154,33 +164,51 @@ class CollaborativeEngine {
         this.snapshots.delete(docId)
     }
 
-    // Connect to P2P network
-    connectP2P(docId: string, roomId: string, signalingServers?: string[]): WebrtcProvider {
-        const doc = this.getDocument(docId)
+    // Connect to P2P network with error handling
+    connectP2P(docId: string, roomId: string, signalingServers?: string[]): WebrtcProvider | null {
+        try {
+            const doc = this.getDocument(docId)
 
-        if (this.providers.has(docId)) {
-            return this.providers.get(docId)!
-        }
+            if (this.providers.has(docId)) {
+                return this.providers.get(docId)!
+            }
 
-        const provider = new WebrtcProvider(roomId, doc, {
-            signaling: signalingServers || [
-                'wss://signaling.yjs.dev',
-                'wss://y-webrtc-signaling-eu.herokuapp.com'
-            ]
-        })
-
-        // Track cursor positions
-        if (this.config.enablePresence) {
-            provider.awareness.on('change', () => {
-                const cursors = this.getCursors(docId)
-                this.onCursor?.(docId, cursors)
-                // BUG-057: Trigger stats update on peer change
-                this.onStats?.(docId, this.getStats(docId))
+            const provider = new WebrtcProvider(roomId, doc, {
+                signaling: signalingServers || [
+                    'wss://signaling.yjs.dev',
+                    'wss://y-webrtc-signaling-eu.herokuapp.com'
+                ]
             })
-        }
 
-        this.providers.set(docId, provider)
-        return provider
+            // Handle connection errors
+            provider.on('status', (event: { status: string }) => {
+                console.log(`[CollabEngine] P2P status for ${docId}:`, event.status)
+            })
+
+            provider.on('connection-error', (event: { error: Error }) => {
+                console.error(`[CollabEngine] P2P connection error for ${docId}:`, event.error)
+            })
+
+            // Track cursor positions with error boundary
+            if (this.config.enablePresence) {
+                provider.awareness.on('change', () => {
+                    try {
+                        const cursors = this.getCursors(docId)
+                        this.onCursor?.(docId, cursors)
+                        // BUG-057: Trigger stats update on peer change
+                        this.onStats?.(docId, this.getStats(docId))
+                    } catch (error) {
+                        console.error(`[CollabEngine] Error in awareness handler for ${docId}:`, error)
+                    }
+                })
+            }
+
+            this.providers.set(docId, provider)
+            return provider
+        } catch (error) {
+            console.error(`[CollabEngine] Failed to connect P2P for ${docId}:`, error)
+            return null
+        }
     }
 
     // Disconnect from P2P

@@ -11,6 +11,7 @@ import { useUpdateStore } from './stores/updateStore'
 import { EncryptionProvider } from './hooks/useEncryption'
 import { NotificationSystem } from './components/NotificationSystem'
 import UpdateModal from './components/UpdateModal'
+import { ExtensionManager } from './components/extensions'
 import { setModelsDirectory } from './services/modelDownloadService'
 import { logger } from './utils/logger'
 
@@ -27,6 +28,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSplashComplete, setIsSplashComplete] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('editor')
+  const [showExtensions, setShowExtensions] = useState(false)
 
   // Handle Minimize Animation
   const [isMinimizing, setIsMinimizing] = useState(false)
@@ -150,7 +152,11 @@ function App() {
   return (
     <EncryptionProvider spaceId={currentSpace?.id ?? null}>
       <div className={`app ${isMinimizing ? 'genie-minimizing' : ''}`}>
-        <Titlebar activeTab={activeTab} onTabChange={setActiveTab} />
+        <Titlebar 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab}
+          onShowExtensions={() => setShowExtensions(true)}
+        />
         <div className="app-body">
           <Sidebar />
           <main className="main">
@@ -180,6 +186,9 @@ function App() {
         `}</style>
         <NotificationSystem />
         <UpdateModal />
+        {showExtensions && (
+          <ExtensionManager onClose={() => setShowExtensions(false)} />
+        )}
       </div>
     </EncryptionProvider>
   )

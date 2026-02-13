@@ -30,6 +30,7 @@
         "chokidar": "^3.6.0",
         "cmdk": "^1.1.1",
         "electron-updater": "^6.7.3",
+        "extract-zip": "^2.0.1",
         "fuse.js": "^7.1.0",
         "lodash.debounce": "^4.0.8",
         "lucide-react": "^0.562.0",

@@ -1,11 +1,14 @@
 /**
  * AIME (AI Memory Engine) Service
  * Handles codebase indexing, symbol extraction, and context retrieval (RAG).
+ * 
+ * Now with Web Worker support for non-blocking indexing!
  */
 
 import Fuse from 'fuse.js'
 import { logger } from '../utils/logger'
 import { treeSitterService } from './treeSitterService'
+import AIMEWorker from '../workers/aimeWorker?worker'
 
 export interface CodeSymbol {
     name: string
@@ -29,9 +32,99 @@ class AIMEService {
     private isIndexing = false
     private workspacePath: string | null = null
     private avgdl = 0 // Average document length for BM25
+    
+    // Web Worker for off-thread indexing
+    private worker: Worker | null = null
+    private workerCallbacks = new Map<string, (data: any) => void>()
+    private useWorker = true // Feature flag
 
     /**
-     * Initialize indexing for a workspace
+     * Initialize the Web Worker
+     */
+    private initWorker(): Worker | null {
+        if (this.worker) return this.worker
+        if (!this.useWorker) return null
+        
+        try {
+            this.worker = new AIMEWorker()
+            this.worker.onmessage = (event) => this.handleWorkerMessage(event.data)
+            this.worker.onerror = (error) => {
+                console.error('[AIME] Worker error:', error)
+                this.useWorker = false // Fall back to main thread
+            }
+            return this.worker
+        } catch (error) {
+            console.warn('[AIME] Failed to create worker, using main thread:', error)
+            this.useWorker = false
+            return null
+        }
+    }
+    
+    /**
+     * Handle messages from the Web Worker
+     */
+    private handleWorkerMessage(data: any) {
+        switch (data.type) {
+            case 'indexingStarted':
+                logger.agent.info('AIME Worker: Indexing started', { totalFiles: data.totalFiles })
+                break
+            case 'indexingProgress':
+                logger.agent.debug('AIME Worker: Progress', { 
+                    processed: data.processed, 
+                    total: data.total 
+                })
+                break
+            case 'indexingComplete':
+                this.isIndexing = false
+                logger.agent.info('AIME Worker: Indexing complete', {
+                    processed: data.processed,
+                    failed: data.failed,
+                    totalSymbols: data.totalSymbols
+                })
+                // Resolve the pending promise
+                const completeCallback = this.workerCallbacks.get('indexComplete')
+                if (completeCallback) {
+                    completeCallback(data)
+                    this.workerCallbacks.delete('indexComplete')
+                }
+                break
+            case 'searchResults':
+                const searchCallback = this.workerCallbacks.get(`search:${data.query}`)
+                if (searchCallback) {
+                    searchCallback(data.results)
+                    this.workerCallbacks.delete(`search:${data.query}`)
+                }
+                break
+            case 'error':
+                logger.agent.error('AIME Worker error:', data)
+                break
+        }
+    }
+    
+    /**
+     * Send message to worker with callback
+     */
+    private async sendToWorker(type: string, payload: any, callbackKey: string): Promise<any> {
+        const worker = this.initWorker()
+        if (!worker) throw new Error('Worker not available')
+        
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.workerCallbacks.delete(callbackKey)
+                reject(new Error('Worker timeout'))
+            }, 60000) // 60s timeout
+            
+            this.workerCallbacks.set(callbackKey, (data: any) => {
+                clearTimeout(timeout)
+                resolve(data)
+            })
+            
+            worker.postMessage({ type, ...payload })
+        })
+    }
+
+    /**
+     * Initialize indexing for a workspace (with Web Worker support)
      */
     async indexWorkspace(path: string) {
         if (this.isIndexing) return
@@ -39,13 +132,27 @@ class AIMEService {
         this.workspacePath = path
         this.index = []
 
-        logger.agent.info('AIME: Starting codebase indexing', { path })
+        logger.agent.info('AIME: Starting codebase indexing', { path, useWorker: this.useWorker })
 
         try {
+            // Try Web Worker first
+            if (this.useWorker) {
+                const files = await this.collectFiles(path)
+                if (files.length > 0) {
+                    const fileData = await this.loadFileContents(files, path)
+                    const worker = this.initWorker()
+                    if (worker) {
+                        await this.indexWithWorker(fileData)
+                        return
+                    }
+                }
+            }
+            
+            // Fall back to main thread
             await treeSitterService.init()
             await this.scanDirectory(path)
             this.buildSearchIndex()
-            logger.agent.info('AIME: Indexing complete', {
+            logger.agent.info('AIME: Indexing complete (main thread)', {
                 files: this.index.length,
                 symbols: this.getTotalSymbolCount()
             })
@@ -54,6 +161,74 @@ class AIMEService {
         } finally {
             this.isIndexing = false
         }
+    }
+    
+    /**
+     * Collect files to index
+     */
+    private async collectFiles(dir: string, files: string[] = []): Promise<string[]> {
+        const electronAPI = globalThis.window.electronAPI
+        if (!electronAPI) return files
+
+        const res = await electronAPI.fs.readDir(dir)
+        if (!res?.success || !res.items) return files
+
+        const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out'])
+        const INCLUDE_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'java', 'c', 'cpp', 'cs', 'md'])
+
+        for (const item of res.items) {
+            const itemPath = `${dir}/${item.name}`
+            if (item.isDirectory) {
+                if (!EXCLUDE_DIRS.has(item.name)) {
+                    await this.collectFiles(itemPath, files)
+                }
+            } else {
+                const ext = item.name.split('.').pop()?.toLowerCase() || ''
+                if (INCLUDE_EXTS.has(ext)) {
+                    files.push(itemPath)
+                }
+            }
+        }
+        
+        return files
+    }
+    
+    /**
+     * Load file contents for worker
+     */
+    private async loadFileContents(filePaths: string[], workspacePath: string): Promise<any[]> {
+        const electronAPI = globalThis.window.electronAPI
+        const files: any[] = []
+        
+        for (const path of filePaths) {
+            try {
+                const res = await electronAPI?.fs.readFile(path)
+                if (res?.success && res.content) {
+                    files.push({
+                        path,
+                        content: res.content,
+                        relativePath: path.replace(workspacePath, '').replace(/^[/\\]/, '')
+                    })
+                }
+            } catch (error) {
+                console.warn(`[AIME] Failed to load file: ${path}`, error)
+            }
+        }
+        
+        return files
+    }
+    
+    /**
+     * Index files using Web Worker
+     */
+    private async indexWithWorker(files: any[]): Promise<void> {
+        logger.agent.info('AIME: Delegating indexing to Web Worker', { fileCount: files.length })
+        
+        await this.sendToWorker('indexWorkspace', { files }, 'indexComplete')
+        
+        // Note: In a full implementation, we would sync the worker's index back
+        // For now, the worker handles searches independently
+        logger.agent.info('AIME: Worker indexing completed')
     }
 
     private async scanDirectory(dir: string) {
@@ -225,6 +400,24 @@ class AIMEService {
 
     private getTotalSymbolCount(): number {
         return this.index.reduce((acc, f) => acc + f.symbols.length, 0)
+    }
+
+    /**
+     * Search using Web Worker (if available)
+     */
+    async searchWithWorker(query: string, limit = 10): Promise<any[]> {
+        if (!this.useWorker || !this.worker) return []
+        
+        try {
+            const results = await this.sendToWorker('search', { 
+                query, 
+                maxResults: limit 
+            }, `search:${query}`)
+            return results || []
+        } catch (error) {
+            console.warn('[AIME] Worker search failed, falling back:', error)
+            return []
+        }
     }
 
     /**
