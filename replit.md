@@ -45,6 +45,7 @@ Kalynt is a native Electron desktop IDE (Windows/Linux/macOS) for privacy-first 
 - Build target is native Electron desktop app, not web
 
 ## Recent Changes
+- 2026-02-13: Security dependency updates - electron-builder ^24.13.2, npm overrides for tar@7.5.7, minimist@1.2.8, node-fetch@2.7.0, semver@7.7.3, class-validator@0.14.1, validator@13.15.22
 - 2026-02-13: Initial Replit setup, adapted Electron desktop app for web environment
 - 2026-02-13: Fixed P2P/WebRTC collaboration with free STUN servers and yjs.dev signaling
 - 2026-02-13: Fixed terminal and output panel (xterm.js)
