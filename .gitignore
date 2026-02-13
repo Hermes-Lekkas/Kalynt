@@ -43,6 +43,7 @@ snyk_report.json
 # OS
 .DS_Store
 Thumbs.db
+Kalynt Website/
 
 # Internal Scripts
 /scripts/clean-proprietary-files.js
