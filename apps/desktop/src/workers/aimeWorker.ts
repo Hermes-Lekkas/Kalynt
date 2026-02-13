@@ -258,12 +258,21 @@ async function handleIndexWorkspace(message: any) {
     
     isIndexing = false
     
+    const indexData = Array.from(fileIndex.values()).map(f => ({
+        path: f.path,
+        relativePath: f.relativePath,
+        symbols: f.symbols,
+        content: f.content.substring(0, 50000),
+        language: f.language
+    }))
+    
     self.postMessage({
         type: 'indexingComplete',
         processed,
         failed,
         cancelled: shouldCancel,
-        totalSymbols: Array.from(fileIndex.values()).reduce((sum, f) => sum + f.symbols.length, 0)
+        totalSymbols: indexData.reduce((sum, f) => sum + f.symbols.length, 0),
+        indexData
     })
 }
 

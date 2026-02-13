@@ -219,16 +219,37 @@ class AIMEService {
     }
     
     /**
-     * Index files using Web Worker
+     * Index files using Web Worker, then sync worker-parsed results to main thread
      */
     private async indexWithWorker(files: any[]): Promise<void> {
         logger.agent.info('AIME: Delegating indexing to Web Worker', { fileCount: files.length })
         
-        await this.sendToWorker('indexWorkspace', { files }, 'indexComplete')
+        const result = await this.sendToWorker('indexWorkspace', { files }, 'indexComplete')
         
-        // Note: In a full implementation, we would sync the worker's index back
-        // For now, the worker handles searches independently
-        logger.agent.info('AIME: Worker indexing completed')
+        if (result?.indexData) {
+            for (const entry of result.indexData) {
+                const symbols: CodeSymbol[] = (entry.symbols || []).map((s: any) => ({
+                    name: s.name,
+                    type: s.type === 'class' ? 'class' : s.type === 'variable' ? 'variable' : 'function',
+                    filePath: entry.path,
+                    line: s.line,
+                    content: s.context || ''
+                }))
+                this.index.push({
+                    path: entry.path,
+                    lastModified: Date.now(),
+                    symbols,
+                    content: entry.content,
+                    tokenCount: this.tokenize(entry.content).length
+                })
+            }
+            this.buildSearchIndex()
+        }
+        
+        logger.agent.info('AIME: Worker indexing completed and synced to main thread', {
+            files: this.index.length,
+            symbols: this.getTotalSymbolCount()
+        })
     }
 
     private async scanDirectory(dir: string) {
