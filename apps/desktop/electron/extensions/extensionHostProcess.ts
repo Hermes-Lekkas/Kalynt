@@ -13,6 +13,7 @@ interface HostMessage {
   type: string
   payload?: unknown
   error?: string
+  messageId?: number
 }
 
 interface ExtensionModule {
@@ -38,6 +39,8 @@ class ExtensionHost {
   }> = new Map()
 
   private extensionPaths: Map<string, string> = new Map()
+  private nextMessageId = 1
+  private pendingResponses: Map<number, { resolve: (value: unknown) => void }> = new Map()
 
   constructor() {
     this.setupMessageHandlers()
@@ -59,6 +62,9 @@ class ExtensionHost {
             break
           case 'invoke-api':
             await this.handleInvokeAPI(message.payload as { extensionId: string; api: string; args: unknown[] })
+            break
+          case 'command-result':
+            this.handleCommandResult(message.payload as { messageId: number; result: unknown })
             break
           case 'dispose':
             await this.dispose()
@@ -233,6 +239,14 @@ class ExtensionHost {
     })
   }
 
+  private handleCommandResult(payload: { messageId: number; result: unknown }): void {
+    const pending = this.pendingResponses.get(payload.messageId)
+    if (pending) {
+      this.pendingResponses.delete(payload.messageId)
+      pending.resolve(payload.result)
+    }
+  }
+
   private createVSCodeAPI(extensionId: string, context: ExtensionContext): unknown {
     // Create a minimal vscode API compatible with VS Code extensions
     // This is a simplified version - full implementation would be much larger
@@ -268,12 +282,20 @@ class ExtensionHost {
           return disposable
         },
         executeCommand: (command: string, ...args: unknown[]) => {
+          const messageId = this.nextMessageId++
           return new Promise((resolve) => {
+            this.pendingResponses.set(messageId, { resolve })
             this.sendMessage({
               type: 'execute-command',
               payload: { command, args },
-              callback: (result: unknown) => resolve(result)
+              messageId
             })
+            setTimeout(() => {
+              if (this.pendingResponses.has(messageId)) {
+                this.pendingResponses.delete(messageId)
+                resolve(undefined)
+              }
+            }, 10000)
           })
         }
       },
@@ -380,8 +402,8 @@ class ExtensionHost {
   }
 
   private async dispose(): Promise<void> {
-    // Deactivate all extensions
-    for (const [id] of this.extensions) {
+    const extensionIds = Array.from(this.extensions.keys())
+    for (const id of extensionIds) {
       await this.handleDeactivateExtension({ id })
     }
 

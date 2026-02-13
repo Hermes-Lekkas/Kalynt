@@ -321,6 +321,20 @@ export type MainProcessMessage =
   | { type: 'broadcast'; event: string; data: unknown }
   | { type: 'update-config'; extensionId: string; key: string; value: unknown }
 
+export interface ExtensionMetadata {
+  id: string
+  name: string
+  displayName?: string
+  description?: string
+  version: string
+  publisher?: string | { displayName: string; publisherName: string }
+  icon?: string
+  categories?: string[]
+  isBuiltin?: boolean
+  isActive?: boolean
+  contributes?: ExtensionContributes
+}
+
 // Extension marketplace types
 export interface ExtensionGallery {
   id: string
@@ -345,7 +359,7 @@ export interface ExtensionVersion {
     assetType: string
     source: string
   }>
-  properties: Array<{
+  properties?: Array<{
     key: string
     value: string
   }>

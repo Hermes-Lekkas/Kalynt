@@ -218,6 +218,12 @@ export const electronAPIShim = {
         removeAllListeners: noop,
     },
 
+    app: {
+        getPath: () => Promise.resolve('/tmp'),
+    },
+    extensions: {
+        download: noopAsync,
+    },
     terminal: terminalShim,
     runtime: runtimeShim,
     tasks: tasksShim,

@@ -43,11 +43,11 @@ export interface ExtensionContribution {
     key: string
     when?: string
   }>
-  views?: Array<{
+  views?: Record<string, Array<{
     id: string
     name: string
     when?: string
-  }>
+  }>>
   configuration?: Record<string, unknown>
   themes?: Array<{
     label: string
@@ -76,7 +76,7 @@ class ExtensionHostManager {
   private loadedExtensions: Set<string> = new Set()
   private registeredCommands: Map<string, { extensionId: string; callback: (...args: unknown[]) => unknown }> = new Map()
   private isReady = false
-  private messageQueue: Array<{ type: string; payload: unknown; resolve?: (value: unknown) => void; reject?: (error: Error) => void }> = []
+  private messageQueue: Array<{ type: string; payload?: unknown; resolve?: (value: unknown) => void; reject?: (error: Error) => void }> = []
   private messageId = 0
   private pendingMessages: Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }> = new Map()
 
@@ -152,8 +152,8 @@ class ExtensionHostManager {
       return
     }
 
-    // Deactivate all extensions
-    for (const [id] of this.activeExtensions) {
+    const activeIds = Array.from(this.activeExtensions.keys())
+    for (const id of activeIds) {
       await this.deactivateExtension(id)
     }
 
@@ -200,9 +200,11 @@ class ExtensionHostManager {
         this.handleRegisterCommand(message.payload as { extensionId: string; command: string })
         break
 
-      case 'execute-command':
-        this.handleExecuteCommand(message.payload as { command: string; args: unknown[] })
+      case 'execute-command': {
+        const execPayload = message.payload as { command: string; args: unknown[]; messageId?: number }
+        this.handleExecuteCommand(execPayload)
         break
+      }
 
       case 'show-message':
         this.handleShowMessage(message.payload as { type: string; message: string; extensionId: string })
@@ -245,8 +247,8 @@ class ExtensionHostManager {
       metadata.isActive = false
       this.activeExtensions.delete(payload.id)
       
-      // Unregister commands
-      for (const [command, info] of this.registeredCommands) {
+      const commandEntries = Array.from(this.registeredCommands.entries())
+      for (const [command, info] of commandEntries) {
         if (info.extensionId === payload.id) {
           this.registeredCommands.delete(command)
         }
@@ -270,24 +272,33 @@ class ExtensionHostManager {
     })
   }
 
-  private handleExecuteCommand(payload: { command: string; args: unknown[] }): void {
+  private handleExecuteCommand(payload: { command: string; args: unknown[]; messageId?: number }): void {
     const commandInfo = this.registeredCommands.get(payload.command)
+    let result: unknown = undefined
     if (commandInfo) {
-      commandInfo.callback(...payload.args)
+      result = commandInfo.callback(...payload.args)
     } else {
-      // Try to execute via main process
-      this.executeMainCommand(payload.command, payload.args)
+      result = this.executeMainCommand(payload.command, payload.args)
+    }
+
+    if (payload.messageId !== undefined) {
+      Promise.resolve(result).then((resolvedResult) => {
+        this.sendMessage({
+          type: 'command-result',
+          payload: { messageId: payload.messageId, result: resolvedResult }
+        })
+      })
     }
   }
 
-  private executeMainCommand(command: string, args: unknown[]): void {
-    // Execute built-in commands
+  private executeMainCommand(command: string, _args: unknown[]): unknown {
     switch (command) {
       case 'workbench.action.reloadWindow':
         BrowserWindow.getAllWindows().forEach(win => win.reload())
-        break
+        return true
       default:
         console.warn(`[ExtensionHost] Unknown command: ${command}`)
+        return undefined
     }
   }
 
@@ -540,16 +551,16 @@ class ExtensionHostManager {
       commands: [],
       menus: {},
       keybindings: [],
-      views: [],
+      views: {},
       configuration: {},
       themes: []
     }
 
-    for (const extension of this.extensions.values()) {
+    const allExtensions = Array.from(this.extensions.values())
+    for (const extension of allExtensions) {
       const contributes = extension.contributes as ExtensionContribution | undefined
       if (!contributes) continue
 
-      // Collect commands
       if (contributes.commands) {
         contributions.commands!.push(...contributes.commands.map(cmd => ({
           ...cmd,
@@ -557,7 +568,6 @@ class ExtensionHostManager {
         })))
       }
 
-      // Collect menus
       if (contributes.menus) {
         for (const [menu, items] of Object.entries(contributes.menus)) {
           if (!contributions.menus![menu]) {
@@ -567,15 +577,16 @@ class ExtensionHostManager {
         }
       }
 
-      // Collect keybindings
       if (contributes.keybindings) {
         contributions.keybindings!.push(...contributes.keybindings)
       }
 
-      // Collect views
       if (contributes.views) {
-        for (const [, views] of Object.entries(contributes.views)) {
-          contributions.views!.push(...views)
+        for (const [container, views] of Object.entries(contributes.views)) {
+          if (!contributions.views![container]) {
+            contributions.views![container] = []
+          }
+          contributions.views![container].push(...views)
         }
       }
 

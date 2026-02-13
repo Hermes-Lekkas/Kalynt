@@ -3,7 +3,7 @@
  * Manages extensions in the renderer process and communicates with the extension host
  */
 
-import { ExtensionMetadata, ExtensionContribution, ExtensionGallery, ExtensionQueryOptions } from '../../types/extensions'
+import { ExtensionMetadata, ExtensionContributes, ExtensionGallery, ExtensionQueryOptions } from '../../types/extensions'
 import { marketplaceService } from './marketplaceService'
 
 // VS Code API types for extensions
@@ -242,7 +242,6 @@ export type Event<T> = (listener: (e: T) => unknown, thisArgs?: unknown, disposa
 class ExtensionService {
   private extensions: Map<string, ExtensionMetadata> = new Map()
   private activeExtensions: Set<string> = new Set()
-  private contributions: ExtensionContribution = {}
   private installedListeners: Array<(extensions: ExtensionMetadata[]) => void> = []
   private activatedListeners: Array<(id: string) => void> = []
   private deactivatedListeners: Array<(id: string) => void> = []
@@ -486,9 +485,9 @@ class ExtensionService {
   /**
    * Get all extension contributions
    */
-  async getContributions(): Promise<ExtensionContribution> {
+  async getContributions(): Promise<ExtensionContributes> {
     try {
-      return await window.electronAPI?.ipcRenderer?.invoke('extensions:contributions') as ExtensionContribution
+      return await window.electronAPI?.ipcRenderer?.invoke('extensions:contributions') as ExtensionContributes
     } catch (error) {
       console.error('[ExtensionService] Failed to get contributions:', error)
       return {}

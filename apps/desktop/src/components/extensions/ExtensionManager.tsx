@@ -12,23 +12,10 @@ import {
 } from 'lucide-react'
 import { extensionService } from '../../services/extensions/extensionService'
 import { marketplaceService } from '../../services/extensions/marketplaceService'
-import { ExtensionGallery, ExtensionContributes } from '../../types/extensions'
+import { ExtensionGallery, ExtensionContributes, ExtensionMetadata } from '../../types/extensions'
 import './ExtensionManager.css'
 
 type ViewMode = 'installed' | 'marketplace' | 'recommended'
-
-interface ExtensionMetadata {
-  id: string
-  name: string
-  displayName?: string
-  description?: string
-  version: string
-  publisher?: string | { displayName: string; publisherName: string }
-  icon?: string
-  categories?: string[]
-  isBuiltin?: boolean
-  contributes?: ExtensionContributes
-}
 
 interface ExtensionManagerProps {
   onClose?: () => void
