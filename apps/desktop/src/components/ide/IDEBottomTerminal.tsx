@@ -104,7 +104,7 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
                     }}
                 >
                     Output
-                    {isRunning && <span style={{ color: 'var(--success, #a6e3a1)' }}>â—</span>}
+                    {isRunning && <span style={{ color: 'var(--success, #a6e3a1)' }}>{"\u25CF"}</span>}
                 </button>
             </div>
 
