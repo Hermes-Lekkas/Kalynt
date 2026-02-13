@@ -1,13 +1,25 @@
-# Security Guide for Kalynt Auto-Update System
+# Security Guide for Kalynt
 
-This document outlines the security measures implemented in Kalynt's auto-update system and best practices for maintaining security.
+This document covers Kalynt's security architecture, threat model, and best practices for developers and end users.
 
 ## Security Architecture
 
-### 1. Secure Token Storage
+### 1. Local-First Design
 
-#### OS-Level Encryption
-GitHub tokens are never stored in plain text. We use Electron's `safeStorage` API which leverages operating system security features:
+Kalynt is fundamentally local-first. Your code, AI models, and workspace data remain on your machine unless you explicitly enable collaboration or cloud AI providers.
+
+| Data Type | Storage | Leaves Device? |
+|-----------|---------|----------------|
+| Source code | Local filesystem | Only via P2P collaboration (encrypted) |
+| AI models (GGUF) | Local filesystem | Never |
+| AI conversations | Local memory | Only if cloud provider selected |
+| Workspace settings | Local filesystem | Never |
+| Extension data | Local filesystem | Never |
+| Tokens / API keys | OS-encrypted storage | Only to respective API endpoints |
+
+### 2. Secure Token Storage
+
+Sensitive credentials are encrypted using OS-level security via Electron's `safeStorage` API:
 
 | Platform | Technology | Security Level |
 |----------|-----------|----------------|
@@ -15,205 +27,130 @@ GitHub tokens are never stored in plain text. We use Electron's `safeStorage` AP
 | macOS | Keychain Services | Keychain encryption |
 | Linux | Secret Service API / libsecret | Keyring encryption |
 
-#### Implementation
-```typescript
-// Storing token (encrypted automatically)
-await window.electronAPI.safeStorage.set({
-  key: 'github-update-token',
-  value: token
-})
+Tokens are:
+- Encrypted at rest
+- Only accessible to the current user
+- Never exposed to the renderer process
+- Only used in the main process
+- Automatically cleared when deleted
 
-// Retrieving token (decrypted automatically)
-const result = await window.electronAPI.safeStorage.get('github-update-token')
-```
+### 3. P2P Collaboration Security
 
-The token is:
-- **Encrypted at rest**
-- **Only accessible to the current user**
-- **Never exposed to renderer process**
-- **Only used in the main process**
-- **Automatically cleared when deleted**
+#### End-to-End Encryption
+When a room password is set, all Yjs document updates are encrypted before transmission over WebRTC data channels. Each peer decrypts locally -- the signaling server never sees plaintext document content.
 
-### 2. HTTPS-Only Communication
+#### WebRTC Security
+- Data channels use DTLS encryption by default
+- STUN servers only assist with NAT traversal, they never see application data
+- Signaling messages are transient and not stored server-side
 
-All communication with GitHub uses HTTPS exclusively:
+#### Free Infrastructure
+Kalynt uses only free, public infrastructure for P2P:
 
-```typescript
-// Enforced in update-handler.ts
-autoUpdater.forceDevUpdateConfig = false  // Disables dev config
-```
+| Service | Provider | What It Sees |
+|---------|----------|-------------|
+| STUN | Google, Twilio, Xirsys (public) | IP addresses only (NAT traversal) |
+| Signaling | yjs.dev WebSocket server | Encrypted signaling messages |
 
-- **All API calls encrypted in transit**
-- **No downgrade to HTTP allowed**
-- **Certificate validation enforced**
+### 4. Extension Sandboxing
 
-### 3. Minimal Token Permissions
+VS Code extensions run in a sandboxed child process isolated from the main process:
 
-GitHub tokens require minimal scopes:
+- Extensions cannot access the main process directly
+- All communication goes through message-based IPC
+- Extensions receive a controlled VS Code API shim, not raw Node.js access to Electron internals
+- Extension marketplace (Open VSX) uses HTTPS for all downloads
 
-- **Public Repositories**: `public_repo` scope only
-- **Private Repositories**: `repo` scope
+### 5. HTTPS-Only Communication
 
-**Never grant additional permissions**. The token only needs read access to releases.
+All external communication uses HTTPS exclusively:
+- GitHub API for auto-updates
+- Open VSX API for extension marketplace
+- Cloud AI provider APIs
+- No HTTP fallback allowed
 
-### 4. Code Signing (Production)
+### 6. Code Signing (Production)
 
 #### Why Code Signing Matters
 Code signing ensures:
-- The update came from you (authenticity)
-- The update hasn't been tampered with (integrity)
+- The update came from the author (authenticity)
+- The update has not been tampered with (integrity)
 - Users trust the source (trustworthiness)
 
-#### macOS Code Signing
+#### macOS
 
-1. **Get a Developer ID Certificate**
-   - Enroll in Apple Developer Program ($99/year)
-   - Generate certificate in Xcode or Apple Developer portal
-
-2. **Configure Environment**
+1. Get a Developer ID Certificate from the Apple Developer Program
+2. Configure environment:
    ```bash
    export CSC_LINK=/path/to/certificate.p12
    export CSC_KEY_PASSWORD=your_password
    export APPLE_ID=your_apple_id@email.com
    export APPLE_ID_PASSWORD=app-specific-password
    ```
+3. Hardened runtime is enabled in the build configuration with entitlements for unsigned executable memory and library validation bypass (required for native modules like `node-llama-cpp`).
 
-3. **Build Configuration** (in `package.json`)
-   ```json
-   {
-     "build": {
-       "mac": {
-         "hardenedRuntime": true,
-         "gatekeeperAssess": false,
-         "entitlements": "build/entitlements.mac.plist",
-         "entitlementsInherit": "build/entitlements.mac.plist",
-         "category": "public.app-category.developer-tools"
-       }
-     }
-   }
-   ```
+#### Windows
 
-4. **Entitlements File** (`build/entitlements.mac.plist`)
-   ```xml
-   <?xml version="1.0" encoding="UTF-8"?>
-   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-   <plist version="1.0">
-   <dict>
-     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-     <true/>
-     <key>com.apple.security.cs.disable-library-validation</key>
-     <true/>
-   </dict>
-   </plist>
-   ```
-
-#### Windows Code Signing
-
-1. **Get a Code Signing Certificate**
-   - Purchase from trusted CA (DigiCert, Sectigo, etc.)
-   - Or use self-signed for internal testing
-
-2. **Configure Environment**
+1. Obtain a code signing certificate from a trusted CA (DigiCert, Sectigo, etc.)
+2. Configure environment:
    ```bash
    export CSC_LINK=/path/to/certificate.pfx
    export CSC_KEY_PASSWORD=your_password
    ```
+3. Update signature verification is configured in the build settings.
 
-3. **Build Configuration**
-   ```json
-   {
-     "build": {
-       "win": {
-         "publisherName": "Your Company Name",
-         "verifyUpdateCodeSignature": true
-       }
-     }
-   }
-   ```
-
-### 5. Update Signature Verification
+### 7. Auto-Update Security
 
 When code signing is configured, `electron-updater` automatically:
-
-1. Downloads the update
+1. Downloads the update from GitHub Releases
 2. Verifies the digital signature
-3. Rejects updates with invalid/missing signatures
+3. Rejects updates with invalid or missing signatures
 4. Only installs verified updates
 
-**Configuration:**
-```json
-{
-  "win": {
-    "verifyUpdateCodeSignature": true  // Enforces signature check
-  }
-}
-```
+### 8. Code Obfuscation (IP Protection)
 
-### 6. Code Obfuscation (IP Protection)
+Proprietary modules receive heavy obfuscation in production builds (`npm run build:secure`):
 
-Kalynt applies heavy obfuscation to proprietary modules in production builds to protect against reverse engineering of our core AI logic (AIME).
+- RC4 string encryption
+- Control flow flattening
+- Dead code injection
+- Hexadecimal identifier renaming
 
-- **Targeted Files**: `agentService.ts`, `hardwareService.ts`, `aime.ts`, `AIMESettings.tsx`, etc.
-- **Obfuscation Level**: HEAVY (Control flow flattening, RC4 string encryption, Dead code injection).
-- **Environment**: Enabled only when `OBFUSCATE=true` during `npm run build:secure`.
-
-See [OBFUSCATION.md](./OBFUSCATION.md) for a detailed list of protected files.
+This protects the AIME engine and agent logic from reverse engineering. See [OBFUSCATION.md](./OBFUSCATION.md) for details.
 
 ## Security Best Practices
 
 ### For Developers
 
-#### 1. Protect GitHub Tokens
-
+#### Protect Secrets
 ```bash
-# ❌ NEVER DO THIS
-git add .env
-git commit -m "Added configuration"
-
-# ✅ DO THIS
+# Never commit secrets
 echo ".env" >> .gitignore
-git add .gitignore
-```
 
-#### 2. Use Environment Variables
-
-```bash
-# Set token only when building
+# Use environment variables for builds
 GH_TOKEN=ghp_xxx npm run build
-
-# Or use .env file (but never commit it!)
 ```
 
-#### 3. Rotate Tokens Regularly
-
+#### Token Hygiene
 - Rotate GitHub tokens every 90 days
-- Immediately rotate if token is compromised
-- Use fine-grained tokens when possible
+- Immediately rotate if a token is compromised
+- Use fine-grained tokens with minimal scopes
+- Create separate tokens for CI/CD vs manual builds
 
-#### 4. Limit Token Access
-
-- Create tokens with minimal scopes
-- Use separate tokens for CI/CD vs manual builds
-- Consider using GitHub Actions secrets
-
-#### 5. Secure Build Pipeline
-
+#### Secure Build Pipeline
 ```yaml
-# Example GitHub Actions workflow
 name: Build and Release
 on:
   push:
-    tags:
-      - 'v*'
-
+    tags: ['v*']
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use GitHub's provided token
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: npm run build
@@ -221,153 +158,77 @@ jobs:
 
 ### For End Users
 
-#### 1. Verify Updates
-
-Before installing updates:
-- Check the release notes
-- Verify the version number
-- Ensure it's from official source
-
-#### 2. Backup Data
-
-- Backup your workspaces before major updates
-- Export important configurations
-- Save any unsaved work
-
-#### 3. Secure Your GitHub Token
-
-If using a private repository:
-- Never share your GitHub token
-- Use the Settings panel to configure it
-- Delete the token if you suspect compromise
-
-#### 4. Use Official Releases Only
-
-- Only download from official GitHub releases
-- Don't install updates from unknown sources
-- Verify the publisher name on Windows/macOS
+1. **Only download from official GitHub releases** -- verify the publisher name on Windows/macOS
+2. **Check release notes** before installing updates
+3. **Backup workspaces** before major updates
+4. **Never share your GitHub token** if using a private repository
+5. **Use the Settings panel** to configure tokens (they are encrypted automatically)
 
 ## Threat Model
 
 ### What We Protect Against
 
-**Man-in-the-Middle (MITM) Attacks**
-- HTTPS encryption prevents interception
-- Certificate validation prevents impersonation
+| Threat | Mitigation |
+|--------|-----------|
+| Man-in-the-Middle | HTTPS encryption + certificate validation |
+| Token theft from disk | OS-level encryption via safeStorage |
+| Tampered updates | Code signing + signature verification |
+| Unauthorized API access | Minimal token permissions |
+| Code exposure during collaboration | End-to-end encryption for P2P |
+| Extension malware | Sandboxed host process + IPC isolation |
 
-**Token Theft from Disk**
-- OS-level encryption protects stored tokens
-- Tokens only accessible to current user
+### What We Do Not Protect Against
 
-**Tampered Updates**
-- Code signing verifies update integrity
-- Signature verification rejects modified updates
-
-**Unauthorized Access**
-- Minimal token permissions limit damage
-- Token scope restricted to releases only
-
-### What We Don't Protect Against
-
-**Compromised Developer Machine**
-- If your development machine is compromised, attackers could sign malicious updates
-- Mitigation: Use secure development practices, 2FA, encrypted drives
-
-**Compromised GitHub Account**
-- If your GitHub account is compromised, attackers could publish malicious releases
-- Mitigation: Enable 2FA, use strong passwords, monitor release activity
-
-**Supply Chain Attacks**
-- If dependencies are compromised, they could be included in updates
-- Mitigation: Use lockfiles, audit dependencies, SCA tools
-
-**User Device Compromise**
-- If user's device is compromised, malware could intercept the update
-- Mitigation: Users should maintain updated antivirus, firewalls
+| Threat | Recommended Mitigation |
+|--------|----------------------|
+| Compromised developer machine | Use 2FA, encrypted drives, secure development practices |
+| Compromised GitHub account | Enable 2FA, strong passwords, monitor release activity |
+| Supply chain attacks (dependencies) | Use lockfiles, audit dependencies, run SCA tools |
+| User device compromise | Maintain updated OS, antivirus, firewall |
 
 ## Incident Response
 
-### If GitHub Token is Compromised
+### If a Token Is Compromised
 
-1. **Immediately revoke the token**
-   - Go to https://github.com/settings/tokens
-   - Delete the compromised token
+1. Immediately revoke at https://github.com/settings/tokens
+2. Generate a new token with minimal scopes
+3. Audit recent releases for unauthorized activity
+4. Notify users if malicious updates were published
 
-2. **Generate a new token**
-   - Create new token with minimal scopes
-   - Update build configuration
+### If a Code Signing Certificate Is Compromised
 
-3. **Audit recent releases**
-   - Check for unauthorized releases
-   - Delete any suspicious releases
-
-4. **Notify users** (if necessary)
-   - If malicious updates were published
-   - Provide instructions to verify installations
-
-### If Code Signing Certificate is Compromised
-
-1. **Revoke the certificate immediately**
-   - Contact your certificate authority
-   - Revoke the compromised certificate
-
-2. **Obtain a new certificate**
-   - Purchase/generate new certificate
-   - Update build configuration
-
-3. **Re-sign and re-publish all recent releases**
-   - Build with new certificate
-   - Replace all release assets
-
-4. **Notify users**
-   - Alert about the compromise
-   - Provide verification steps
+1. Revoke the certificate immediately via your CA
+2. Obtain and configure a new certificate
+3. Re-sign and re-publish all recent releases
+4. Notify users with verification steps
 
 ## Compliance
 
-### GDPR Compliance
-
-- No personal data collected during updates
-- No tracking or analytics in update process
+### GDPR
+- No personal data collected during updates or normal operation
+- No tracking or analytics
 - User controls when updates are installed
-- Tokens stored locally, never transmitted except to GitHub
+- Tokens stored locally, transmitted only to their respective API
 
-### OWASP Top 10
-
-Our update system addresses:
-- **A02: Cryptographic Failures** - OS-level token encryption
-- **A04: Insecure Design** - Secure-by-default architecture
-- **A07: Identification and Authentication Failures** - Token-based auth
-- **A08: Software and Data Integrity Failures** - Code signing
-
-## Security Checklist
-
-Before deploying auto-updates:
-
-- [ ] Configure code signing for all platforms
-- [ ] Set up secure token storage
-- [ ] Enable signature verification
-- [ ] Test update process end-to-end
-- [ ] Document security procedures
-- [ ] Set up monitoring for releases
-- [ ] Create incident response plan
-- [ ] Enable 2FA on GitHub account
-- [ ] Use minimal token permissions
-- [ ] Regular security audits
+### OWASP Top 10 Alignment
+- **A02 Cryptographic Failures** -- OS-level token encryption
+- **A04 Insecure Design** -- Secure-by-default, local-first architecture
+- **A07 Identification and Authentication Failures** -- Token-based auth with minimal scopes
+- **A08 Software and Data Integrity Failures** -- Code signing + signature verification
 
 ## Reporting Security Issues
 
 If you discover a security vulnerability:
 
 1. **Do NOT open a public issue**
-2. Email: security@hermeslekkas.dev
+2. Email: **security@hermeslekkas.dev**
 3. Include:
-   - Description of vulnerability
+   - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
    - Suggested fix (if any)
 
-I will respond within 48 hours and work with you to address the issue.
+Response within 48 hours.
 
 ## Additional Resources
 
@@ -377,5 +238,4 @@ I will respond within 48 hours and work with you to address the issue.
 - [GitHub Token Security](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure)
 
 ---
-
-**Remember**: Security is an ongoing process, not a one-time setup. Regularly review and update your security practices.
+(c) 2026 Hermes Lekkas. All rights reserved.
