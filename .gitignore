@@ -58,8 +58,8 @@ Kalynt Website/
 
 # Documentation cleanup
 *.md
-!README.md
 !README.MD
 !SECURITY.md
 !CONTRIBUTING.md
 !CHANGELOG.md
+ARCHITECTURE.md
