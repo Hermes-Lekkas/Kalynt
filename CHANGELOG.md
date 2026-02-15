@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.4-beta] - 2026-02-15
+
+### 🌟 Key Highlights
+
+#### 🎨 Unified & Modern UI
+- **Redesigned Settings Panel:** Completely rebuilt `UnifiedSettingsPanel` with a sleek, glassmorphism-based design, proper sidebar, responsive tabs, and a dedicated "Danger Zone".
+- **Streamlined Agent Header:** Simplified `UnifiedAgentPanel` header by removing cluttered buttons and adding a unified "Configure AI" entry point.
+- **Compact Mode Switcher:** Added pill-style toggles for "Cloud" vs "Local" AI modes and "Chat" vs "AI Scan" tabs.
+
+#### 💬 Persistent Chat History
+- **Automatic Saving:** AI conversations are now automatically saved to a local SQLite/JSON database.
+- **History Panel:** Added a "Previous Chats" overlay for browsing, renaming, and deleting past sessions.
+- **Session Management:** Users can now pick up exactly where they left off.
+
+#### ↔️ Resizable Panels Everywhere
+- **Draggable Agent Sidebar:** The right-hand Agent panel is now fully resizable.
+- **Consistent Layout:** Resizing logic matches Terminal and File Explorer behavior.
+
+### 🛠️ Improvements & Fixes
+
+#### Resource Monitor
+- Fixed crash caused by missing iVRAM (Integrated VRAM) stats on some systems.
+
+#### Build Stability
+- Resolved numerous TypeScript errors and unused variable warnings blocking production builds.
+
+#### Performance
+- Optimized file watcher to prevent over-firing during workspace indexing.
+
+#### Security
+- Enhanced path validation in file system handlers to prevent potential traversal attacks.
+
+#### Visual Polish
+- Added missing icons (`Globe`, `History`, `Settings`).
+- Fixed styling in Member Management tab.
+- Improved button hover states and active indicators.
+
+### 🧩 Architecture
+
+#### Chat Store
+- Introduced dedicated `chatStore` (Zustand + Persistence) to manage sessions independently of main application state.
+
+#### Agent Loop Config
+- Updated `AgentLoopConfig` types to support dynamic model overrides per session.
+
 ## [v1.0.3-beta] - 2026-02-03
 
 ### 🔧 Team Collaboration Fixes

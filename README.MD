@@ -31,6 +31,7 @@
 *   **Security Scanning:** Integrated static analysis and dependency scanning (Snyk/Trivy compatible).
 
 ### ⚡ Modern Developer Experience
+*   **Unified & Modern UI:** A sleek, glassmorphism-based interface with a redesigned Settings Panel and streamlined Agent controls.
 *   **Monaco Editor:** The battle-tested core of VS Code, enhanced with AI inline completions and diff views.
 *   **Resizable Panels:** Fully customizable layout with draggable Terminal, File Explorer, and Agent Sidebar.
 *   **Chat History:** Persistent, searchable chat sessions with your AI pair programmer.
