@@ -5,9 +5,6 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
   build:
     name: Build (${{ matrix.os }})
@@ -15,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
 
     steps:
       - name: Checkout Code
@@ -43,12 +40,10 @@ jobs:
         run: npm install
 
       # Build & Publish
-      # Set OBFUSCATE=true to enable code obfuscation (see OBFUSCATION.md)
+      # OBFUSCATE=true enables code protection for the release
       - name: Build and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OBFUSCATE: "false"
-        working-directory: apps/desktop
+          OBFUSCATE: "true"
         run: |
-          npm run build:vite
-          npx electron-builder --publish always
+          npm run electron:build:secure
