@@ -1,6 +1,6 @@
 {
     "name": "kalynt",
-    "version": "1.0.3-beta",
+    "version": "1.0.4-beta",
     "private": true,
     "description": "Serverless P2P Team Collaboration Platform",
     "workspaces": [
