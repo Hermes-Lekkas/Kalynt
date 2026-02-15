@@ -55,3 +55,11 @@ Kalynt Website/
 /scripts/clean-proprietary-files.js
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
+
+# Documentation cleanup
+*.md
+!README.md
+!README.MD
+!SECURITY.md
+!CONTRIBUTING.md
+!CHANGELOG.md
