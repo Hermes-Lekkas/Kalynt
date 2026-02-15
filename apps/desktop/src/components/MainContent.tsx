@@ -4,11 +4,10 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
 import Editor from './Editor'
-import CollaborationPanel from './CollaborationPanel'
+import CollaborationPanel from './collaboration'
 import TaskBoard from './TaskBoard'
 import VersionPanel from './VersionPanel'
 import FilesPanel from './FilesPanel'
-import UnifiedSettingsPanel from './UnifiedSettingsPanel'
 import ResourceMonitor from './ResourceMonitor'
 import { Users, Settings } from 'lucide-react'
 
@@ -19,8 +18,7 @@ interface MainContentProps {
 }
 
 export default function MainContent({ activeTab }: MainContentProps) {
-  const { currentSpace } = useAppStore()
-  const [showSettings, setShowSettings] = useState(false)
+  const { currentSpace, setShowSettings } = useAppStore()
   const [showCollaboration, setShowCollaboration] = useState(false)
 
   // Resource monitor visibility state (with persistence)
@@ -93,8 +91,7 @@ export default function MainContent({ activeTab }: MainContentProps) {
         {activeTab === 'files' && <FilesPanel />}
       </div>
 
-      {showSettings && <UnifiedSettingsPanel onClose={() => setShowSettings(false)} />}
-      {showCollaboration && <CollaborationPanel onClose={() => setShowCollaboration(false)} />}
+      {showCollaboration && <CollaborationPanel onClose={() => setShowCollaboration(false)} spaceId={currentSpace?.id} />}
 
       <style>{`
         .main-content {

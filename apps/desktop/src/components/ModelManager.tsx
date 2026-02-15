@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 // ModelManager - UI for browsing and downloading offline AI models
@@ -17,6 +17,11 @@ import {
     resumeDownload,
     deleteModel
 } from '../services/modelDownloadService'
+import {
+    Star, Check, Pause, AlertTriangle, Bot, X,
+    HardDrive, Package, Cpu, Download, RotateCw, Trash2, Play,
+    Circle
+} from 'lucide-react'
 
 interface Props {
     onClose: () => void
@@ -53,7 +58,17 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
     }
 
     const getQualityStars = (quality: number) => {
-        return 'â˜…'.repeat(quality) + 'â˜†'.repeat(5 - quality)
+        return (
+            <div className="flex gap-0.5">
+                {[...Array(5)].map((_, i) => (
+                    <Star
+                        key={i}
+                        size={12}
+                        className={i < quality ? "fill-yellow-500 text-yellow-500" : "text-gray-600"}
+                    />
+                ))}
+            </div>
+        )
     }
 
     const getStatusBadge = (model: OfflineModel) => {
@@ -61,30 +76,38 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
         const download = activeDownloads[model.id]
 
         if (loadedModelId === model.id) {
-            return <span className="badge badge-active">âœ“ Active</span>
+            return <span className="badge badge-active flex items-center gap-1"><Check size={10} /> Active</span>
         }
         if (downloaded) {
-            return <span className="badge badge-downloaded">âœ“ Downloaded</span>
+            return <span className="badge badge-downloaded flex items-center gap-1"><Check size={10} /> Downloaded</span>
         }
         if (download?.status === 'downloading') {
             const pct = Math.round((download.bytesDownloaded / download.totalBytes) * 100)
             return <span className="badge badge-progress">{pct}%</span>
         }
         if (download?.status === 'paused') {
-            return <span className="badge badge-paused">â¸ Paused</span>
+            return <span className="badge badge-paused flex items-center gap-1"><Pause size={10} /> Paused</span>
         }
         if (download?.status === 'error') {
-            return <span className="badge badge-error">⚠ Error</span>
+            return <span className="badge badge-error flex items-center gap-1"><AlertTriangle size={10} /> Error</span>
         }
         return null
+    }
+
+    const getTierIcon = (tierIndex: number) => {
+        if (tierIndex <= 2) return <Circle size={16} className="fill-green-500 text-green-500" />
+        if (tierIndex <= 4) return <Circle size={16} className="fill-yellow-500 text-yellow-500" />
+        return <Circle size={16} className="fill-blue-500 text-blue-500" />
     }
 
     return (
         <div className="model-manager-overlay" onClick={onClose}>
             <div className="model-manager" onClick={(e) => e.stopPropagation()}>
                 <div className="manager-header">
-                    <h2>ðŸ¤– Offline AI Models</h2>
-                    <button className="close-btn" onClick={onClose}>Ã—</button>
+                    <h2 className="flex items-center gap-2"><Bot size={20} /> Offline AI Models</h2>
+                    <button className="close-btn flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors" onClick={onClose}>
+                        <X size={20} />
+                    </button>
                 </div>
 
                 <div className="manager-info">
@@ -94,8 +117,8 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                             All {OFFLINE_MODELS.length} models available
                         </span>
                     </div>
-                    <div className="storage-info">
-                        ðŸ’¾ {formatBytes(getTotalDownloadedSize())} used
+                    <div className="storage-info flex items-center gap-2">
+                        <HardDrive size={14} /> {formatBytes(getTotalDownloadedSize())} used
                     </div>
                 </div>
 
@@ -113,8 +136,8 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                 className={`model-card ${downloaded ? 'downloaded' : ''}`}
                             >
                                 <div className="model-main">
-                                    <div className="model-icon">
-                                        {model.tierIndex <= 2 ? 'ðŸŸ¢' : model.tierIndex <= 4 ? 'ðŸŸ¡' : 'ðŸ”µ'}
+                                    <div className="model-icon pt-1">
+                                        {getTierIcon(model.tierIndex)}
                                     </div>
                                     <div className="model-info">
                                         <div className="model-header-row">
@@ -123,8 +146,8 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                         </div>
                                         <p className="model-desc">{model.description}</p>
                                         <div className="model-stats">
-                                            <span className="stat">ðŸ“¦ {model.size}</span>
-                                            <span className="stat">ðŸ’» {model.ramRequired} RAM</span>
+                                            <span className="stat flex items-center gap-1"><Package size={12} /> {model.size}</span>
+                                            <span className="stat flex items-center gap-1"><Cpu size={12} /> {model.ramRequired} RAM</span>
                                             <span className="stat quality">{getQualityStars(model.quality)}</span>
                                         </div>
                                     </div>
@@ -145,7 +168,7 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                             </span>
                                             {isDownloading && (
                                                 <span>
-                                                    {formatBytes(download.speed)}/s â€¢ {formatETA(download.eta)}
+                                                    {formatBytes(download.speed)}/s • {formatETA(download.eta)}
                                                 </span>
                                             )}
                                         </div>
@@ -154,8 +177,8 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
 
                                 {/* Error Message */}
                                 {hasError && download?.error && (
-                                    <div className="error-message">
-                                        ⚠️ {download.error}
+                                    <div className="error-message flex items-center gap-2">
+                                        <AlertTriangle size={14} /> {download.error}
                                     </div>
                                 )}
 
@@ -167,7 +190,9 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                                 className="btn btn-primary"
                                                 onClick={() => handleSelect(model.id)}
                                             >
-                                                {loadedModelId === model.id ? 'âœ“ Selected' : 'Use Model'}
+                                                {loadedModelId === model.id ? (
+                                                    <span className="flex items-center gap-2"><Check size={14} /> Selected</span>
+                                                ) : 'Use Model'}
                                             </button>
                                             {confirmDelete === model.id ? (
                                                 <>
@@ -186,20 +211,20 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                                 </>
                                             ) : (
                                                 <button
-                                                    className="btn btn-ghost"
+                                                    className="btn btn-ghost flex items-center gap-2"
                                                     onClick={() => setConfirmDelete(model.id)}
                                                 >
-                                                    ðŸ—‘ï¸ Delete
+                                                    <Trash2 size={14} /> Delete
                                                 </button>
                                             )}
                                         </>
                                     ) : isDownloading ? (
                                         <>
                                             <button
-                                                className="btn btn-secondary"
+                                                className="btn btn-secondary flex items-center gap-2"
                                                 onClick={() => pauseDownload(model.id)}
                                             >
-                                                â¸ Pause
+                                                <Pause size={14} /> Pause
                                             </button>
                                             <button
                                                 className="btn btn-ghost"
@@ -211,10 +236,10 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                     ) : isPaused ? (
                                         <>
                                             <button
-                                                className="btn btn-primary"
+                                                className="btn btn-primary flex items-center gap-2"
                                                 onClick={() => resumeDownload(model.id)}
                                             >
-                                                â–¶ Resume
+                                                <Play size={14} /> Resume
                                             </button>
                                             <button
                                                 className="btn btn-ghost"
@@ -226,10 +251,10 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                     ) : hasError ? (
                                         <>
                                             <button
-                                                className="btn btn-primary"
+                                                className="btn btn-primary flex items-center gap-2"
                                                 onClick={() => handleDownload(model)}
                                             >
-                                                â†» Retry
+                                                <RotateCw size={14} /> Retry
                                             </button>
                                             <button
                                                 className="btn btn-ghost"
@@ -240,10 +265,10 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                         </>
                                     ) : (
                                         <button
-                                            className="btn btn-primary"
+                                            className="btn btn-primary flex items-center gap-2"
                                             onClick={() => handleDownload(model)}
                                         >
-                                            â¬‡ Download
+                                            <Download size={14} /> Download
                                         </button>
                                     )}
                                 </div>
@@ -263,7 +288,7 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        z-index: 1000;
+                        z-index: 10000;
                     }
 
                     .model-manager {
@@ -294,7 +319,6 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                     .close-btn {
                         width: 32px;
                         height: 32px;
-                        font-size: 20px;
                         color: var(--color-text-muted);
                     }
 
@@ -360,7 +384,6 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                     }
 
                     .model-icon {
-                        font-size: 24px;
                         flex-shrink: 0;
                     }
 

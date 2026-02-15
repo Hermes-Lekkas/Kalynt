@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react'
@@ -6,35 +6,34 @@ import { useAppStore } from '../stores/appStore'
 import { useYDoc, useYArray, useAwareness } from '../hooks/useYjs'
 import { usePermissions } from '../hooks/usePermissions'
 import { encryptionService, EncryptedPayload } from '../services/encryptionService'
-import { aiService, AIProvider, AIMessage } from '../services/aiService'
-import { offlineLLMService, ChatMessage as OfflineChatMessage } from '../services/offlineLLMService'
+import { aiService, AIProvider } from '../services/aiService'
+import { offlineLLMService } from '../services/offlineLLMService'
 import { useModelStore } from '../stores/modelStore'
 import { useAgent } from '../hooks/useAgent'
-import { executeTool, getToolsDescription, getToolCallJsonSchema, getToolSystemPrompt, getSimplifiedToolSchema, getModelSizeCategory, toolPermissionManager, stopActiveTool, type ToolCallRequest } from '../services/ideAgentTools'
+import { toolPermissionManager, stopActiveTool, type ToolCallRequest } from '../services/ideAgentTools'
 import { agentLoopService } from '../services/agentLoopService'
 import type { AgentStep, AgentLoopEvent } from '../types/agentTypes'
 import { getModelById } from '../types/offlineModels'
 import UnifiedSettingsPanel from './UnifiedSettingsPanel'
+import WorkspaceScanTab from './aiscan/WorkspaceScanTab'
+import CollaborationPanel from './collaboration'
+import { workspaceScanService } from '../services/workspaceScanService'
+import { fileTransferService } from '../services/fileTransferService'
+import { useNotificationStore } from '../stores/notificationStore'
 import {
     MessageSquare, Zap, Lock, Send, Trash2,
-    Paperclip, Cloud, Terminal as TerminalIcon,
-    Scroll, Check, X, Lightbulb, Bot, AlertCircle,
+    Cloud, Terminal as TerminalIcon,
+    Scroll, X, Bot, AlertCircle,
     ChevronDown, Monitor, Loader2, Square,
-    Brain, Bug, Shield, Info, Wrench, CheckCircle2,
-    Play, FileCode
+    Brain, Info, Wrench, CheckCircle2,
+    Play, FileCode, Users, CornerUpLeft, User, File, Globe,
+    Settings, History, Plus
 } from 'lucide-react'
+import { useChatStore } from '../stores/chatStore'
 
 // --- Types ---
 type PanelMode = 'collaboration' | 'agent'
 type AIMode = 'cloud' | 'offline'
-
-// FIX BUG-004: Custom error class to distinguish timeout from other errors
-class AnalysisTimeoutError extends Error {
-    constructor(message: string = 'Analysis timed out') {
-        super(message)
-        this.name = 'AnalysisTimeoutError'
-    }
-}
 
 /**
  * Clean model output by removing special tokens, raw JSON tool calls, and formatting artifacts
@@ -81,7 +80,7 @@ interface TabProps {
     badge?: number
 }
 
-interface ChatMessage {
+export interface ChatMessage {
     id: string
     role?: 'user' | 'assistant' | 'system' | 'tool'
     content: string
@@ -97,6 +96,9 @@ interface ChatMessage {
     isLoading?: boolean
     issueType?: string
     thinking?: string  // Model's chain-of-thought reasoning
+    replyToId?: string // [NEW] ID of the message being replied to
+    replyToContent?: string // [NEW] Snippet of original message
+    replyToSender?: string // [NEW] Sender of original message
 }
 
 // --- Component ---
@@ -110,67 +112,312 @@ interface UnifiedAgentPanelProps {
 
 export default function UnifiedAgentPanel({
     workspacePath,
-    currentFile,
-    currentFileContent,
-    editorMode = 'general',
-    onRunCommand
+    editorMode = 'general'
 }: UnifiedAgentPanelProps) {
-    const { currentSpace, apiKeys } = useAppStore()
-    const { doc, provider, synced } = useYDoc(currentSpace?.id ?? null)
-    const { items: p2pMessages, push: pushP2P } = useYArray<any>(doc, 'messages')
-    useAwareness(provider)
-    const { canChat } = usePermissions()
-    const { loadedModelId, isLoading: isModelLoading, loadError } = useModelStore()
-
-    // Agent Logic
-    const [agentAIMode, setAgentAIMode] = useState<AIMode>('cloud')
-    const agent = useAgent(currentSpace?.id ?? null, editorMode, agentAIMode === 'offline', workspacePath || '')
-
-    // UI State
+    // --- State & Refs (Top-level) ---
+    const [encryptionEnabled, setEncryptionEnabled] = useState(false)
+    const [decryptedCache, setDecryptedCache] = useState<Map<string, string>>(new Map())
+    const [decryptionErrors, setDecryptionErrors] = useState<Set<string>>(new Set())
+    
     const [activeMode, setActiveMode] = useState<PanelMode>('agent')
     const [aiMode, setAiMode] = useState<AIMode>('cloud')
     const [input, setInput] = useState('')
     const [isProcessing, setIsProcessing] = useState(false)
     const [showModelManager, setShowModelManager] = useState(false)
-    const [includeContext, setIncludeContext] = useState(true)
     const [currentProvider, setCurrentProvider] = useState<AIProvider>('openai')
+    const [cloudModel, setCloudModel] = useState<string>('')
     const [showLog, setShowLog] = useState(false)
     const [showAutonomous, setShowAutonomous] = useState(false)
-    const [scanProgress, setScanProgress] = useState<{ current: number; total: number; currentFile: string } | null>(null)
-
-    // Message States (Local storage for AI chats)
+    const [showTeamPanel, setShowTeamPanel] = useState(false)
+    const [showHistory, setShowHistory] = useState(false)
+    const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+    const [editTitle, setEditTitle] = useState('')
+    
+    const { sessions, currentSessionId, createSession, deleteSession, setCurrentSession, addMessageToSession, renameSession } = useChatStore()
+    
+    const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+    const [localFiles, setLocalFiles] = useState<Array<{name: string, path: string}>>([])
+    const [showSuggestions, setShowSuggestions] = useState(false)
+    const [suggestionType, setSuggestionType] = useState<'user' | 'file'>('user')
+    const [suggestionFilter, setSuggestionFilter] = useState('')
+    const [suggestionIndex, setSuggestionIndex] = useState(0)
+    
     const [aiMessages, setAiMessages] = useState<ChatMessage[]>([])
     const [streamingContent, setStreamingContent] = useState('')
-
-    // Thinking UI State
     const [thinkingContent, setThinkingContent] = useState('')
     const [isThinking, setIsThinking] = useState(false)
     const [showThinking, setShowThinking] = useState(false)
-
-    // Agent Loop State (ReAct engine)
+    
     const [agentSteps, setAgentSteps] = useState<AgentStep[]>([])
     const [agentLoopRunning, setAgentLoopRunning] = useState(false)
     const [agentIteration, setAgentIteration] = useState<{ current: number; max: number } | null>(null)
-    const [useAgentLoop, setUseAgentLoop] = useState(true) // Toggle between legacy and new agent loop
+    const [useAgentLoop, setUseAgentLoop] = useState(true)
+    const [agentAIMode, setAgentAIMode] = useState<AIMode>('cloud')
 
-    // Tool Confirmation State
     const [pendingToolRequest, setPendingToolRequest] = useState<ToolCallRequest | null>(null)
     const [toolConfirmationResolver, setToolConfirmationResolver] = useState<{
         resolve: (value: { approved: boolean; alwaysAllow: boolean }) => void
     } | null>(null)
 
-    // Encryption State
-    const [encryptionEnabled, setEncryptionEnabled] = useState(false)
-    const [decryptedCache, setDecryptedCache] = useState<Map<string, string>>(new Map())
-    const [decryptionErrors, setDecryptionErrors] = useState<Set<string>>(new Set())
-
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
-    const userId = useRef(crypto.randomUUID())
-    // FIX BUG-008: Track component mount state to prevent setState on unmounted component
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const isMountedRef = useRef(true)
+    const processedMessagesRef = useRef<Set<string>>(new Set())
+    const initializedRef = useRef(false)
+    const userId = useRef((function() {
+        const key = 'unified-user-id'
+        const saved = localStorage.getItem(key)
+        if (saved) return saved
+        const newId = crypto.randomUUID()
+        localStorage.setItem(key, newId)
+        return newId
+    })())
+
+    // --- Custom Hooks ---
+    const { currentSpace, apiKeys, userName, setShowSettings, setSettingsTab } = useAppStore()
+    const { addNotification } = useNotificationStore()
+    const { doc, provider, synced } = useYDoc(currentSpace?.id ?? null)
+    const { items: p2pMessages, push: pushP2P } = useYArray<any>(doc, 'messages')
+    const { users, setLocalState, localClientId } = useAwareness(provider)
+    const { canChat } = usePermissions()
+    const { loadedModelId, isLoading: isModelLoading, loadError } = useModelStore()
+    const agent = useAgent(currentSpace?.id ?? null, editorMode, agentAIMode === 'offline', workspacePath || '')
+
+    // --- Sync Chat History ---
+    useEffect(() => {
+        if (currentSessionId) {
+            const session = sessions.find(s => s.id === currentSessionId)
+            if (session) {
+                setAiMessages(session.messages)
+            }
+        } else if (sessions.length > 0) {
+            // Load most recent if none selected
+            setCurrentSession(sessions[0].id)
+        } else {
+            // Create first session if none exist
+            createSession('First Chat')
+        }
+    }, [currentSessionId])
+
+    // Update session when messages change (if not just loading)
+    useEffect(() => {
+        if (currentSessionId && aiMessages.length > 0) {
+            const session = sessions.find(s => s.id === currentSessionId)
+            if (session && session.messages.length !== aiMessages.length) {
+                // We don't use updateSession here to avoid infinite loops, 
+                // messages are added via addMessageToSession usually
+            }
+        }
+    }, [aiMessages, currentSessionId])
+
+    // --- Mention Notifications ---
+    useEffect(() => {
+        if (!p2pMessages.length || !userName) return
+
+        // Initialize processed set with current messages to avoid notifications for history
+        if (!initializedRef.current) {
+            p2pMessages.forEach(m => processedMessagesRef.current.add(m.id))
+            initializedRef.current = true
+            return
+        }
+
+        // We only care about the last message added
+        const lastMsg = p2pMessages[p2pMessages.length - 1]
+        
+        // Skip if already processed, or if it's from us
+        if (processedMessagesRef.current.has(lastMsg.id) || lastMsg.senderId === userId.current) {
+            return
+        }
+
+        // Check for mention in content
+        // Need to wait for decryption if it's encrypted
+        let content = lastMsg.content
+        if (lastMsg.encrypted) {
+            if (decryptedCache.has(lastMsg.id)) {
+                content = decryptedCache.get(lastMsg.id)
+            } else {
+                // Not decrypted yet, useEffect will re-run when decryptedCache changes
+                return 
+            }
+        }
+
+        // Basic mention check: @UserName
+        const mentionRegex = new RegExp(`@${userName}\\b`, 'i')
+        const isMentioned = mentionRegex.test(content)
+        const isReplyToUs = lastMsg.replyToSender === userName
+
+        if (isMentioned || isReplyToUs) {
+            const message = isMentioned 
+                ? `You were mentioned by ${lastMsg.sender || 'someone'} in Team Chat`
+                : `${lastMsg.sender || 'Someone'} replied to your message`
+            
+            addNotification(message, 'info')
+            processedMessagesRef.current.add(lastMsg.id)
+        } else {
+            // Even if no mention, mark as processed so we don't check again
+            processedMessagesRef.current.add(lastMsg.id)
+        }
+    }, [p2pMessages, decryptedCache, userName, addNotification])
+
+
+    // Index local files for tagging
+    useEffect(() => {
+        if (!workspacePath) {
+            setLocalFiles([])
+            return
+        }
+
+        const indexLocalFiles = async () => {
+            try {
+                const results: Array<{name: string, path: string}> = []
+                const ignoreDirs = ['node_modules', '.git', 'dist', 'build', '.next', 'target']
+                
+                const scan = async (dir: string) => {
+                    const res = await window.electronAPI?.fs.readDir(dir)
+                    if (res?.success && res.items) {
+                        for (const item of res.items) {
+                            if (ignoreDirs.includes(item.name) || item.name.startsWith('.')) continue
+                            
+                            if (item.isDirectory) {
+                                await scan(item.path)
+                            } else {
+                                results.push({ name: item.name, path: item.path })
+                            }
+                        }
+                    }
+                }
+                
+                await scan(workspacePath)
+                setLocalFiles(results)
+            } catch (e) {
+                console.warn('[UnifiedAgentPanel] Failed to index local files:', e)
+            }
+        }
+
+        indexLocalFiles()
+    }, [workspacePath])
+
+    // --- Tagging & Autocomplete Logic ---
+    const allFilesSuggestions = useMemo(() => {
+        const p2p = fileTransferService.getFiles().map(f => ({ name: f.name, path: f.id, type: 'p2p' }))
+        const local = localFiles.map(f => ({ name: f.name, path: f.path, type: 'local' }))
+        return [...p2p, ...local]
+    }, [currentSpace?.id, localFiles])
+    
+    const filteredSuggestions = useMemo(() => {
+        if (!showSuggestions) return []
+        
+        if (suggestionType === 'user') {
+            const usersList = Array.from(users.values())
+                .map(u => ({ name: u.user?.name || 'Anonymous', id: u.user?.id }))
+                .filter(u => u.name.toLowerCase().includes(suggestionFilter.toLowerCase()))
+            
+            // Unique by name for simple tagging
+            const unique = new Map()
+            usersList.forEach(u => unique.set(u.name, u))
+            return Array.from(unique.values())
+        } else {
+            return allFilesSuggestions
+                .filter(f => f.name.toLowerCase().includes(suggestionFilter.toLowerCase()))
+                .slice(0, 10) // Limit suggestions
+        }
+    }, [showSuggestions, suggestionType, suggestionFilter, users, allFilesSuggestions])
+
+    // Handle tag clicks
+    useEffect(() => {
+        const handleTagClick = (e: Event) => {
+            const detail = (e as CustomEvent<{ type: string, path: string }>).detail
+            if (detail.type === 'local') {
+                window.dispatchEvent(new CustomEvent('kalynt-open-file', { detail: { path: detail.path } }))
+            } else if (detail.type === 'p2p') {
+                // Future: Navigate to files panel and highlight
+                window.dispatchEvent(new CustomEvent('kalynt-open-p2p-file', { detail: { id: detail.path } }))
+            }
+        }
+        
+        window.addEventListener('kalynt-tag-click', handleTagClick)
+        return () => window.removeEventListener('kalynt-tag-click', handleTagClick)
+    }, [])
+
+    // --- Typing Indicator Logic ---
+    const handleTyping = (text: string) => {
+        setInput(text)
+        
+        // Detect @ mention trigger
+        const cursorPosition = inputRef.current?.selectionStart || 0
+        const textBeforeCursor = text.slice(0, cursorPosition)
+        const match = textBeforeCursor.match(/@([\w.-]*)$/)
+        
+        if (match) {
+            setShowSuggestions(true)
+            const filter = match[1]
+            setSuggestionFilter(filter)
+            setSuggestionIndex(0)
+            
+            // Smart switch: if filter contains a dot, likely a file
+            if (filter.includes('.')) {
+                setSuggestionType('file')
+            } else if (suggestionType !== 'file') {
+                setSuggestionType('user')
+            }
+        } else {
+            setShowSuggestions(false)
+        }
+
+        if (activeMode === 'collaboration') {
+            setLocalState('isTyping', true)
+            
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+            
+            typingTimeoutRef.current = setTimeout(() => {
+                setLocalState('isTyping', false)
+            }, 2000)
+        }
+    }
+
+    const applySuggestion = (suggestion: any) => {
+        const cursorPosition = inputRef.current?.selectionStart || 0
+        const textBeforeCursor = input.slice(0, cursorPosition)
+        const textAfterCursor = input.slice(cursorPosition)
+        
+        // For files, we might want to store the path. 
+        // We'll use a special format: @[name](path) that our parser will handle
+        const replacement = suggestionType === 'file' 
+            ? `@[${suggestion.name}](${suggestion.type}://${suggestion.path})`
+            : `@${suggestion.name}`
+
+        const newTextBefore = textBeforeCursor.replace(/@[\w.-]*$/, `${replacement} `)
+        setInput(newTextBefore + textAfterCursor)
+        setShowSuggestions(false)
+        
+        // Refocus and set cursor
+        setTimeout(() => {
+            if (inputRef.current) {
+                const newPos = newTextBefore.length
+                inputRef.current.focus()
+                inputRef.current.setSelectionRange(newPos, newPos)
+            }
+        }, 0)
+    }
+
+    const typingUsers = Array.from(users.entries())
+        .filter(([id, state]) => id !== localClientId && state.isTyping)
+        .map(([_, state]) => state.user?.name || 'Someone')
 
     // --- Initialization & Sync ---
+
+    // Sync API keys to aiService
+    useEffect(() => {
+        if (apiKeys.openai) aiService.setAPIKey('openai', apiKeys.openai)
+        else aiService.removeAPIKey('openai')
+
+        if (apiKeys.anthropic) aiService.setAPIKey('anthropic', apiKeys.anthropic)
+        else aiService.removeAPIKey('anthropic')
+
+        if (apiKeys.google) aiService.setAPIKey('google', apiKeys.google)
+        else aiService.removeAPIKey('google')
+    }, [apiKeys])
 
     // FIX BUG-008: Set mounted state on component lifecycle
     useEffect(() => {
@@ -202,24 +449,6 @@ export default function UnifiedAgentPanel({
             } catch (e) { console.error('Failed to load encryption settings:', e) }
         }
     }, [currentSpace])
-
-    // Sync AI Chat history
-    useEffect(() => {
-        if (currentSpace?.id) {
-            const saved = localStorage.getItem(`unified-chat-${currentSpace.id}`)
-            if (saved) {
-                try { setAiMessages(JSON.parse(saved)) } catch (e) { console.error('Failed to load history', e) }
-            } else {
-                setAiMessages([])
-            }
-        }
-    }, [currentSpace?.id])
-
-    useEffect(() => {
-        if (currentSpace?.id) {
-            localStorage.setItem(`unified-chat-${currentSpace.id}`, JSON.stringify(aiMessages))
-        }
-    }, [aiMessages, currentSpace?.id])
 
     // Wire up Agent Loop Service events
     useEffect(() => {
@@ -262,27 +491,33 @@ export default function UnifiedAgentPanel({
                     setStreamingContent('')
                     setIsThinking(false)
                     setThinkingContent('')
-                    if (event.finalMessage) {
-                        setAiMessages(prev => [...prev, {
+                    if (event.finalMessage && currentSessionId) {
+                        const assistantMsg: ChatMessage = {
                             id: crypto.randomUUID(),
                             role: 'assistant',
                             content: event.finalMessage,
                             timestamp: Date.now(),
                             modelId: loadedModelId || undefined
-                        }])
+                        }
+                        setAiMessages(prev => [...prev, assistantMsg])
+                        addMessageToSession(currentSessionId, assistantMsg)
                     }
                     break
                 case 'error':
                     setAgentLoopRunning(false)
                     setIsProcessing(false)
                     setStreamingContent('')
-                    setAiMessages(prev => [...prev, {
-                        id: crypto.randomUUID(),
-                        role: 'assistant',
-                        content: `Error: ${event.error}`,
-                        timestamp: Date.now(),
-                        isError: true
-                    }])
+                    if (currentSessionId) {
+                        const errorMsg: ChatMessage = {
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: `Error: ${event.error}`,
+                            timestamp: Date.now(),
+                            isError: true
+                        }
+                        setAiMessages(prev => [...prev, errorMsg])
+                        addMessageToSession(currentSessionId, errorMsg)
+                    }
                     break
                 case 'aborted':
                     setAgentLoopRunning(false)
@@ -295,7 +530,7 @@ export default function UnifiedAgentPanel({
         })
 
         return unsubscribe
-    }, [loadedModelId])
+    }, [loadedModelId, currentSessionId, addMessageToSession])
 
     // Register Tool Confirmation Handler
     useEffect(() => {
@@ -355,7 +590,19 @@ export default function UnifiedAgentPanel({
                 try {
                     const payload: EncryptedPayload = JSON.parse(msg.content)
                     const decrypted = await encryptionService.decryptToString(payload, roomKey)
-                    newCache.set(msg.id, decrypted)
+                    
+                    // Handle structured message format
+                    try {
+                        const parsed = JSON.parse(decrypted)
+                        if (parsed.text) {
+                            newCache.set(msg.id, parsed.text)
+                        } else {
+                            newCache.set(msg.id, decrypted)
+                        }
+                    } catch {
+                        newCache.set(msg.id, decrypted)
+                    }
+                    
                     changed = true
                 } catch (_e) {
                     newErrors.add(msg.id)
@@ -386,24 +633,34 @@ export default function UnifiedAgentPanel({
         return providers
     }, [apiKeys])
 
-    const currentOfflineModel = loadedModelId ? getModelById(loadedModelId) : null
+    // Get available models for current provider
+    const availableCloudModels = useMemo(() => {
+        // We can't import PROVIDER_CONFIG directly as it's not exported
+        // But we know the keys from aiService.ts
+        const models: Record<string, string[]> = {
+            openai: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini', 'gpt-5-preview', 'codex-v6-pro'],
+            anthropic: ['claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-4-5-sonnet-20260215', 'claude-4-5-opus-20260215', 'claude-4-6-opus-latest'],
+            google: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3-flash', 'gemini-3-pro-high']
+        }
+        return models[currentProvider] || []
+    }, [currentProvider])
 
-    const buildContext = (forOffline: boolean = false): string => {
-        if (!includeContext) return ''
-        let context = `WORKSPACE: ${workspacePath || 'None'}\n`
-        if (currentFile && currentFileContent) {
-            // For offline models, use much less context to avoid KV slot errors
-            const maxContent = forOffline ? 500 : 3000
-            context += `CURRENT FILE: ${currentFile}\nCONTENT (Partial):\n${currentFileContent.slice(0, maxContent)}\n`
+    // FIX BUG-011: Auto-select available provider if current is invalid
+    useEffect(() => {
+        if (availableCloudProviders.length > 0 && !availableCloudProviders.includes(currentProvider)) {
+            setCurrentProvider(availableCloudProviders[0])
         }
-        // For offline models, use compact tool descriptions
-        if (forOffline) {
-            context += `TOOLS: readFile, writeFile, listDirectory, createFile, createDirectory, delete, executeCode, runCommand, gitStatus\n`
-        } else {
-            context += `AVAILABLE TOOLS:\n${getToolsDescription()}\n`
+    }, [availableCloudProviders, currentProvider])
+
+    // Default cloud model when provider changes
+    useEffect(() => {
+        if (availableCloudModels.length > 0) {
+            // Pick a reasonable default (prefer Ultra/Pro models if available)
+            const defaultModel = availableCloudModels.find(m => m.includes('pro') || m.includes('ultra') || m.includes('sonnet') || m.includes('preview')) 
+                || availableCloudModels[0]
+            setCloudModel(defaultModel)
         }
-        return context
-    }
+    }, [currentProvider, availableCloudModels])
 
     const handleStop = async () => {
         if (!isProcessing && !agentLoopRunning) return
@@ -429,6 +686,7 @@ export default function UnifiedAgentPanel({
 
             // 4. If in autonomous mode, stop the agent
             if (showAutonomous) {
+                await workspaceScanService.stopScan()
                 agent.toggleEnabled()
             }
 
@@ -457,21 +715,30 @@ export default function UnifiedAgentPanel({
             if (!canChat) return
             let content = text
             let encrypted = false
+            
+            const replyInfo = replyTo ? {
+                replyToId: replyTo.id,
+                replyToContent: replyTo.content.slice(0, 100),
+                replyToSender: replyTo.sender === 'You' ? useAppStore.getState().userName : (replyTo.sender || 'Assistant')
+            } : {}
+
             if (encryptionEnabled && currentSpace) {
                 const key = encryptionService.getRoomKey(currentSpace.id)
                 if (key) {
-                    const payload = await encryptionService.encrypt(content, key)
+                    const payload = await encryptionService.encrypt(JSON.stringify({ text, ...replyInfo }), key)
                     const msgId = crypto.randomUUID()
-                    setDecryptedCache(prev => new Map(prev).set(msgId, content))
+                    setDecryptedCache(prev => new Map(prev).set(msgId, text))
                     content = JSON.stringify(payload)
                     encrypted = true
-                    pushP2P({ id: msgId, content, sender: 'You', senderId: userId.current, timestamp: Date.now(), encrypted })
+                    pushP2P({ id: msgId, content, sender: 'You', senderId: userId.current, timestamp: Date.now(), encrypted, ...replyInfo })
                     setInput('')
+                    setReplyTo(null)
                     return
                 }
             }
-            pushP2P({ id: crypto.randomUUID(), content, sender: 'You', senderId: userId.current, timestamp: Date.now(), encrypted: false })
+            pushP2P({ id: crypto.randomUUID(), content, sender: 'You', senderId: userId.current, timestamp: Date.now(), encrypted: false, ...replyInfo })
             setInput('')
+            setReplyTo(null)
             return
         }
 
@@ -479,572 +746,64 @@ export default function UnifiedAgentPanel({
             if (aiMode === 'cloud' && availableCloudProviders.length === 0) return
             if (aiMode === 'offline' && !loadedModelId) return
 
-            const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: Date.now() }
-            setAiMessages(prev => [...prev, userMsg])
-            setInput('')
-            setIsProcessing(true)
-
-            // ---- NEW: Use Agent Loop Service (ReAct engine) ----
-            if (useAgentLoop) {
-                setAgentSteps([])
-                agentLoopService.setUseOfflineAI(aiMode === 'offline')
-                agentLoopService.setCloudProvider(currentProvider)
-                agentLoopService.setWorkspacePath(workspacePath || '')
-
-                // Build chat history for context
-                const chatHistory = aiMessages.map(m => ({
-                    role: m.role === 'tool' ? 'assistant' : (m.role || 'user'),
-                    content: m.role === 'tool' ? `Tool ${m.toolName} result: ${m.toolResult?.slice(0, 500)}` : m.content
-                }))
-
-                try {
-                    // The loop service handles everything: tool calls, multi-turn, streaming
-                    // Events are received through the listener registered above
-                    await agentLoopService.run(text, chatHistory, {
-                        trustedMode: toolPermissionManager.isTrustedMode(),
-                        autoApproveReadOnly: true
-                    })
-                } catch (err) {
-                    if (isMountedRef.current) {
-                        setAiMessages(prev => [...prev, {
-                            id: crypto.randomUUID(),
-                            role: 'assistant',
-                            content: `Error: ${err instanceof Error ? err.message : 'Agent loop failed'}`,
-                            timestamp: Date.now(),
-                            isError: true
-                        }])
-                    }
-                } finally {
-                    if (isMountedRef.current) {
-                        setIsProcessing(false)
-                        setAgentLoopRunning(false)
-                        setStreamingContent('')
-                    }
-                }
+            if (!currentSessionId) {
+                const id = createSession('New Chat')
+                // Wait for state update is tricky, but createSession returns the ID
+                const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: Date.now() }
+                setAiMessages([userMsg])
+                addMessageToSession(id, userMsg)
+                setInput('')
+                setIsProcessing(true)
+                triggerAgentLoop(text, [userMsg], id)
                 return
             }
 
-            // ---- LEGACY: Direct tool loop (kept as fallback) ----
-            if (aiMode === 'offline') {
+            const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: Date.now() }
+            setAiMessages(prev => [...prev, userMsg])
+            addMessageToSession(currentSessionId, userMsg)
+            setInput('')
+            setIsProcessing(true)
+
+            triggerAgentLoop(text, [...aiMessages, userMsg], currentSessionId)
+        }
+    }
+
+    const triggerAgentLoop = async (text: string, messages: ChatMessage[], sessionId: string) => {
+        // ---- Agent Loop Service (ReAct engine) ----
+        setAgentSteps([])
+        agentLoopService.setUseOfflineAI(aiMode === 'offline')
+        agentLoopService.setCloudProvider(currentProvider)
+        agentLoopService.setWorkspacePath(workspacePath || '')
+
+        // Build chat history for context
+        const chatHistory = messages.map(m => ({
+            role: m.role === 'tool' ? 'assistant' : (m.role || 'user'),
+            content: m.role === 'tool' ? `Tool ${m.toolName} result: ${m.toolResult?.slice(0, 500)}` : m.content
+        }))
+
+        try {
+            await agentLoopService.run(text, chatHistory, {
+                trustedMode: toolPermissionManager.isTrustedMode(),
+                autoApproveReadOnly: true,
+                model: aiMode === 'cloud' ? cloudModel : undefined
+            })
+        } catch (err) {
+            if (isMountedRef.current) {
+                const errorMsg: ChatMessage = {
+                    id: crypto.randomUUID(),
+                    role: 'assistant',
+                    content: `Error: ${err instanceof Error ? err.message : 'Agent loop failed'}`,
+                    timestamp: Date.now(),
+                    isError: true
+                }
+                setAiMessages(prev => [...prev, errorMsg])
+                addMessageToSession(sessionId, errorMsg)
+            }
+        } finally {
+            if (isMountedRef.current) {
+                setIsProcessing(false)
+                setAgentLoopRunning(false)
                 setStreamingContent('')
-                try {
-                    // Detect if this is a thinking model (Qwen3-Thinking)
-                    const isThinkingModel = loadedModelId?.includes('thinking')
-
-                    // Detect if user is requesting a tool (for grammar-based generation)
-                    const detectToolIntent = (text: string): boolean => {
-                        const lower = text.toLowerCase()
-
-                        // Explicit tool keywords (high confidence)
-                        const toolKeywords = ['read', 'write', 'list', 'create', 'delete', 'run', 'execute', 'git']
-                        if (toolKeywords.some(kw => lower.includes(kw))) return true
-
-                        // Action verbs commonly used for tools
-                        const actionVerbs = ['remove', 'fix', 'change', 'update', 'edit', 'rename', 'move', 'copy', 'add', 'check']
-                        if (actionVerbs.some(verb => lower.includes(verb))) return true
-
-                        // File/path references
-                        if (/\.(ts|js|tsx|jsx|py|json|md|txt|css|html)/i.test(text)) return true
-                        if (/(file|folder|directory|path)/i.test(lower)) return true
-
-                        return false
-                    }
-
-                    const isToolRequest = detectToolIntent(text)
-
-                    // Determine model size for schema complexity selection
-                    const modelSize = loadedModelId ? getModelSizeCategory(loadedModelId) : 'small'
-                    const useCompactPrompt = modelSize === 'small'
-
-                    // DEBUG: Log intent detection result
-                    console.log('[Agent] Intent detection:', {
-                        userInput: text.slice(0, 50),
-                        isToolRequest,
-                        isThinkingModel,
-                        modelSize
-                    })
-
-                    // Build system prompt based on request type
-                    // KEY FIX: When tools are requested, use dedicated tool prompt that TEACHES the format
-                    let sysPrompt: string
-
-                    if (isToolRequest) {
-                        // Use tool-specific prompt that explicitly shows JSON format
-                        sysPrompt = getToolSystemPrompt(workspacePath || '', useCompactPrompt)
-                        console.log('[Agent] Using tool-aware system prompt')
-                    } else if (isThinkingModel) {
-                        // Thinking model prompt - simplified for conversation
-                        sysPrompt = `You are Kalynt, a helpful AI coding assistant.
-
-WORKSPACE: ${workspacePath || 'None'}
-
-You have extended reasoning capabilities. Use <think> tags ONLY for complex problems.
-
-IMPORTANT: For simple greetings and basic questions, respond directly and naturally.
-Only use <think> tags for complex problems that require step-by-step reasoning.
-
-Example:
-User: "hello"
-Assistant: Hello! How can I help you today?
-
-Be helpful, friendly, and conversational.`
-                    } else {
-                        // Simple conversational prompt for non-tool requests
-                        // CRITICAL: Don't include tool examples for small models - they copy them literally!
-                        console.log('[Agent] Using simple conversational prompt (no tool examples)')
-                        sysPrompt = `You are Kalynt, a helpful AI coding assistant.
-
-WORKSPACE: ${workspacePath || 'None'}
-
-Respond naturally to questions and greetings. Be helpful and conversational.
-
-If the user asks you to perform file operations (read, write, list files, etc.), let them know you can help with that.`
-                    }
-
-                    // For offline models, keep only last 2 turns to prevent context overflow
-                    const history: OfflineChatMessage[] = [
-                        { role: 'system', content: sysPrompt },
-                        ...aiMessages.slice(-2).map(m => ({
-                            role: m.role === 'tool' ? 'assistant' as const : m.role as any,
-                            content: m.role === 'tool' ? `Tool result: ${m.toolResult?.slice(0, 100)}` : m.content.slice(0, 200)
-                        })),
-                        { role: 'user', content: text }
-                    ]
-
-                    // Handle streaming with thinking tag parsing
-                    // KEY FIX: Disable thinking mode during tool requests (breaks JSON grammar)
-                    let fullResponse = ''
-                    let inThinking = false
-                    const enableThinkingParsing = isThinkingModel && !isToolRequest  // Disabled during tool calls
-                    const thinkOpenTag = isThinkingModel ? '<think>' : '<thinking>'
-                    const thinkCloseTag = isThinkingModel ? '</think>' : '</thinking>'
-
-                    // Use grammar-based sampling for tool requests (Cursor-like reliability)
-                    const options: any = {}
-                    if (isToolRequest) {
-                        // Use simplified schema for small models
-                        options.jsonSchema = modelSize === 'small'
-                            ? getSimplifiedToolSchema()
-                            : getToolCallJsonSchema()
-                        console.log('[Agent] Using grammar-based tool calling (100% reliable JSON)', { modelSize })
-                    }
-
-                    const response = await offlineLLMService.generateStream(history, (token) => {
-                        fullResponse += token
-
-                        // Skip thinking tag parsing when doing tool calls (JSON grammar mode)
-                        if (!enableThinkingParsing) {
-                            // For tool calls, show a status message instead of raw JSON
-                            setStreamingContent('🔧 Processing tool request...')
-                            return
-                        }
-
-                        // Check for thinking tag transitions (only for non-tool requests)
-                        if (fullResponse.includes(thinkOpenTag) && !fullResponse.includes(thinkCloseTag)) {
-                            if (!inThinking) {
-                                setIsThinking(true)
-                                inThinking = true
-                            }
-                            // Extract and show thinking content
-                            const thinkingStart = fullResponse.indexOf(thinkOpenTag) + thinkOpenTag.length
-                            setThinkingContent(fullResponse.slice(thinkingStart))
-                        } else if (fullResponse.includes(thinkCloseTag)) {
-                            // Thinking complete
-                            if (inThinking) {
-                                setIsThinking(false)
-                                inThinking = false
-                            }
-                            // Show only content after closing tag
-                            const afterThinking = fullResponse.split(thinkCloseTag).pop() ?? ''
-                            // Clean and show content
-                            setStreamingContent(cleanModelOutput(afterThinking.replace(/```tool[\s\S]*?```/g, '')))
-                        } else if (!inThinking) {
-                            // Normal streaming - clean output for display
-                            setStreamingContent(cleanModelOutput(fullResponse.replace(/```tool[\s\S]*?```/g, '')))
-                        }
-                    }, options)
-
-                    // Extract final thinking content for message storage
-                    // Support both <think> and <thinking> tags
-                    const thinkingPattern = isThinkingModel
-                        ? /<think>([\s\S]*?)<\/think>/
-                        : /<thinking>([\s\S]*?)<\/thinking>/
-                    const thinkingMatch = thinkingPattern.exec(response)
-                    const thinking = thinkingMatch ? thinkingMatch[1].trim() : undefined
-
-                    // Clean main content (no thinking tags, no tool blocks, no special tokens, no raw JSON)
-                    const mainContent = cleanModelOutput(response
-                        .replace(/<think>[\s\S]*?<\/think>/g, '')
-                        .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
-                        .replace(/```tool[\s\S]*?```/g, '')
-                    )
-
-                    if (mainContent || thinking) {
-                        setAiMessages(prev => [...prev, {
-                            id: crypto.randomUUID(),
-                            role: 'assistant',
-                            content: mainContent,
-                            thinking,
-                            timestamp: Date.now(),
-                            modelId: loadedModelId!
-                        }])
-                    }
-
-                    // Reset thinking UI state
-                    setThinkingContent('')
-                    setIsThinking(false)
-
-                    // DEBUG: Log actual LLM response to see what we're working with
-                    console.log('[Agent] LLM Response:', response)
-                    console.log('[Agent] Looking for tool calls...')
-
-                    // Tool Handling - support multiple tool call formats
-                    // Format 1: Markdown code block (existing)
-                    let toolMatch = response.match(/```tool\s*\n?({[\s\S]*?})\n?```/i)
-
-                    // Format 2: XML tags (existing)
-                    if (!toolMatch) {
-                        const toolPattern = /<tool>({[\s\S]*?})<\/tool>/i
-                        const toolShortPattern = /<tool>({[\s\S]*?})/i
-                        toolMatch = toolPattern.exec(response) ?? toolShortPattern.exec(response)
-                    }
-
-                    // Format 2a: JSON code block (NEW)
-                    if (!toolMatch) {
-                        // Look for ```json blocks that strictly contain "name" and "params"
-                        const jsonBlockPattern = /```json\s*\n?({[\s\S]*?"name"\s*:\s*[\s\S]*?"params"\s*:\s*[\s\S]*?})\n?```/i
-                        toolMatch = jsonBlockPattern.exec(response)
-                    }
-
-                    // Format 3: Qwen-specific <tool_call> format (NEW)
-                    if (!toolMatch) {
-                        const qwenPattern = /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/i
-                        const qwenMatch = qwenPattern.exec(response)
-                        if (qwenMatch) toolMatch = qwenMatch
-                    }
-
-                    // Format 4: Hermes function call format (NEW)
-                    if (!toolMatch) {
-                        const hermesPattern = /<function=(\w+)>([\s\S]*?)<\/function>/i
-                        const hermesMatch = hermesPattern.exec(response)
-                        if (hermesMatch) {
-                            // Convert Hermes format to standard format
-                            try {
-                                const toolCall = {
-                                    name: hermesMatch[1],
-                                    params: JSON.parse(hermesMatch[2])
-                                }
-                                toolMatch = [hermesMatch[0], JSON.stringify(toolCall)]
-                            } catch (e) {
-                                console.error('[Agent] Failed to parse Hermes function call:', e)
-                            }
-                        }
-                    }
-
-                    // Format 5: Direct JSON without wrapping (NEW - improved)
-                    // The regex approach fails with nested braces, so we use JSON.parse instead
-                    // Format 5: Direct JSON without wrapping (NEW - improved)
-                    // The regex approach fails with nested braces, so we use JSON.parse instead
-                    if (!toolMatch) {
-                        // FIX: Use Regex to find start of JSON, allowing for whitespace
-                        // Matches: { "name": or {"name":
-                        const jsonStartMatch = response.match(/\{\s*"name"\s*:/)
-
-                        if (jsonStartMatch && jsonStartMatch.index !== undefined) {
-                            // Extract from start position to end of response
-                            const jsonCandidate = response.substring(jsonStartMatch.index)
-
-                            // Optimization: Check for closing braces from the end
-                            // Instead of trying every character, try to find matching closing braces
-                            let endPos = jsonCandidate.lastIndexOf('}')
-
-                            while (endPos > 10) { // Minimal valid length for {"name":"a","params":{}}
-                                try {
-                                    const potentialJson = jsonCandidate.substring(0, endPos + 1)
-                                    const parsed = JSON.parse(potentialJson)
-                                    // Verify it has the expected structure
-                                    if (parsed.name && parsed.params) {
-                                        toolMatch = [potentialJson, potentialJson]
-                                        break
-                                    }
-                                } catch {
-                                    // Invalid JSON, try next closing brace
-                                }
-                                endPos = jsonCandidate.lastIndexOf('}', endPos - 1)
-                            }
-                        }
-                    }
-
-                    if (toolMatch) {
-                        console.log('[Agent] Tool call detected:', toolMatch[1])
-                        try {
-                            const toolCall = JSON.parse(toolMatch[1])
-                            console.log('[Agent] Executing tool:', toolCall.name, 'with params:', toolCall.params)
-                            const result = await executeTool(toolCall.name, toolCall.params, { workspacePath: workspacePath || '' })
-                            console.log('[Agent] Tool result:', result)
-
-                            const output = result.success ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2)) : `Error: ${result.error}`
-
-                            setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'tool', content: '', toolName: toolCall.name, toolResult: output, timestamp: Date.now() }])
-
-                            if (toolCall.name === 'runCommand' && onRunCommand) {
-                                onRunCommand(toolCall.params.command)
-                            }
-
-                            // Multi-turn tool loop - continue until no more tools are called
-                            const MAX_TOOL_ITERATIONS = 5
-                            let iterationCount = 0
-                            let currentHistory: OfflineChatMessage[] = [
-                                ...history,
-                                { role: 'assistant', content: response },
-                                {
-                                    role: 'user', content: `Tool "${toolCall.name}" executed successfully. Result:
-${output}
-
-Now use this result to complete the task. If more tools are needed, call them one at a time. If the task is complete, provide a summary of what was done.` }
-                            ]
-
-                            let hasMoreTools = true
-                            while (hasMoreTools && iterationCount < MAX_TOOL_ITERATIONS) {
-                                iterationCount++
-                                setStreamingContent('') // Clear for new response
-
-                                // IMPORTANT: Pass same JSON schema options for consistent tool calling in multi-turn
-                                const followUp = await offlineLLMService.generateStream(currentHistory, (token) => setStreamingContent(p => p + token), options)
-
-                                // Check if follow-up contains another tool call
-                                let followUpToolMatch = followUp.match(/```tool\s*\n?({[\s\S]*?})\n?```/i)
-                                if (!followUpToolMatch) followUpToolMatch = followUp.match(/<tool>({[\s\S]*?})<\/tool>/i)
-                                if (!followUpToolMatch) followUpToolMatch = followUp.match(/<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/i)
-                                if (!followUpToolMatch) {
-                                    const hermesMatch = followUp.match(/<function=(\w+)>([\s\S]*?)<\/function>/i)
-                                    if (hermesMatch) {
-                                        try {
-                                            followUpToolMatch = [hermesMatch[0], JSON.stringify({ name: hermesMatch[1], params: JSON.parse(hermesMatch[2]) })]
-                                        } catch { /* ignore */ }
-                                    }
-                                }
-                                if (!followUpToolMatch) {
-                                    const jsonStart = followUp.indexOf('{"name":')
-                                    if (jsonStart !== -1) {
-                                        const jsonCandidate = followUp.substring(jsonStart)
-                                        for (let endPos = jsonCandidate.length; endPos >= 50; endPos--) {
-                                            try {
-                                                const potentialJson = jsonCandidate.substring(0, endPos)
-                                                const parsed = JSON.parse(potentialJson)
-                                                if (parsed.name && parsed.params) {
-                                                    followUpToolMatch = [potentialJson, potentialJson]
-                                                    break
-                                                }
-                                            } catch { continue }
-                                        }
-                                    }
-                                }
-
-                                if (followUpToolMatch) {
-                                    console.log(`[Agent] Multi-turn iteration ${iterationCount}: Tool call detected`)
-                                    try {
-                                        const nextToolCall = JSON.parse(followUpToolMatch[1])
-
-                                        // Show the follow-up message (minus tool call)
-                                        const followUpClean = followUp
-                                            .replace(/<thinking>[\s\S]*?<\/thinking>/, '')
-                                            .replace(/<think>[\s\S]*?<\/think>/, '')
-                                            .replace(/```tool[\s\S]*?```/, '')
-                                            .replace(/<tool>[\s\S]*?<\/tool>/, '')
-                                            .replace(/<tool_call>[\s\S]*?<\/tool_call>/, '')
-                                            .replace(/<function=\w+>[\s\S]*?<\/function>/, '')
-                                            .trim()
-
-                                        if (followUpClean) {
-                                            setAiMessages(prev => [...prev, {
-                                                id: crypto.randomUUID(),
-                                                role: 'assistant',
-                                                content: followUpClean,
-                                                timestamp: Date.now(),
-                                                modelId: loadedModelId!
-                                            }])
-                                        }
-
-                                        // Execute the next tool
-                                        console.log(`[Agent] Executing tool ${iterationCount}:`, nextToolCall.name)
-                                        const nextResult = await executeTool(nextToolCall.name, nextToolCall.params, { workspacePath: workspacePath || '' })
-                                        const nextOutput = nextResult.success ? (typeof nextResult.data === 'string' ? nextResult.data : JSON.stringify(nextResult.data, null, 2)) : `Error: ${nextResult.error}`
-
-                                        setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'tool', content: '', toolName: nextToolCall.name, toolResult: nextOutput, timestamp: Date.now() }])
-
-                                        if (nextToolCall.name === 'runCommand' && onRunCommand) {
-                                            onRunCommand(nextToolCall.params.command)
-                                        }
-
-                                        // Update history for next iteration
-                                        currentHistory = [
-                                            ...currentHistory,
-                                            { role: 'assistant', content: followUp },
-                                            { role: 'user', content: `Tool "${nextToolCall.name}" executed. Result:\n${nextOutput}\n\nContinue with the task. Call another tool if needed, or summarize what was done.` }
-                                        ]
-                                    } catch (e) {
-                                        console.error(`[Agent] Multi-turn tool error at iteration ${iterationCount}:`, e)
-                                        hasMoreTools = false
-                                    }
-                                } else {
-                                    // No more tools - show final response
-                                    hasMoreTools = false
-                                    const followUpClean = followUp
-                                        .replace(/<thinking>[\s\S]*?<\/thinking>/, '')
-                                        .replace(/<think>[\s\S]*?<\/think>/, '')
-                                        .trim()
-
-                                    if (followUpClean) {
-                                        setAiMessages(prev => [...prev, {
-                                            id: crypto.randomUUID(),
-                                            role: 'assistant',
-                                            content: followUpClean,
-                                            timestamp: Date.now(),
-                                            modelId: loadedModelId!
-                                        }])
-                                    }
-                                    console.log(`[Agent] Multi-turn complete after ${iterationCount} iteration(s)`)
-                                }
-                            }
-
-                            if (iterationCount >= MAX_TOOL_ITERATIONS) {
-                                console.log(`[Agent] Reached max tool iterations (${MAX_TOOL_ITERATIONS})`)
-                                setAiMessages(prev => [...prev, {
-                                    id: crypto.randomUUID(),
-                                    role: 'assistant',
-                                    content: '⚠️ Reached maximum tool execution limit. Some tasks may be incomplete.',
-                                    timestamp: Date.now(),
-                                    isError: true
-                                }])
-                            }
-                        } catch (e) {
-                            console.error('[Agent] Tool execute error', e)
-                        }
-                    } else {
-                        console.log('[Agent] No tool call detected in response. Response stored as message.')
-                    }
-                } catch (e) {
-                    setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${e instanceof Error ? e.message : 'Offline generation failed'}`, timestamp: Date.now(), isError: true }])
-                } finally {
-                    setIsProcessing(false)
-                    setStreamingContent('')
-                }
-            } else {
-                // Cloud AI (with Agent support)
-                try {
-                    // Use full tool system prompt for cloud AI too
-                    const toolPrompt = getToolSystemPrompt(workspacePath || '', false)
-                    const contextInfo = includeContext ? `\n\nCURRENT CONTEXT:\n${buildContext(false)}` : ''
-                    const sysPrompt = `${toolPrompt}${contextInfo}
-
-RESPONSE FORMAT FOR CLOUD AI:
-When calling tools, wrap your JSON in markdown code blocks:
-\`\`\`tool
-{"name": "toolName", "params": {...}}
-\`\`\``
-                    const chatHistory: AIMessage[] = [
-                        { role: 'system', content: sysPrompt },
-                        ...aiMessages.map(m => ({ role: m.role === 'tool' ? 'assistant' : m.role as any, content: m.role === 'tool' ? `Tool result: ${m.toolResult}` : m.content })),
-                        { role: 'user', content: text }
-                    ]
-
-                    const response = await aiService.chat(chatHistory, currentProvider)
-                    const mainContent = (response.content || '').replace(/```tool[\s\S]*?```/, '').trim()
-
-                    if (mainContent) {
-                        setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: mainContent, timestamp: Date.now() }])
-                    }
-
-                    // Tool Handling with multi-turn loop
-                    const toolMatch = response.content?.match(/```tool\s*\n?({[\s\S]*?})\n?```/i)
-                    if (toolMatch) {
-                        try {
-                            const toolCall = JSON.parse(toolMatch[1])
-                            const result = await executeTool(toolCall.name, toolCall.params, { workspacePath: workspacePath || '' })
-
-                            const output = result.success ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2)) : `Error: ${result.error}`
-
-                            setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'tool', content: '', toolName: toolCall.name, toolResult: output, timestamp: Date.now() }])
-
-                            if (toolCall.name === 'runCommand' && onRunCommand) {
-                                onRunCommand(toolCall.params.command)
-                            }
-
-                            // Multi-turn tool loop for cloud AI
-                            const MAX_TOOL_ITERATIONS = 5
-                            let iterationCount = 0
-                            let currentCloudHistory: AIMessage[] = [
-                                ...chatHistory,
-                                { role: 'assistant', content: response.content || '' },
-                                { role: 'user', content: `Tool ${toolCall.name} returned: ${output}. Continue with the task. If more tools are needed, call them. If done, summarize what was done.` }
-                            ]
-
-                            let hasMoreTools = true
-                            while (hasMoreTools && iterationCount < MAX_TOOL_ITERATIONS) {
-                                iterationCount++
-
-                                const followUp = await aiService.chat(currentCloudHistory, currentProvider)
-                                const followUpToolMatch = followUp.content?.match(/```tool\s*\n?({[\s\S]*?})\n?```/i)
-
-                                if (followUpToolMatch) {
-                                    console.log(`[Agent] Cloud multi-turn iteration ${iterationCount}: Tool call detected`)
-                                    try {
-                                        const nextToolCall = JSON.parse(followUpToolMatch[1])
-
-                                        // Show the follow-up message (minus tool call)
-                                        const followUpClean = (followUp.content || '').replace(/```tool[\s\S]*?```/, '').trim()
-                                        if (followUpClean) {
-                                            setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: followUpClean, timestamp: Date.now() }])
-                                        }
-
-                                        // Execute the next tool
-                                        const nextResult = await executeTool(nextToolCall.name, nextToolCall.params, { workspacePath: workspacePath || '' })
-                                        const nextOutput = nextResult.success ? (typeof nextResult.data === 'string' ? nextResult.data : JSON.stringify(nextResult.data, null, 2)) : `Error: ${nextResult.error}`
-
-                                        setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'tool', content: '', toolName: nextToolCall.name, toolResult: nextOutput, timestamp: Date.now() }])
-
-                                        if (nextToolCall.name === 'runCommand' && onRunCommand) {
-                                            onRunCommand(nextToolCall.params.command)
-                                        }
-
-                                        // Update history for next iteration
-                                        currentCloudHistory = [
-                                            ...currentCloudHistory,
-                                            { role: 'assistant', content: followUp.content || '' },
-                                            { role: 'user', content: `Tool ${nextToolCall.name} returned: ${nextOutput}. Continue or summarize.` }
-                                        ]
-                                    } catch (e) {
-                                        console.error(`[Agent] Cloud multi-turn tool error at iteration ${iterationCount}:`, e)
-                                        hasMoreTools = false
-                                    }
-                                } else {
-                                    // No more tools - show final response
-                                    hasMoreTools = false
-                                    if (followUp.content) {
-                                        setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: followUp.content, timestamp: Date.now() }])
-                                    }
-                                    console.log(`[Agent] Cloud multi-turn complete after ${iterationCount} iteration(s)`)
-                                }
-                            }
-
-                            if (iterationCount >= MAX_TOOL_ITERATIONS) {
-                                console.log(`[Agent] Cloud reached max tool iterations (${MAX_TOOL_ITERATIONS})`)
-                                setAiMessages(prev => [...prev, {
-                                    id: crypto.randomUUID(),
-                                    role: 'assistant',
-                                    content: '⚠️ Reached maximum tool execution limit. Some tasks may be incomplete.',
-                                    timestamp: Date.now(),
-                                    isError: true
-                                }])
-                            }
-                        } catch (e) { console.error('Tool execute error', e) }
-                    }
-                } catch (e) {
-                    setAiMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${e instanceof Error ? e.message : 'Failed'}`, timestamp: Date.now(), isError: true }])
-                } finally {
-                    setIsProcessing(false)
-                }
             }
         }
     }
@@ -1060,11 +819,43 @@ When calling tools, wrap your JSON in markdown code blocks:
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#x27;')
-            .replace(/\//g, '&#x2F;')
+            // Removing forward slash sanitization as it breaks markdown parsing and is generally safe in text content
+    }
+
+    const parseMarkdown = (text: string): string => {
+        return text
+            // Bold (**text**)
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            // Italic (*text* or _text_)
+            .replace(/(\*|_)(.*?)\1/g, '<em>$2</em>')
+            // Inline Code (`text`)
+            .replace(/`(.*?)`/g, '<code class="inline-code">$1</code>')
+            // Strikethrough (~text~)
+            .replace(/~(.*?)~/g, '<del>$1</del>')
+            // File Mentions (@[name](type://path)) - MUST COME BEFORE User Mentions
+            .replace(/@\[([^\]]+)\]\(([\w]+):\/\/([^)]+)\)/g, (_match, name, type, path) => {
+                return `<span class="mention file ${type}" data-type="${type}" data-path="${path.replace(/"/g, '&quot;')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:2px;vertical-align:middle;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>${name}</span>`
+            })
+            // User Mentions (@user)
+            .replace(/@([a-zA-Z0-9_-]+)/g, '<span class="mention user">@$1</span>')
     }
 
     const MessageBubble = ({ msg }: { msg: ChatMessage }) => {
         const isOwn = msg.senderId === userId.current || msg.role === 'user'
+
+        const handleBubbleClick = (e: React.MouseEvent) => {
+            const target = e.target as HTMLElement
+            const mention = target.closest('.mention.file') as HTMLElement
+            if (mention) {
+                const type = mention.getAttribute('data-type')
+                const path = mention.getAttribute('data-path')
+                if (type && path) {
+                    window.dispatchEvent(new CustomEvent('kalynt-tag-click', { 
+                        detail: { type, path } 
+                    }))
+                }
+            }
+        }
 
         if (msg.role === 'tool') {
             let output = msg.toolResult || ''
@@ -1081,7 +872,7 @@ When calling tools, wrap your JSON in markdown code blocks:
             } catch { /* ignore */ }
 
             return (
-                <div className="tool-message">
+                <div id={msg.id} className="tool-message">
                     <div className="tool-header">
                         <TerminalIcon size={12} />
                         <span>{msg.toolName}</span>
@@ -1121,6 +912,10 @@ When calling tools, wrap your JSON in markdown code blocks:
         const thinking = thinkingMatch ? thinkingMatch[1].trim() : null
         const contentWithoutThinking = msg.content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim()
 
+        // Process content: Sanitize -> Markdown -> Line Breaks
+        const processedContent = parseMarkdown(sanitizeContent(contentWithoutThinking || msg.content))
+            .replace(/\n/g, '<br/>')
+
         return (
             <>
                 {thinking && !isOwn && (
@@ -1132,19 +927,33 @@ When calling tools, wrap your JSON in markdown code blocks:
                         <div className="thinking-content">{thinking}</div>
                     </div>
                 )}
-                <div className={`message-bubble ${isOwn ? 'own' : ''} ${msg.isError ? 'error' : ''}`}>
+                <div id={msg.id} className={`message-bubble ${isOwn ? 'own' : ''} ${msg.isError ? 'error' : ''} ${msg.replyToId ? 'has-reply' : ''}`}>
+                    {msg.replyToId && (
+                        <div className="reply-quote" onClick={() => {
+                            const target = document.getElementById(msg.replyToId!);
+                            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}>
+                            <span className="reply-sender">{msg.replyToSender}</span>
+                            <div className="reply-text">{msg.replyToContent}</div>
+                        </div>
+                    )}
                     <div className="message-info">
                         <span className="sender-name">{msg.sender === 'You' ? '' : (msg.sender || (msg.role === 'assistant' ? (msg.modelId ? getModelById(msg.modelId)?.name : 'Assistant') : ''))}</span>
                         {msg.encrypted && <Lock size={10} className="lock-icon" />}
                     </div>
                     <div
                         className="bubble-content"
+                        onClick={handleBubbleClick}
                         dangerouslySetInnerHTML={{
-                            __html: sanitizeContent(contentWithoutThinking || msg.content)
-                                .replace(/\n/g, '<br/>') // Preserve line breaks after sanitization
+                            __html: processedContent
                         }}
                     />
-                    <div className="message-time">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className="bubble-footer">
+                        <button className="reply-action-btn" onClick={() => setReplyTo(msg)} title="Reply to message">
+                            <CornerUpLeft size={12} />
+                        </button>
+                        <div className="message-time">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
                 </div>
             </>
         )
@@ -1155,7 +964,7 @@ When calling tools, wrap your JSON in markdown code blocks:
             {/* Top Tabs */}
             <nav className="panel-tabs">
                 <PanelTab icon={<MessageSquare size={16} />} label="Collaboration" active={activeMode === 'collaboration'} onClick={() => setActiveMode('collaboration')} />
-                <PanelTab icon={<Zap size={16} />} label="Agent" active={activeMode === 'agent'} onClick={() => setActiveMode('agent')} badge={agent.pendingCount} />
+                <PanelTab icon={<Zap size={16} />} label="Agent" active={activeMode === 'agent'} onClick={() => setActiveMode('agent')} />
             </nav>
 
             {/* Content Area */}
@@ -1167,6 +976,14 @@ When calling tools, wrap your JSON in markdown code blocks:
                             <div className="header-badges">
                                 {encryptionEnabled && <span className="badge success"><Lock size={12} /> Encrypted</span>}
                                 <span className={`status-dot ${synced ? 'online' : 'away'}`} />
+                                <button
+                                    className="badge"
+                                    onClick={() => setShowTeamPanel(true)}
+                                    title="Manage team members & collaboration"
+                                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <Users size={12} /> Manage
+                                </button>
                             </div>
                         </div>
                         <div className="messages-list">
@@ -1187,50 +1004,86 @@ When calling tools, wrap your JSON in markdown code blocks:
                 {activeMode === 'agent' && (
                     <div className="mode-container agent">
                         <div className="mode-header">
-                            <div className="ai-source-toggle">
-                                <button className={`src-btn ${!showAutonomous ? 'active' : ''}`} onClick={() => setShowAutonomous(false)}><Bot size={14} /> Chat</button>
-                                <button className={`src-btn ${showAutonomous ? 'active' : ''}`} onClick={() => setShowAutonomous(true)}>
-                                    <Zap size={14} /> Autonomous {agent.pendingCount > 0 && <span className="mini-badge">{agent.pendingCount}</span>}
+                            <div className="unified-header-left">
+                                <div className="source-switcher">
+                                    <button 
+                                        className={`src-tab ${!showAutonomous ? 'active' : ''}`} 
+                                        onClick={() => setShowAutonomous(false)}
+                                    >
+                                        <Bot size={14} /> <span>Chat</span>
+                                    </button>
+                                    <button 
+                                        className={`src-tab ${showAutonomous ? 'active' : ''}`} 
+                                        onClick={() => setShowAutonomous(true)}
+                                    >
+                                        <Zap size={14} /> <span>AI Scan</span>
+                                    </button>
+                                </div>
+                                <div className="divider-v" />
+                                <div className="ai-source-group">
+                                    <button 
+                                        className={`mode-pill ${(!showAutonomous ? aiMode === 'cloud' : agentAIMode === 'cloud') ? 'active' : ''}`} 
+                                        onClick={() => !showAutonomous ? setAiMode('cloud') : setAgentAIMode('cloud')}
+                                    >
+                                        <Cloud size={12} /> Cloud
+                                    </button>
+                                    <button 
+                                        className={`mode-pill ${(!showAutonomous ? aiMode === 'offline' : agentAIMode === 'offline') ? 'active' : ''}`} 
+                                        onClick={() => !showAutonomous ? setAiMode('offline') : setAgentAIMode('offline')}
+                                    >
+                                        <Monitor size={12} /> Local
+                                    </button>
+                                </div>
+                                <button 
+                                    className="header-settings-btn"
+                                    onClick={() => { setSettingsTab('agents'); setShowSettings(true); }}
+                                    title="Configure AI Providers & Models"
+                                >
+                                    <Settings size={14} />
                                 </button>
                             </div>
-                            <div className="header-controls">
-                                {!showAutonomous ? (
-                                    <>
-                                        <div className="ai-mode-toggle">
-                                            <button className={`mode-btn ${aiMode === 'cloud' ? 'active' : ''}`} onClick={() => setAiMode('cloud')}><Cloud size={12} /></button>
-                                            <button className={`mode-btn ${aiMode === 'offline' ? 'active' : ''}`} onClick={() => setAiMode('offline')}><Monitor size={12} /></button>
-                                        </div>
-                                        <button className={`tool-btn ${includeContext ? 'active' : ''}`} onClick={() => setIncludeContext(!includeContext)} title="Include workspace context"><Paperclip size={16} /></button>
-                                        {aiMode === 'cloud' ? (
-                                            <select className="provider-select" value={currentProvider} onChange={e => setCurrentProvider(e.target.value as any)}>
-                                                {availableCloudProviders.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
-                                                {availableCloudProviders.length === 0 && <option disabled>No API Keys</option>}
-                                            </select>
-                                        ) : (
-                                            <button className="model-select-btn" onClick={() => setShowModelManager(true)}>
-                                                {currentOfflineModel ? currentOfflineModel.name : 'Select Model'} <ChevronDown size={12} />
+
+                            <div className="divider-v" />
+
+                            <div className="unified-header-right">
+                                <div className="action-group">
+                                    {!showAutonomous ? (
+                                        <>
+                                            <button 
+                                                className={`action-icon-btn ${useAgentLoop ? 'active' : ''}`} 
+                                                onClick={() => setUseAgentLoop(!useAgentLoop)} 
+                                                title={useAgentLoop ? 'Multi-step Agent Mode' : 'Direct Chat Mode'}
+                                            >
+                                                <Play size={14} />
                                             </button>
-                                        )}
-                                        <button className={`tool-btn ${useAgentLoop ? 'active' : ''}`} onClick={() => setUseAgentLoop(!useAgentLoop)} title={useAgentLoop ? 'Agent Mode (multi-step)' : 'Simple Chat Mode'}><Play size={16} /></button>
-                                        <button className="tool-btn" onClick={() => { setAiMessages([]); setAgentSteps([]) }} title="Clear history"><Trash2 size={16} /></button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="ai-mode-toggle">
-                                            <button className={`mode-btn ${agentAIMode === 'cloud' ? 'active' : ''}`} onClick={() => setAgentAIMode('cloud')} title="Cloud AI"><Cloud size={12} /></button>
-                                            <button className={`mode-btn ${agentAIMode === 'offline' ? 'active' : ''}`} onClick={() => setAgentAIMode('offline')} title="Local AI"><Monitor size={12} /></button>
-                                        </div>
-                                        {agentAIMode === 'offline' && (
-                                            <button className="model-select-btn" onClick={() => setShowModelManager(true)}>
-                                                {currentOfflineModel ? currentOfflineModel.name : 'Select Model'} <ChevronDown size={12} />
+                                            <button 
+                                                className={`action-icon-btn ${showHistory ? 'active' : ''}`} 
+                                                onClick={() => setShowHistory(!showHistory)} 
+                                                title="Previous Chats"
+                                            >
+                                                <History size={14} />
                                             </button>
-                                        )}
-                                        <button className={`toggle-switch ${agent.config.enabled ? 'on' : 'off'}`} onClick={agent.toggleEnabled} title={agent.canRun ? 'Toggle autonomous monitoring' : 'Configure API keys or load model to enable agent'}>
-                                            {agent.config.enabled ? 'ACTIVE' : 'IDLE'}
-                                        </button>
-                                        <button className={`tool-btn ${showLog ? 'active' : ''}`} onClick={() => setShowLog(!showLog)}><Scroll size={16} /></button>
-                                    </>
-                                )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button 
+                                                className={`status-toggle-btn ${agent.config.enabled ? 'active' : ''}`} 
+                                                onClick={agent.toggleEnabled}
+                                                title={agent.canRun ? 'Toggle Autonomous Monitoring' : 'Configure AI to enable agent'}
+                                            >
+                                                <div className="status-indicator" />
+                                                <span>{agent.config.enabled ? 'RUNNING' : 'STANDBY'}</span>
+                                            </button>
+                                            <button 
+                                                className={`action-icon-btn ${showLog ? 'active' : ''}`} 
+                                                onClick={() => setShowLog(!showLog)}
+                                                title="Show Agent Logs"
+                                            >
+                                                <Scroll size={14} />
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -1353,480 +1206,16 @@ When calling tools, wrap your JSON in markdown code blocks:
                             </>
                         ) : (
                             // Autonomous Mode
-                            <div className="agent-body">
-                                {/* Agent Status Indicator */}
-                                <div className="agent-status-bar">
-                                    <div className={`status-icon state-${agent.state}`}>
-                                        {agent.state === 'thinking' ? <Brain size={14} /> :
-                                            agent.state === 'executing' ? <Zap size={14} /> :
-                                                agent.state === 'waiting-approval' ? <AlertCircle size={14} /> :
-                                                    agent.state === 'observing' ? <Bot size={14} /> :
-                                                        <Monitor size={14} />}
-                                    </div>
-                                    <div className="status-info">
-                                        <div className="status-text main-status">
-                                            {agent.state.replace('-', ' ')}
-                                        </div>
-                                        <div className="status-text sub-status">
-                                            {agent.state === 'observing' ? 'Monitoring workspace for changes...' :
-                                                agent.state === 'thinking' ? 'Analyzing project context...' :
-                                                    agent.state === 'executing' ? 'Performing requested actions...' :
-                                                        agent.state === 'waiting-approval' ? 'Pending your review' :
-                                                            'Idle'}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Workspace Scan Section */}
-                                {workspacePath && agent.config.enabled && (
-                                    <div className="workspace-scan-section">
-                                        {/* Info Banner */}
-                                        <div className="scan-info-banner">
-                                            <Info size={14} />
-                                            <span>
-                                                Analyzes up to <strong>500 lines</strong> per file across <strong>25 files</strong>.
-                                                Supports TypeScript, JavaScript, Python, Go, Rust, Java, C/C++, and more.
-                                                Timeout: 120s per file.
-                                            </span>
-                                        </div>
-
-                                        <button
-                                            className="scan-workspace-btn"
-                                            onClick={async () => {
-                                                if (!workspacePath) return
-                                                setIsProcessing(true)
-                                                setScanProgress({ current: 0, total: 0, currentFile: 'Indexing workspace...' })
-
-                                                try {
-                                                    // All IDE-supported languages
-                                                    const codeExtensions = /\.(ts|tsx|js|jsx|json|md|css|scss|html|py|rs|go|java|c|cpp|h|hpp|yaml|yml|xml|sql|sh|bash|ps1|rb|php|swift|kt|scala|vue|svelte|lua|r|m|mm|zig|nim|ex|exs|clj|hs|fs|dart|toml|ini|cfg|conf)$/i
-                                                    const ignoreDirs = ['node_modules', '.git', 'dist', 'build', '.next', '__pycache__', 'venv', '.venv', 'target', 'coverage', '.cache', '.turbo', '.vercel', 'vendor', 'packages', '.idea', '.vscode']
-
-                                                    const allCodeFiles: { name: string; path: string; size?: number }[] = []
-
-                                                    const collectFiles = async (dirPath: string, depth = 0) => {
-                                                        if (depth > 5) return
-
-                                                        const result = await globalThis.window.electronAPI?.fs.readDir(dirPath)
-                                                        if (!result?.success || !result.items) return
-
-                                                        for (const item of result.items) {
-                                                            if (ignoreDirs.includes(item.name) || item.name.startsWith('.')) continue
-
-                                                            const fullPath = `${dirPath}${dirPath.endsWith('/') || dirPath.endsWith('\\') ? '' : '/'}${item.name}`
-
-                                                            if (item.isDirectory) {
-                                                                await collectFiles(fullPath, depth + 1)
-                                                            } else if (codeExtensions.test(item.name)) {
-                                                                allCodeFiles.push({ name: item.name, path: fullPath, size: item.size })
-                                                            }
-                                                        }
-                                                    }
-
-                                                    await collectFiles(workspacePath)
-
-                                                    // Prioritize important files (entry points, configs, core logic)
-                                                    const priorityPatterns = [/index\./i, /main\./i, /app\./i, /config/i, /\.config\./i, /service/i, /util/i, /helper/i]
-                                                    const sortedFiles = allCodeFiles
-                                                        .map(f => ({
-                                                            ...f,
-                                                            priority: priorityPatterns.some(p => p.test(f.name)) ? 0 : 1
-                                                        }))
-                                                        .sort((a, b) => a.priority - b.priority || (a.size || 0) - (b.size || 0))
-
-                                                    const filesToAnalyze = sortedFiles.slice(0, 25)
-                                                    setScanProgress({ current: 0, total: filesToAnalyze.length, currentFile: 'Starting analysis...' })
-
-                                                    if (filesToAnalyze.length === 0) {
-                                                        setAiMessages(prev => [...prev, {
-                                                            id: crypto.randomUUID(),
-                                                            role: 'assistant',
-                                                            content: 'No code files found in the workspace to analyze.',
-                                                            timestamp: Date.now()
-                                                        }])
-                                                        return
-                                                    }
-
-                                                    const allIssues: Array<{
-                                                        file: string
-                                                        path: string
-                                                        type: string
-                                                        severity: string
-                                                        line?: number
-                                                        description: string
-                                                        suggestion: string
-                                                    }> = []
-
-                                                    let skippedFiles = 0
-                                                    let timedOutFiles = 0
-                                                    let analyzedFiles = 0
-
-                                                    // Smart line extraction: get first 500 lines
-                                                    const extractSmartContent = (content: string, maxLines = 500): string => {
-                                                        const lines = content.split('\n')
-                                                        if (lines.length <= maxLines) return content
-
-                                                        // Take first 500 lines (includes imports, class definitions, main logic)
-                                                        return lines.slice(0, maxLines).join('\n')
-                                                    }
-
-                                                    // Detect language from extension
-                                                    const getLanguage = (fileName: string): string => {
-                                                        const ext = fileName.split('.').pop()?.toLowerCase() || ''
-                                                        const langMap: Record<string, string> = {
-                                                            'ts': 'TypeScript', 'tsx': 'TypeScript/React', 'js': 'JavaScript', 'jsx': 'JavaScript/React',
-                                                            'py': 'Python', 'rs': 'Rust', 'go': 'Go', 'java': 'Java', 'c': 'C', 'cpp': 'C++',
-                                                            'h': 'C Header', 'hpp': 'C++ Header', 'swift': 'Swift', 'kt': 'Kotlin',
-                                                            'rb': 'Ruby', 'php': 'PHP', 'sql': 'SQL', 'sh': 'Shell', 'bash': 'Bash',
-                                                            'vue': 'Vue', 'svelte': 'Svelte', 'scala': 'Scala', 'dart': 'Dart', 'lua': 'Lua',
-                                                            'r': 'R', 'ex': 'Elixir', 'hs': 'Haskell', 'fs': 'F#', 'clj': 'Clojure', 'zig': 'Zig'
-                                                        }
-                                                        return langMap[ext] || ext.toUpperCase()
-                                                    }
-
-                                                    // Analyze each file with 120s timeout
-                                                    for (let i = 0; i < filesToAnalyze.length; i++) {
-                                                        // FIX BUG-008: Check if component is still mounted before state updates
-                                                        if (!isMountedRef.current) {
-                                                            console.log('[Scan] Component unmounted, stopping scan')
-                                                            break
-                                                        }
-
-                                                        const file = filesToAnalyze[i]
-                                                        setScanProgress({ current: i + 1, total: filesToAnalyze.length, currentFile: file.name })
-
-                                                        const content = await globalThis.window.electronAPI?.fs.readFile(file.path)
-                                                        if (!content?.success || !content.content) {
-                                                            skippedFiles++
-                                                            continue
-                                                        }
-
-                                                        // Skip very small files (< 5 lines)
-                                                        const lineCount = content.content.split('\n').length
-                                                        if (lineCount < 5) {
-                                                            skippedFiles++
-                                                            continue
-                                                        }
-
-                                                        // Extract fewer lines for offline (faster), more for cloud
-                                                        const maxLines = agentAIMode === 'offline' ? 200 : 500
-                                                        const fileContent = extractSmartContent(content.content, maxLines)
-                                                        const language = getLanguage(file.name)
-
-                                                        // Simpler prompt for offline models (faster generation)
-                                                        const offlinePrompt = `Review this ${language} file "${file.name}".
-
-${fileContent}
-
-Return JSON: {"issues":[{"type":"bug"|"security"|"performance"|"improvement","description":"...","suggestion":"..."}]}`
-
-                                                        const cloudPrompt = `Analyze this ${language} code for bugs, security issues, and improvements.
-
-File: ${file.name} (${lineCount} lines total, showing first ${Math.min(lineCount, maxLines)})
-
-\`\`\`${language.toLowerCase()}
-${fileContent}
-\`\`\`
-
-Find REAL issues only:
-- Bugs: null refs, logic errors, type issues
-- Security: XSS, injection, hardcoded secrets, unsafe patterns
-- Performance: memory leaks, inefficient code, N+1 queries
-- Improvements: dead code, missing error handling, bad practices
-
-Output JSON with issues array. If no issues, return {"issues": []}`
-
-                                                        const prompt = agentAIMode === 'offline' ? offlinePrompt : cloudPrompt
-
-                                                        try {
-                                                            let response: string
-
-                                                            // 60s timeout for offline (smaller context), 120s for cloud
-                                                            const fileTimeoutMs = agentAIMode === 'offline' ? 60000 : 120000
-                                                            let timeoutId: number | undefined
-
-                                                            if (agentAIMode === 'offline' && loadedModelId) {
-                                                                // Note: Don't use jsonSchema with small offline models - causes them to stall
-                                                                // Instead, use prompt-based JSON formatting with lower maxTokens for speed
-                                                                const generatePromise = offlineLLMService.generate([
-                                                                    { role: 'system', content: `You are a code reviewer. Output ONLY valid JSON.` },
-                                                                    { role: 'user', content: prompt }
-                                                                ], {
-                                                                    temperature: 0.1,
-                                                                    maxTokens: 800 // Lower tokens for faster response
-                                                                })
-
-                                                                // Create timeout that also cancels the generation
-                                                                // FIX BUG-004: Use custom error class for proper timeout detection
-                                                                const timeoutPromise = new Promise<string>((_, reject) => {
-                                                                    timeoutId = window.setTimeout(async () => {
-                                                                        // Cancel the ongoing generation
-                                                                        await offlineLLMService.cancelGeneration()
-                                                                        reject(new AnalysisTimeoutError())
-                                                                    }, fileTimeoutMs)
-                                                                })
-
-                                                                try {
-                                                                    response = await Promise.race([generatePromise, timeoutPromise])
-                                                                } finally {
-                                                                    if (timeoutId) clearTimeout(timeoutId)
-                                                                }
-                                                            } else {
-                                                                // Cloud AI mode with 120s timeout
-                                                                // FIX BUG-004: Use custom error class for proper timeout detection
-                                                                const cloudTimeoutPromise = new Promise<any>((_, reject) => {
-                                                                    timeoutId = window.setTimeout(() => reject(new AnalysisTimeoutError()), fileTimeoutMs)
-                                                                })
-
-                                                                const chatPromise = aiService.chat([
-                                                                    { role: 'system', content: `You are a senior ${language} code reviewer. Find bugs, security issues, and improvements. Output valid JSON only.` },
-                                                                    { role: 'user', content: prompt }
-                                                                ], currentProvider, {
-                                                                    temperature: 0.1,
-                                                                    maxTokens: 1200
-                                                                })
-
-                                                                try {
-                                                                    const cloudResponse = await Promise.race([chatPromise, cloudTimeoutPromise])
-                                                                    if (typeof cloudResponse === 'string') {
-                                                                        throw new Error(cloudResponse)
-                                                                    }
-                                                                    if (cloudResponse.error) {
-                                                                        console.error('Cloud AI error:', cloudResponse.error)
-                                                                        skippedFiles++
-                                                                        continue
-                                                                    }
-                                                                    response = cloudResponse.content
-                                                                } finally {
-                                                                    if (timeoutId) clearTimeout(timeoutId)
-                                                                }
-                                                            }
-
-                                                            analyzedFiles++
-
-                                                            // Parse JSON response
-                                                            let jsonStr = response
-                                                            const jsonMatch = /```json?\n?([\s\S]*?)\n?```/.exec(response) || /{[\s\S]*}/.exec(response)
-                                                            if (jsonMatch) {
-                                                                jsonStr = jsonMatch[1] || jsonMatch[0]
-                                                            }
-
-                                                            const analysis = JSON.parse(jsonStr)
-
-                                                            if (analysis.issues && Array.isArray(analysis.issues)) {
-                                                                for (const issue of analysis.issues) {
-                                                                    if (issue.description && issue.suggestion) {
-                                                                        allIssues.push({
-                                                                            file: file.name,
-                                                                            path: file.path,
-                                                                            type: issue.type || 'improvement',
-                                                                            severity: issue.severity || 'medium',
-                                                                            line: issue.line,
-                                                                            description: issue.description,
-                                                                            suggestion: issue.suggestion
-                                                                        })
-                                                                    }
-                                                                }
-                                                            }
-                                                        } catch (e) {
-                                                            // FIX BUG-004: Use instanceof to properly distinguish timeout from other errors
-                                                            if (e instanceof AnalysisTimeoutError) {
-                                                                timedOutFiles++
-                                                                console.warn('Analysis timed out for', file.name)
-                                                            } else {
-                                                                // Log the actual error for debugging
-                                                                const errorMsg = e instanceof Error ? e.message : 'Unknown error'
-                                                                console.error('Failed to analyze', file.name, ':', errorMsg)
-                                                                skippedFiles++
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // Sort issues by severity
-                                                    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 }
-                                                    allIssues.sort((a, b) => (severityOrder[a.severity as keyof typeof severityOrder] || 3) - (severityOrder[b.severity as keyof typeof severityOrder] || 3))
-
-                                                    // Map severity to confidence
-                                                    const severityToConfidence: Record<string, number> = { critical: 0.95, high: 0.85, medium: 0.7, low: 0.5 }
-
-                                                    // Add issues to agent suggestions system
-                                                    const agentSuggestions = allIssues.slice(0, 20).map(issue => ({
-                                                        action: 'suggest' as const,
-                                                        target: 'file-system' as const,
-                                                        description: `[${issue.type.toUpperCase()}] ${issue.file}${issue.line ? `:${issue.line}` : ''}: ${issue.description}`,
-                                                        reasoning: issue.suggestion,
-                                                        confidence: severityToConfidence[issue.severity] || 0.6,
-                                                        payload: {
-                                                            message: issue.suggestion,
-                                                            category: issue.type as 'bug' | 'security' | 'performance' | 'improvement',
-                                                            filePath: issue.path,
-                                                            lineNumber: issue.line
-                                                        }
-                                                    }))
-
-                                                    if (agentSuggestions.length > 0) {
-                                                        agent.addSuggestions(agentSuggestions)
-                                                    }
-
-                                                    // Summary counts
-                                                    const bugCount = allIssues.filter(i => i.type === 'bug').length
-                                                    const securityCount = allIssues.filter(i => i.type === 'security').length
-                                                    const perfCount = allIssues.filter(i => i.type === 'performance').length
-                                                    const improvementCount = allIssues.filter(i => i.type === 'improvement').length
-
-                                                    // Build status notes
-                                                    const statusNotes: string[] = []
-                                                    if (skippedFiles > 0) statusNotes.push(`${skippedFiles} skipped`)
-                                                    if (timedOutFiles > 0) statusNotes.push(`${timedOutFiles} timed out`)
-
-                                                    // Add summary message to chat
-                                                    setAiMessages(prev => [...prev, {
-                                                        id: crypto.randomUUID(),
-                                                        role: 'assistant',
-                                                        content: `**Workspace Scan Complete**\n\nSuccessfully analyzed **${analyzedFiles}** of ${filesToAnalyze.length} files.${statusNotes.length > 0 ? `\n_(${statusNotes.join(', ')})_` : ''}\n\n` +
-                                                            (allIssues.length > 0
-                                                                ? `Found **${allIssues.length}** issues:\n` +
-                                                                `- 🐛 Bugs: ${bugCount}\n` +
-                                                                `- 🔒 Security: ${securityCount}\n` +
-                                                                `- ⚡ Performance: ${perfCount}\n` +
-                                                                `- 💡 Improvements: ${improvementCount}\n\n` +
-                                                                `**Review issues in the Pending Tasks section above** to approve or reject suggestions.`
-                                                                : '✅ No major issues found! Your code looks good.'),
-                                                        timestamp: Date.now()
-                                                    }])
-
-                                                } catch (err) {
-                                                    setAiMessages(prev => [...prev, {
-                                                        id: crypto.randomUUID(),
-                                                        role: 'assistant',
-                                                        content: `Error scanning workspace: ${err instanceof Error ? err.message : 'Unknown error'}`,
-                                                        timestamp: Date.now(),
-                                                        isError: true
-                                                    }])
-                                                } finally {
-                                                    setIsProcessing(false)
-                                                    setScanProgress(null)
-                                                }
-                                            }}
-                                            disabled={!agent.canRun || isProcessing}
-                                        >
-                                            {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <AlertCircle size={14} />}
-                                            {isProcessing
-                                                ? (scanProgress
-                                                    ? `Scanning (${scanProgress.current}/${scanProgress.total})...`
-                                                    : 'Scanning...')
-                                                : 'Scan Workspace Files'}
-                                        </button>
-                                        {scanProgress && (
-                                            <div className="scan-progress">
-                                                <div className="progress-bar">
-                                                    <div
-                                                        className="progress-fill"
-                                                        style={{ width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%` }}
-                                                    />
-                                                </div>
-                                                <span className="progress-file">{scanProgress.currentFile}</span>
-                                            </div>
-                                        )}
-                                        <p className="scan-description">
-                                            Deep scan of all code files for bugs, security vulnerabilities, performance issues, and improvements.
-                                        </p>
-                                    </div>
-                                )}
-
-                                {agent.suggestions.filter(s => s.status === 'pending').length > 0 && (
-                                    <div className="suggestions-section">
-                                        <div className="section-title">Pending Tasks ({agent.pendingCount})</div>
-                                        <div className="suggestions-list">
-                                            {agent.suggestions.filter(s => s.status === 'pending').map(s => {
-                                                const category = (s.payload as any)?.category || 'improvement'
-                                                const isBug = category === 'bug'
-                                                const isPerformance = category === 'performance'
-                                                const isSecurity = category === 'security'
-                                                const isImprovement = category === 'improvement'
-                                                const filePath = (s.payload as any)?.filePath
-                                                const lineNumber = (s.payload as any)?.lineNumber
-
-                                                return (
-                                                    <div key={s.id} className={`suggestion-card ${isBug ? 'bug' : ''} ${isSecurity ? 'security' : ''}`}>
-                                                        <div className="card-header">
-                                                            {isBug && <Bug size={14} />}
-                                                            {isSecurity && <Shield size={14} />}
-                                                            {isPerformance && <Zap size={14} />}
-                                                            {isImprovement && <Lightbulb size={14} />}
-                                                            {isBug && <span className="category-badge bug">BUG</span>}
-                                                            {isSecurity && <span className="category-badge security">SECURITY</span>}
-                                                            {isPerformance && <span className="category-badge performance">PERFORMANCE</span>}
-                                                            {isImprovement && <span className="category-badge improvement">IMPROVEMENT</span>}
-                                                            <span className="confidence-score">{Math.round(s.confidence * 100)}%</span>
-                                                        </div>
-                                                        {filePath && (
-                                                            <div className="card-file-path">
-                                                                {filePath.split(/[/\\]/).pop()}{lineNumber ? `:${lineNumber}` : ''}
-                                                            </div>
-                                                        )}
-                                                        <div className="card-body">
-                                                            <div className="desc">{s.description}</div>
-                                                            <div className="reason">{s.reasoning}</div>
-                                                        </div>
-                                                        <div className="card-actions">
-                                                            <button className="reject-btn" onClick={() => agent.rejectSuggestion(s.id)}><X size={14} /> Dismiss</button>
-                                                            <button className="approve-btn" onClick={() => agent.approveSuggestion(s.id)}><Check size={14} /> Apply</button>
-                                                        </div>
-                                                    </div>
-                                                )
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {showLog && (
-                                    <div className="log-section">
-                                        <div className="log-header">
-                                            <span>Activity Log</span>
-                                            <button className="clear-link" onClick={agent.clearActivityLog}>Clear</button>
-                                        </div>
-                                        <div className="log-entries">
-                                            {agent.activityLog.map(entry => (
-                                                <div key={entry.id} className="log-entry">
-                                                    <span className={`entry-icon ${entry.type}`}>
-                                                        {entry.type === 'execution' ? <Zap size={12} /> :
-                                                            entry.type === 'analysis' ? <Brain size={12} /> :
-                                                                entry.type === 'suggestion' ? <Lightbulb size={12} /> :
-                                                                    entry.type === 'error' ? <AlertCircle size={12} /> :
-                                                                        <Scroll size={12} />}
-                                                    </span>
-                                                    <span className="entry-msg">{entry.message}</span>
-                                                    <span className="entry-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {!agent.config.enabled && agent.suggestions.filter(s => s.status === 'pending').length === 0 && (
-                                    <div className="agent-intro">
-                                        <Zap size={48} className="intro-icon" />
-                                        <h3>Autonomous Agent</h3>
-                                        <p>
-                                            {agent.canRun
-                                                ? 'Enable the agent to automatically detect bugs, suggest fixes, identify code quality issues, and provide actionable improvements while you work.'
-                                                : agentAIMode === 'offline'
-                                                    ? 'Load an offline model to enable autonomous bug detection and code analysis.'
-                                                    : 'The autonomous agent requires valid API keys for OpenAI, Anthropic, or Google to function.'
-                                            }
-                                        </p>
-                                        {!agent.canRun && (
-                                            <div className="setup-hint">
-                                                {agentAIMode === 'offline'
-                                                    ? 'Click the model selector above to choose and load a model.'
-                                                    : 'Configure keys in Settings > API Keys or switch to Local AI mode.'
-                                                }
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            <WorkspaceScanTab
+                                workspacePath={workspacePath}
+                                aiMode={agentAIMode}
+                                provider={currentProvider}
+                                cloudModel={cloudModel}
+                                availableProviders={availableCloudProviders}
+                                onAiModeChange={(mode) => setAgentAIMode(mode)}
+                                onProviderChange={(p) => setCurrentProvider(p)}
+                                onShowModelManager={() => setShowModelManager(true)}
+                            />
                         )}
                     </div>
                 )}
@@ -1885,15 +1274,84 @@ Output JSON with issues array. If no issues, return {"issues": []}`
             {/* Input Section */}
             {(activeMode === 'collaboration' || (activeMode === 'agent' && !showAutonomous)) && (
                 <div className="input-section">
+                    {activeMode === 'collaboration' && typingUsers.length > 0 && (
+                        <div className="typing-indicator-text">
+                            <span className="typing-dots">
+                                <span>.</span><span>.</span><span>.</span>
+                            </span>
+                            {typingUsers.length > 2
+                                ? 'Several people are typing'
+                                : `${typingUsers.join(' and ')} ${typingUsers.length === 1 ? 'is' : 'are'} typing`}
+                        </div>
+                    )}
+
+                    {/* [NEW] Reply Preview */}
+                    {replyTo && (
+                        <div className="reply-preview animate-slideUp">
+                            <div className="reply-preview-content">
+                                <span className="reply-to-label">Replying to {replyTo.sender === 'You' ? 'yourself' : replyTo.sender}</span>
+                                <div className="reply-to-text">{replyTo.content}</div>
+                            </div>
+                            <button className="cancel-reply" onClick={() => setReplyTo(null)}><X size={14} /></button>
+                        </div>
+                    )}
+
+                    {/* [NEW] Suggestion List */}
+                    {showSuggestions && filteredSuggestions.length > 0 && (
+                        <div className="suggestion-list animate-slideUp">
+                            <div className="suggestion-header">
+                                {suggestionType === 'user' ? <Users size={12} /> : <FileCode size={12} />}
+                                <span>Tag {suggestionType}s</span>
+                                <button className="toggle-suggestion-type" onClick={() => setSuggestionType(suggestionType === 'user' ? 'file' : 'user')}>
+                                    Switch to {suggestionType === 'user' ? 'Files' : 'Users'}
+                                </button>
+                            </div>
+                            {filteredSuggestions.map((suggestion, idx) => (
+                                <button
+                                    key={suggestionType === 'user' ? suggestion.name : suggestion.path}
+                                    className={`suggestion-item ${idx === suggestionIndex ? 'active' : ''}`}
+                                    onClick={() => applySuggestion(suggestion)}
+                                >
+                                    {suggestionType === 'user' ? (
+                                        <User size={14} />
+                                    ) : (
+                                        suggestion.type === 'p2p' ? <Globe size={14} className="text-blue-400" /> : <File size={14} className="text-emerald-400" />
+                                    )}
+                                    <div className="suggestion-info">
+                                        <span className="suggestion-name">{suggestion.name}</span>
+                                        {suggestion.type === 'local' && <span className="suggestion-meta">Local Project</span>}
+                                        {suggestion.type === 'p2p' && <span className="suggestion-meta">Shared P2P</span>}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="input-wrapper">
                         <textarea
                             ref={inputRef}
                             className="panel-textarea"
                             placeholder={activeMode === 'collaboration' ? "Message team..." : "Ask agent..."}
                             value={input}
-                            onChange={e => setInput(e.target.value)}
+                            onChange={e => handleTyping(e.target.value)}
                             onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                                if (showSuggestions && filteredSuggestions.length > 0) {
+                                    if (e.key === 'ArrowDown') {
+                                        e.preventDefault()
+                                        setSuggestionIndex((suggestionIndex + 1) % filteredSuggestions.length)
+                                    } else if (e.key === 'ArrowUp') {
+                                        e.preventDefault()
+                                        setSuggestionIndex((suggestionIndex - 1 + filteredSuggestions.length) % filteredSuggestions.length)
+                                    } else if (e.key === 'Enter' || e.key === 'Tab') {
+                                        e.preventDefault()
+                                        applySuggestion(filteredSuggestions[suggestionIndex])
+                                    } else if (e.key === 'Escape') {
+                                        setShowSuggestions(false)
+                                    }
+                                } else if (e.key === 'Enter' && !e.shiftKey) { 
+                                    e.preventDefault(); 
+                                    handleSend(); 
+                                }
                             }}
                             rows={1}
                             disabled={isProcessing || (activeMode === 'collaboration' && !canChat)}
@@ -1911,8 +1369,241 @@ Output JSON with issues array. If no issues, return {"issues": []}`
             )}
 
             {showModelManager && <UnifiedSettingsPanel onClose={() => setShowModelManager(false)} />}
+            {showTeamPanel && <CollaborationPanel onClose={() => setShowTeamPanel(false)} spaceId={currentSpace?.id} />}
+
+            {/* Previous Chats Overlay */}
+            {showHistory && (
+                <div className="history-overlay" onClick={() => setShowHistory(false)}>
+                    <div className="history-panel" onClick={e => e.stopPropagation()}>
+                        <div className="history-header">
+                            <h3><History size={16} /> Previous Chats</h3>
+                            <button className="new-chat-btn" onClick={() => { 
+                                createSession(); 
+                                setAiMessages([]);
+                                setAgentSteps([]);
+                                setShowHistory(false); 
+                            }}>
+                                <Plus size={14} /> New Chat
+                            </button>
+                        </div>
+                        <div className="history-list">
+                            {sessions.length === 0 ? (
+                                <div className="history-empty">No previous chats</div>
+                            ) : (
+                                sessions.map(session => (
+                                    <div 
+                                        key={session.id} 
+                                        className={`history-item ${currentSessionId === session.id ? 'active' : ''}`}
+                                        onClick={() => { 
+                                            setCurrentSession(session.id); 
+                                            setAgentSteps([]);
+                                            setShowHistory(false); 
+                                        }}
+                                    >
+                                        <div className="history-item-main">
+                                            {editingSessionId === session.id ? (
+                                                <input 
+                                                    className="history-rename-input"
+                                                    autoFocus
+                                                    value={editTitle}
+                                                    onChange={e => setEditTitle(e.target.value)}
+                                                    onBlur={() => { renameSession(session.id, editTitle); setEditingSessionId(null); }}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Enter') { renameSession(session.id, editTitle); setEditingSessionId(null); }
+                                                        if (e.key === 'Escape') setEditingSessionId(null);
+                                                    }}
+                                                    onClick={e => e.stopPropagation()}
+                                                />
+                                            ) : (
+                                                <span className="history-title">{session.title}</span>
+                                            )}
+                                            <span className="history-date">
+                                                {new Date(session.lastModified).toLocaleDateString()} {new Date(session.lastModified).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                        </div>
+                                        <div className="history-actions">
+                                            <button 
+                                                className="hist-action-btn" 
+                                                title="Rename"
+                                                onClick={(e) => { e.stopPropagation(); setEditingSessionId(session.id); setEditTitle(session.title); }}
+                                            >
+                                                <CornerUpLeft size={12} style={{ transform: 'rotate(90deg)' }} />
+                                            </button>
+                                            <button 
+                                                className="hist-action-btn danger" 
+                                                title="Delete"
+                                                onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
+                                            >
+                                                <Trash2 size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style>{`
+                .history-overlay {
+                    position: absolute;
+                    inset: 0;
+                    background: rgba(0, 0, 0, 0.4);
+                    backdrop-filter: blur(4px);
+                    z-index: 100;
+                    display: flex;
+                    justify-content: flex-end;
+                }
+
+                .history-panel {
+                    width: 280px;
+                    height: 100%;
+                    background: var(--color-surface);
+                    border-left: 1px solid var(--color-border);
+                    display: flex;
+                    flex-direction: column;
+                    box-shadow: -10px 0 30px rgba(0,0,0,0.3);
+                    animation: slideRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+
+                @keyframes slideRight {
+                    from { transform: translateX(100%); }
+                    to { transform: translateX(0); }
+                }
+
+                .history-header {
+                    padding: 16px;
+                    border-bottom: 1px solid var(--color-border-subtle);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+
+                .history-header h3 {
+                    font-size: 14px;
+                    font-weight: 600;
+                    margin: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .new-chat-btn {
+                    padding: 4px 8px;
+                    background: var(--color-accent);
+                    color: #000;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+
+                .history-list {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 8px;
+                }
+
+                .history-item {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 10px 12px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    margin-bottom: 4px;
+                    transition: all 0.2s;
+                    border: 1px solid transparent;
+                }
+
+                .history-item:hover {
+                    background: rgba(255, 255, 255, 0.03);
+                }
+
+                .history-item.active {
+                    background: rgba(59, 130, 246, 0.08);
+                    border-color: rgba(59, 130, 246, 0.2);
+                }
+
+                .history-item-main {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    min-width: 0;
+                }
+
+                .history-title {
+                    font-size: 13px;
+                    font-weight: 500;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    color: var(--color-text);
+                }
+
+                .history-date {
+                    font-size: 10px;
+                    color: var(--color-text-tertiary);
+                    margin-top: 2px;
+                }
+
+                .history-actions {
+                    display: flex;
+                    gap: 4px;
+                    opacity: 0;
+                    transition: opacity 0.2s;
+                }
+
+                .history-item:hover .history-actions {
+                    opacity: 1;
+                }
+
+                .hist-action-btn {
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: rgba(255, 255, 255, 0.05);
+                    border: none;
+                    border-radius: 4px;
+                    color: var(--color-text-tertiary);
+                    cursor: pointer;
+                }
+
+                .hist-action-btn:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: var(--color-text);
+                }
+
+                .hist-action-btn.danger:hover {
+                    background: rgba(239, 68, 68, 0.1);
+                    color: var(--color-error);
+                }
+
+                .history-rename-input {
+                    background: var(--color-surface-elevated);
+                    border: 1px solid var(--color-accent);
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 12px;
+                    color: var(--color-text);
+                    width: 100%;
+                    outline: none;
+                }
+
+                .history-empty {
+                    text-align: center;
+                    padding: 40px 20px;
+                    color: var(--color-text-tertiary);
+                    font-size: 12px;
+                }
+
                 .unified-panel {
                     display: flex;
                     flex-direction: column;
@@ -1982,9 +1673,10 @@ Output JSON with issues array. If no issues, return {"issues": []}`
         
                 .mode-header {
                     display: flex;
-                    justify-content: space-between;
+                    justify-content: flex-start;
                     align-items: center;
-                    padding: var(--space-3) var(--space-4);
+                    gap: 16px;
+                    padding: 12px 16px;
                     border-bottom: 1px solid var(--color-border-subtle);
                     background: var(--color-surface-subtle);
                 }
@@ -2038,7 +1730,210 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                 }
 
                 .bubble-content { white-space: pre-wrap; word-break: break-word; }
-                .message-time { font-size: 9px; opacity: 0.6; margin-top: 4px; text-align: right; }
+                
+                .bubble-footer {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-top: 4px;
+                }
+
+                .reply-action-btn {
+                    opacity: 0;
+                    padding: 2px;
+                    color: var(--color-text-tertiary);
+                    border-radius: 4px;
+                    transition: all 0.2s;
+                }
+
+                .message-bubble:hover .reply-action-btn {
+                    opacity: 1;
+                }
+
+                .reply-action-btn:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: var(--color-text-secondary);
+                }
+
+                .message-bubble.own .reply-action-btn {
+                    color: rgba(0, 0, 0, 0.5);
+                }
+
+                .message-bubble.own .reply-action-btn:hover {
+                    background: rgba(0, 0, 0, 0.1);
+                    color: rgba(0, 0, 0, 0.8);
+                }
+
+                .message-time { font-size: 9px; opacity: 0.6; }
+
+                .mention {
+                    background: rgba(59, 130, 246, 0.15);
+                    color: var(--color-accent);
+                    padding: 0 4px;
+                    border-radius: 4px;
+                    font-weight: 600;
+                }
+
+                .mention.user { color: #60a5fa; }
+                .mention.file { 
+                    color: var(--color-success); 
+                    background: rgba(34, 197, 94, 0.1);
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 2px;
+                }
+                .mention.file:hover { background: rgba(34, 197, 94, 0.2); text-decoration: underline; }
+                .mention.file.p2p { color: var(--color-accent); background: rgba(59, 130, 246, 0.1); }
+
+                .suggestion-info {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1px;
+                }
+
+                .suggestion-name {
+                    font-weight: 600;
+                }
+
+                .suggestion-meta {
+                    font-size: 9px;
+                    opacity: 0.5;
+                }
+
+                .reply-quote {
+                    background: rgba(0, 0, 0, 0.15);
+                    border-left: 2px solid var(--color-accent);
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    margin-bottom: 8px;
+                    font-size: 11px;
+                    cursor: pointer;
+                }
+
+                .message-bubble.own .reply-quote {
+                    background: rgba(255, 255, 255, 0.15);
+                    border-left-color: rgba(0, 0, 0, 0.3);
+                }
+
+                .reply-sender {
+                    font-weight: 700;
+                    display: block;
+                    margin-bottom: 2px;
+                    opacity: 0.8;
+                }
+
+                .reply-text {
+                    opacity: 0.6;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .reply-preview {
+                    background: var(--color-surface-elevated);
+                    border-left: 3px solid var(--color-accent);
+                    padding: 8px 12px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-top: 1px solid var(--color-border-subtle);
+                }
+
+                .reply-preview-content {
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .reply-to-label {
+                    font-size: 10px;
+                    font-weight: 700;
+                    color: var(--color-accent);
+                    display: block;
+                }
+
+                .reply-to-text {
+                    font-size: 11px;
+                    color: var(--color-text-secondary);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .cancel-reply {
+                    padding: 4px;
+                    color: var(--color-text-muted);
+                    border-radius: 50%;
+                }
+
+                .cancel-reply:hover {
+                    background: var(--color-surface-subtle);
+                    color: var(--color-text-secondary);
+                }
+
+                .suggestion-list {
+                    position: absolute;
+                    bottom: 100%;
+                    left: 12px;
+                    right: 12px;
+                    background: var(--color-surface-elevated);
+                    border: 1px solid var(--color-border);
+                    border-radius: var(--radius-lg);
+                    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+                    margin-bottom: 8px;
+                    overflow: hidden;
+                    z-index: 100;
+                }
+
+                .suggestion-header {
+                    padding: 6px 12px;
+                    background: var(--color-surface-subtle);
+                    border-bottom: 1px solid var(--color-border-subtle);
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 10px;
+                    color: var(--color-text-muted);
+                    font-weight: 600;
+                }
+
+                .toggle-suggestion-type {
+                    margin-left: auto;
+                    color: var(--color-accent);
+                    font-size: 9px;
+                }
+
+                .suggestion-item {
+                    width: 100%;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 12px;
+                    font-size: 12px;
+                    text-align: left;
+                    border: none;
+                    background: transparent;
+                    color: var(--color-text-secondary);
+                    transition: all 0.15s;
+                }
+
+                .suggestion-item:hover, .suggestion-item.active {
+                    background: var(--color-glass);
+                    color: var(--color-text);
+                }
+
+                .suggestion-item.active {
+                    background: rgba(59, 130, 246, 0.1);
+                    color: var(--color-accent);
+                }
+
+                .inline-code {
+                    background: rgba(255, 255, 255, 0.1);
+                    padding: 1px 4px;
+                    border-radius: 4px;
+                    font-family: var(--font-mono);
+                    font-size: 0.9em;
+                }
 
                 .tool-message {
                     background: var(--color-bg-darker, #111);
@@ -2172,6 +2067,34 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     padding: var(--space-3) var(--space-4);
                     border-top: 1px solid var(--color-border-subtle);
                     background: var(--color-surface);
+                    position: relative;
+                }
+
+                .typing-indicator-text {
+                    position: absolute;
+                    top: -24px;
+                    left: 20px;
+                    font-size: 10px;
+                    color: var(--color-text-muted);
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    animation: fadeIn 0.3s ease;
+                }
+
+                .typing-dots span {
+                    animation: blink 1.4s infinite both;
+                    font-size: 14px;
+                    line-height: 10px;
+                }
+
+                .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+                .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+                @keyframes blink {
+                    0% { opacity: 0.2; }
+                    20% { opacity: 1; }
+                    100% { opacity: 0.2; }
                 }
 
                 .input-wrapper {
@@ -2214,35 +2137,213 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     cursor: pointer;
                 }
 
-                .send-action:hover:not(:disabled) { transform: translateY(-1px); color: var(--color-accent-hover); }
+                .send-action:hover:not(:disabled) { transform: translateY(-1px); color: var(--color-accent-hover); }    
                 .send-action:disabled { opacity: 0.4; cursor: not-allowed; }
                 .send-action.stop-btn { color: var(--color-error); }
                 .send-action.stop-btn:hover:not(:disabled) { color: #ff4444; }
 
-                .ai-source-toggle {
+                .unified-header-left { display: flex; align-items: center; gap: 12px; }
+                .unified-header-right { display: flex; align-items: center; gap: 12px; }
+
+                .source-switcher {
                     display: flex;
-                    background: var(--color-surface-elevated);
-                    padding: 3px;
-                    border-radius: var(--radius-md);
-                    gap: 4px;
-                    border: 1px solid var(--color-border-subtle);
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 8px;
+                    padding: 2px;
                 }
 
-                .src-btn {
+                .src-tab {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    padding: 3px 8px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    color: rgba(255, 255, 255, 0.4);
+                    border-radius: 6px;
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+
+                .src-tab:hover { color: rgba(255, 255, 255, 0.6); }
+                .src-tab.active { 
+                    background: rgba(255, 255, 255, 0.08); 
+                    color: #fff; 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }
+
+                .ai-source-group {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+
+                .header-settings-btn {
+                    width: 28px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 8px;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    background: rgba(255, 255, 255, 0.03);
+                    color: rgba(255, 255, 255, 0.4);
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+
+                .header-settings-btn:hover {
+                    background: rgba(255, 255, 255, 0.08);
+                    color: rgba(255, 255, 255, 0.8);
+                    border-color: rgba(255, 255, 255, 0.15);
+                }
+
+                .mode-pill {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 2px 6px;
+                    font-size: 9px;
+                    font-weight: 600;
+                    color: rgba(255, 255, 255, 0.3);
+                    letter-spacing: 0.01em;
+                    border-radius: 4px;
+                    border: 1px solid transparent;
+                    background: transparent;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+
+                .mode-pill.active {
+                    color: #3b82f6;
+                    background: rgba(59, 130, 246, 0.08);
+                    border-color: rgba(59, 130, 246, 0.2);
+                }
+
+                .divider-v {
+                    width: 1px;
+                    height: 28px;
+                    background: rgba(255, 255, 255, 0.08);
+                }
+
+                .cloud-config {
                     display: flex;
                     align-items: center;
                     gap: 6px;
-                    padding: 5px 12px;
-                    font-size: 11px;
-                    font-weight: 500;
-                    color: var(--color-text-tertiary);
-                    border-radius: var(--radius-sm);
-                    transition: all var(--transition-fast);
-                    position: relative;
-                    border: none;
                 }
 
-                .src-btn.active { background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-sm); }
+                .minimal-select {
+                    background: rgba(255, 255, 255, 0.04);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 6px;
+                    color: rgba(255, 255, 255, 0.7);
+                    font-size: 10px;
+                    font-weight: 600;
+                    padding: 3px 6px;
+                    outline: none;
+                    cursor: pointer;
+                    appearance: none;
+                }
+
+                .minimal-select:hover { border-color: rgba(255, 255, 255, 0.15); }
+                .minimal-select.model-sel { padding: 4px 10px; }
+
+                .model-selector-btn {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 5px 10px;
+                    background: rgba(59, 130, 246, 0.05);
+                    border: 1px solid rgba(59, 130, 246, 0.15);
+                    border-radius: 8px;
+                    color: #60a5fa;
+                    font-size: 11px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    max-width: 160px;
+                }
+
+                .model-selector-btn span {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .model-selector-btn:hover {
+                    background: rgba(59, 130, 246, 0.1);
+                    border-color: rgba(59, 130, 246, 0.3);
+                    transform: translateY(-1px);
+                }
+
+                .action-group {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .action-icon-btn {
+                    width: 28px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 6px;
+                    border: 1px solid transparent;
+                    background: transparent;
+                    color: rgba(255, 255, 255, 0.4);
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+
+                .action-icon-btn:hover {
+                    background: rgba(255, 255, 255, 0.05);
+                    color: rgba(255, 255, 255, 0.8);
+                }
+
+                .action-icon-btn.active {
+                    color: #3b82f6;
+                    background: rgba(59, 130, 246, 0.1);
+                    border-color: rgba(59, 130, 246, 0.1);
+                }
+
+                .status-toggle-btn {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 4px 10px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 20px;
+                    color: rgba(255, 255, 255, 0.4);
+                    font-size: 9px;
+                    font-weight: 800;
+                    letter-spacing: 0.05em;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                }
+
+                .status-toggle-btn.active {
+                    background: rgba(16, 185, 129, 0.08);
+                    border-color: rgba(16, 185, 129, 0.2);
+                    color: #10b981;
+                }
+
+                .status-indicator {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 50%;
+                    background: rgba(255, 255, 255, 0.2);
+                    transition: all 0.3s ease;
+                }
+
+                .status-toggle-btn.active .status-indicator {
+                    background: #10b981;
+                    box-shadow: 0 0 8px #10b981;
+                }
 
                 .mini-badge {
                     background: var(--color-error);
@@ -2253,58 +2354,6 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     border-radius: 8px;
                     margin-left: 4px;
                 }
-
-                .ai-mode-toggle {
-                    display: flex;
-                    gap: 4px;
-                    padding: 3px;
-                    background: var(--color-surface-elevated);
-                    border-radius: var(--radius-md);
-                    border: 1px solid var(--color-border-subtle);
-                }
-
-                .mode-btn {
-                    width: 26px;
-                    height: 26px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: var(--color-text-tertiary);
-                    border-radius: var(--radius-sm);
-                    transition: all var(--transition-fast);
-                    border: none;
-                }
-
-                .mode-btn:hover { background: var(--color-surface); }
-                .mode-btn.active { background: var(--color-surface); color: var(--color-accent); box-shadow: var(--shadow-sm); }
-
-                .header-controls { display: flex; align-items: center; gap: var(--space-3); }
-                .tool-btn {
-                    width: 28px;
-                    height: 28px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: var(--color-text-tertiary);
-                    border-radius: var(--radius-sm);
-                    transition: all var(--transition-fast);
-                    border: none;
-                    background: transparent;
-                }
-                .tool-btn:hover { background: var(--color-surface-elevated); color: var(--color-text); }
-                .tool-btn.active { color: var(--color-accent); }
-
-                .provider-select, .model-select-btn {
-                    font-size: 10px;
-                    font-weight: 600;
-                    background: var(--color-surface-elevated);
-                    border: 1px solid var(--color-border);
-                    padding: 4px 8px;
-                    border-radius: var(--radius-sm);
-                    color: var(--color-text-secondary);
-                }
-
-                .model-select-btn { display: flex; align-items: center; gap: 6px; border: none; cursor: pointer; }
 
                 .status-bar { padding: 4px; text-align: center; font-size: 10px; font-weight: 600; }
                 .status-bar.loading { background: var(--color-accent); color: #000; }
@@ -2413,11 +2462,11 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     white-space: nowrap;
                 }
 
-                .agent-status-bar { 
-                    display: flex; 
-                    align-items: center; 
-                    gap: 16px; 
-                    padding: var(--space-4); 
+                .agent-status-bar {
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    padding: var(--space-4);
                     background: rgba(255, 255, 255, 0.02);
                     border-bottom: 1px solid var(--color-border-subtle);
                     margin-bottom: var(--space-4);
@@ -2435,9 +2484,9 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                 }
                 .status-icon.state-executing { border-color: var(--color-accent); color: var(--color-accent); animation: pulse 1s infinite alternate; }
                 .status-icon.state-waiting-approval { border-color: var(--color-warning); color: var(--color-warning); }
-                .status-icon.state-observing { border-color: var(--color-success); color: var(--color-success); }
+                .status-icon.state-observing { border-color: var(--color-success); color: var(--color-success); }       
                 .status-icon.state-thinking { border-color: #a855f7; color: #a855f7; animation: spin 2s linear infinite; }
-                
+
                 .status-info { display: flex; flex-direction: column; gap: 2px; }
                 .status-text.main-status { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--color-text); }
                 .status-text.sub-status { font-size: 11px; color: var(--color-text-muted); }
@@ -2454,11 +2503,11 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                 .toggle-switch.off { background: var(--color-surface-elevated); color: var(--color-text-tertiary); cursor: pointer; border-color: var(--color-border); }
                 .toggle-switch:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
                 .error-text { color: var(--color-error); font-weight: 700; }
-                .setup-hint { margin-top: 12px; font-size: 11px; color: var(--color-accent); font-weight: 600; }
+                .setup-hint { margin-top: 12px; font-size: 11px; color: var(--color-accent); font-weight: 600; }        
 
                 .suggestions-section { margin-top: var(--space-6); }
                 .section-title { font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 12px; }
-                
+
                 .suggestion-card {
                     background: var(--color-surface-elevated);
                     border: 1px solid var(--color-border);
@@ -2478,7 +2527,7 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     background: rgba(168, 85, 247, 0.05);
                 }
 
-                .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+                .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }     
 
                 .card-file-path {
                     font-size: 10px;
@@ -2522,7 +2571,7 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     color: var(--color-success);
                 }
 
-                .confidence-score { margin-left: auto; font-size: 10px; color: var(--color-accent); font-weight: 700; }
+                .confidence-score { margin-left: auto; font-size: 10px; color: var(--color-accent); font-weight: 700; } 
 
                 .card-body { margin-bottom: 8px; }
                 .card-body .desc { font-size: 13px; font-weight: 500; margin-bottom: 6px; line-height: 1.4; }
@@ -2562,7 +2611,7 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                 }
                 .empty-icon, .intro-icon { color: var(--color-surface-elevated); margin-bottom: 12px; }
                 .empty-state h3, .agent-intro h3 { color: var(--color-text-secondary); margin-bottom: 8px; font-size: var(--text-lg); }
-                .empty-state p, .agent-intro p { font-size: var(--text-sm); line-height: 1.5; max-width: 240px; }
+                .empty-state p, .agent-intro p { font-size: var(--text-sm); line-height: 1.5; max-width: 240px; }       
 
                 @keyframes pulse {
                     from { opacity: 0.6; transform: scale(0.95); }
@@ -2611,7 +2660,7 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     align-items: center;
                     justify-content: center;
                 }
-                
+
                 .tool-icon-wrapper.execute {
                     background: rgba(168, 85, 247, 0.1);
                     color: #a855f7;
@@ -2822,6 +2871,45 @@ Output JSON with issues array. If no issues, return {"issues": []}`
                     from { opacity: 0; transform: translateX(-8px); }
                     to { opacity: 1; transform: translateX(0); }
                 }
+
+                .scanner-mode { padding: 0; display: flex; flex-direction: column; background: var(--color-bg); height: 100%; }
+                .scanner-header { padding: 20px; background: var(--color-surface); border-bottom: 1px solid var(--color-border-subtle); display: flex; justify-content: space-between; align-items: center; }
+                .scanner-title { display: flex; align-items: center; gap: 12px; }
+                .scanner-icon-box { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--color-accent), #8b5cf6); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+                .scanner-title-text h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--color-text); }      
+                .scanner-title-text span { font-size: 11px; color: var(--color-text-muted); }
+
+                .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 20px; }
+                .stat-card { background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+                .stat-card:hover { transform: translateY(-2px); border-color: var(--color-accent); }
+                .stat-card.active { background: var(--color-surface-hover); border-color: var(--color-accent); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+                .stat-value { font-size: 20px; font-weight: 800; color: var(--color-text); }
+                .stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--color-text-tertiary); }
+                .stat-card.bug .stat-value { color: var(--color-error); }
+                .stat-card.security .stat-value { color: #a855f7; }
+                .stat-card.performance .stat-value { color: var(--color-warning); }
+                .stat-card.improvement .stat-value { color: var(--color-success); }
+
+                .filter-bar { display: flex; gap: 8px; padding: 0 20px 12px; border-bottom: 1px solid var(--color-border-subtle); overflow-x: auto; }
+                .filter-chip { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-secondary); cursor: pointer; white-space: nowrap; }
+                .filter-chip.active { background: var(--color-accent); color: #000; border-color: transparent; }        
+
+                .issues-list { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+                .issue-item { background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; transition: all 0.2s; position: relative; }
+                .issue-item:hover { border-color: var(--color-border-hover); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }  
+                .issue-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+                .issue-type { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; }
+                .issue-type.bug { background: rgba(239, 68, 68, 0.1); color: var(--color-error); }
+                .issue-type.security { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+                .issue-type.performance { background: rgba(251, 191, 36, 0.1); color: var(--color-warning); }
+                .issue-type.improvement { background: rgba(34, 197, 94, 0.1); color: var(--color-success); }
+                .issue-file { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); display: flex; align-items: center; gap: 4px; }
+                .issue-desc { font-size: 13px; font-weight: 500; color: var(--color-text); margin-bottom: 8px; line-height: 1.4; }
+                .issue-suggestion { font-size: 12px; color: var(--color-text-secondary); background: var(--color-bg); padding: 10px; border-radius: 8px; border-left: 3px solid var(--color-accent); }
+                .issue-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+                .issue-btn { padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; border: none; }
+                .issue-btn.apply { background: var(--color-accent); color: #000; }
+                .issue-btn.dismiss { background: transparent; color: var(--color-text-tertiary); border: 1px solid var(--color-border); }
             `}</style>
         </div >
     )

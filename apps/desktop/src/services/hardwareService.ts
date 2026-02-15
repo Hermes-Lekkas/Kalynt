@@ -16,6 +16,8 @@ export interface RealTimeStats {
     gpuUsage: number      
     vramUsage: number     
     vramTotal: number     
+    ivramUsage: number
+    ivramTotal: number
     diskUsage: number
     diskTotal: number
     diskIOSpeed: number   
@@ -67,6 +69,8 @@ class HardwareService {
             gpuUsage: 0,
             vramUsage: 0,
             vramTotal: 4096,
+            ivramUsage: 0,
+            ivramTotal: 4096,
             diskUsage: 400000,
             diskTotal: 500000,
             diskIOSpeed: 0,

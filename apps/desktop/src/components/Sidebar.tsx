@@ -1,11 +1,10 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState } from 'react'
 import { useAppStore, Space } from '../stores/appStore'
 import { WorkspaceCategoryId, getCategoryById } from '../types/workspaceCategories'
-
-import { FileText, Plus, User, ChevronLeft, Menu } from 'lucide-react'
+import { FileText, Plus, User, ChevronLeft, Menu, X, FolderTree, Sparkles } from 'lucide-react'
 
 export default function Sidebar() {
   const [isCreating, setIsCreating] = useState(false)
@@ -64,7 +63,10 @@ export default function Sidebar() {
   return (
     <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
-        {!sidebarCollapsed && <span className="sidebar-title">Workspaces</span>}
+        {!sidebarCollapsed && <div className="sidebar-title-group">
+           <FolderTree size={14} className="text-blue-400" />
+           <span className="sidebar-title">Workspaces</span>
+        </div>}
         <div className="header-actions">
           {!sidebarCollapsed && (
             <button
@@ -85,17 +87,15 @@ export default function Sidebar() {
         </div>
       </div>
 
-
-
       {isCreating && selectedCategory && (
-        <div className="create-form animate-fadeIn">
+        <div className="create-form animate-reveal-up">
           <div className="category-badge" style={{ background: getCategoryById(selectedCategory)?.color }}>
-            {getCategoryById(selectedCategory)?.icon} {getCategoryById(selectedCategory)?.name}
+            {getCategoryById(selectedCategory)?.icon} <span>{getCategoryById(selectedCategory)?.name}</span>
           </div>
           <input
             type="text"
-            className="input"
-            placeholder="Workspace name"
+            className="sidebar-input"
+            placeholder="Workspace name..."
             value={newSpaceName}
             onChange={(e) => setNewSpaceName(e.target.value)}
             onKeyDown={(e) => {
@@ -105,8 +105,8 @@ export default function Sidebar() {
             autoFocus
           />
           <div className="form-actions">
-            <button className="btn btn-ghost" onClick={handleCancelCreate}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleCreateSpace}>Create</button>
+            <button className="btn-small btn-ghost" onClick={handleCancelCreate}>Cancel</button>
+            <button className="btn-small btn-primary" onClick={handleCreateSpace}>Create</button>
           </div>
         </div>
       )}
@@ -114,9 +114,12 @@ export default function Sidebar() {
       <nav className="space-list">
         {spaces.length === 0 && !isCreating && (
           <div className="empty-state">
-            <p>No workspaces yet</p>
-            <button className="btn btn-secondary" onClick={handleCategorySelect}>
-              Create workspace
+            <div className="empty-icon-box">
+               <Sparkles size={20} className="text-blue-400" />
+            </div>
+            <p>No active projects</p>
+            <button className="btn-create-tiny" onClick={handleCategorySelect}>
+              Initialize Space
             </button>
           </div>
         )}
@@ -145,28 +148,30 @@ export default function Sidebar() {
 
       <div className="sidebar-footer">
         {!sidebarCollapsed && (
-          <div className="usage-info">
+          <div className="usage-card">
             <div className="usage-row">
-              <span>API Keys</span>
-              <span>{configuredKeys > 0 ? `${configuredKeys} configured` : 'None linked'}</span>
+              <span className="label">AI Sync</span>
+              <span className="value">{configuredKeys > 0 ? 'Active' : 'Offline'}</span>
             </div>
             <div className="usage-row">
-              <span>Spaces</span>
-              <span>{spaces.length}</span>
+              <span className="label">Nodes</span>
+              <span className="value">Local Only</span>
             </div>
           </div>
         )}
 
-        <div className="user-info">
-          <div className="avatar">
-            <User size={16} />
+        <div className="user-profile">
+          <div className="avatar-glow">
+            <div className="avatar">
+              <User size={16} />
+            </div>
           </div>
           {!sidebarCollapsed && (
             <div className="user-details">
               {isEditingName ? (
                 <input
                   type="text"
-                  className="user-name-input"
+                  className="user-name-edit"
                   value={userNameInput}
                   onChange={(e) => setUserNameInput(e.target.value)}
                   onBlur={handleSaveName}
@@ -183,12 +188,11 @@ export default function Sidebar() {
                     setUserNameInput(userName);
                     setIsEditingName(true);
                   }}
-                  title="Click to change name"
                 >
                   {userName}
                 </span>
               )}
-              <span className="user-tier">Free Beta</span>
+              <span className="user-status">Verified Beta Member</span>
             </div>
           )}
         </div>
@@ -200,166 +204,144 @@ export default function Sidebar() {
           height: 100%;
           display: flex;
           flex-direction: column;
-          background: var(--color-bg);
+          background: #050505;
           border-right: 1px solid rgba(255, 255, 255, 0.05);
           position: relative;
-          transition: width var(--transition-base);
+          transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
           overflow: hidden;
+          z-index: 100;
         }
 
         .sidebar.collapsed {
-          width: 60px;
+          width: 64px;
         }
         
         .sidebar-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: var(--space-4);
+          padding: 20px 16px;
+        }
+
+        .sidebar-title-group {
+          display: flex;
+          align-items: center;
+          gap: 10px;
         }
         
         .sidebar-title {
-          font-size: var(--text-xs);
-          font-weight: var(--font-semibold);
-          color: var(--color-text-secondary);
+          font-size: 11px;
+          font-weight: 800;
+          color: rgba(255, 255, 255, 0.4);
           text-transform: uppercase;
-          letter-spacing: 0.08em;
+          letter-spacing: 0.1em;
         }
         
         .header-actions {
           display: flex;
-          gap: var(--space-1);
-        }
-        
-        .add-btn {
-          width: 28px;
-          height: 28px;
+          gap: 4px;
         }
         
         .create-form {
-          padding: 0 var(--space-3) var(--space-3);
+          padding: 0 16px 16px;
           display: flex;
           flex-direction: column;
-          gap: var(--space-2);
+          gap: 12px;
+        }
+
+        .sidebar-input {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 10px;
+          padding: 8px 12px;
+          color: white;
+          font-size: 13px;
+          outline: none;
+          transition: all 0.2s;
+        }
+
+        .sidebar-input:focus {
+          border-color: var(--color-accent);
+          background: rgba(255, 255, 255, 0.05);
         }
         
         .form-actions {
           display: flex;
-          gap: var(--space-2);
+          gap: 8px;
           justify-content: flex-end;
         }
-        
-        .form-actions .btn {
-          height: 32px;
-          font-size: var(--text-xs);
+
+        .btn-small {
+          padding: 4px 12px;
+          font-size: 11px;
+          font-weight: 700;
+          border-radius: 6px;
         }
         
         .category-badge {
           display: inline-flex;
           align-items: center;
-          gap: var(--space-2);
-          padding: var(--space-2) var(--space-3);
-          border-radius: var(--radius-pill);
-          font-size: var(--text-sm);
-          font-weight: var(--font-semibold);
+          gap: 8px;
+          padding: 6px 12px;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 700;
           color: white;
-          box-shadow: var(--shadow-md);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
         
         .space-list {
           flex: 1;
           overflow-y: auto;
-          padding: 0 var(--space-2);
+          padding: 0 8px;
         }
         
         .empty-state {
-          padding: var(--space-8) var(--space-4);
+          padding: 40px 16px;
           text-align: center;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: var(--space-3);
+          gap: 12px;
+        }
+
+        .empty-icon-box {
+          width: 44px;
+          height: 44px;
+          background: rgba(59, 130, 246, 0.05);
+          border: 1px solid rgba(59, 130, 246, 0.1);
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 4px;
         }
         
         .empty-state p {
-          color: var(--color-text-muted);
-          font-size: var(--text-sm);
+          color: rgba(255, 255, 255, 0.3);
+          font-size: 12px;
+          font-weight: 500;
         }
-        
-        .limit-notice {
-          padding: var(--space-2) var(--space-3);
-          font-size: var(--text-xs);
-          color: var(--color-text-muted);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+
+        .btn-create-tiny {
+          font-size: 11px;
+          font-weight: 700;
+          color: #3b82f6;
+          background: rgba(59, 130, 246, 0.1);
+          padding: 6px 14px;
+          border-radius: 99px;
+          transition: all 0.2s;
         }
-        
-        .upgrade-link {
-          color: var(--color-accent);
-          font-size: var(--text-xs);
-        }
-        
-        .upgrade-modal {
-          position: absolute;
-          bottom: 100px;
-          left: var(--space-2);
-          right: var(--space-2);
-          background: var(--color-glass);
-          backdrop-filter: blur(var(--backdrop-blur));
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: var(--radius-xl);
-          padding: var(--space-4);
-          z-index: 100;
-          box-shadow: var(--shadow-lg);
-        }
-        
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: var(--space-2);
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
-          color: var(--color-text);
-        }
-        
-        .close-btn {
-          font-size: 16px;
-          color: var(--color-text-muted);
-        }
-        
-        .tier-option {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          padding: var(--space-2);
-          border-radius: var(--radius-md);
-          font-size: var(--text-sm);
-          margin-bottom: var(--space-1);
-          transition: background var(--transition-fast);
-        }
-        
-        .tier-option:hover:not(:disabled) {
-          background: var(--color-surface-elevated);
-        }
-        
-        .tier-option.current {
-          background: var(--color-surface-elevated);
-        }
-        
-        .tier-option .tier-name {
-          color: var(--color-text);
-        }
-        
-        .tier-option .tier-price {
-          color: var(--color-text-muted);
+
+        .btn-create-tiny:hover {
+          background: #3b82f6;
+          color: white;
         }
         
         .sidebar.collapsed .sidebar-header {
-          padding: var(--space-4) 0;
+          padding: 20px 0;
           flex-direction: column;
-          gap: var(--space-4);
+          gap: 16px;
           align-items: center;
         }
 
@@ -369,108 +351,128 @@ export default function Sidebar() {
         }
 
         .mini-space-item {
-          width: 40px;
-          height: 40px;
+          width: 44px;
+          height: 44px;
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: var(--radius-lg);
+          border-radius: 12px;
           margin: 4px auto;
           cursor: pointer;
-          transition: all var(--transition-base);
-          color: var(--color-text-muted);
-          font-size: 18px;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          color: rgba(255, 255, 255, 0.3);
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid transparent;
         }
 
         .mini-space-item:hover {
-          background: var(--color-glass);
-          color: var(--color-text);
+          background: rgba(255, 255, 255, 0.05);
+          color: white;
+          transform: scale(1.05);
         }
 
         .mini-space-item.active {
-          background: var(--color-glass-active);
-          color: var(--color-accent-light);
-          box-shadow: var(--shadow-sm);
+          background: rgba(59, 130, 246, 0.1);
+          color: #3b82f6;
+          border-color: rgba(59, 130, 246, 0.3);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
         }
 
         .sidebar-footer {
-          padding: var(--space-3);
-          border-top: 1px solid var(--color-border-subtle);
+          padding: 16px;
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
           display: flex;
           flex-direction: column;
-          gap: var(--space-3);
-          align-items: stretch;
+          gap: 16px;
         }
 
         .sidebar.collapsed .sidebar-footer {
           align-items: center;
-          padding: var(--space-4) 0;
+          padding: 20px 0;
         }
         
-        .usage-info {
-          padding: var(--space-3);
-          background: var(--color-glass);
+        .usage-card {
+          padding: 12px;
+          background: rgba(255, 255, 255, 0.02);
           border: 1px solid rgba(255, 255, 255, 0.05);
-          border-radius: var(--radius-lg);
+          border-radius: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
         }
         
         .usage-row {
           display: flex;
           justify-content: space-between;
-          font-size: var(--text-xs);
-          color: var(--color-text-muted);
-          padding: 2px 0;
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
         }
+
+        .usage-row .label { color: rgba(255, 255, 255, 0.2); }
+        .usage-row .value { color: rgba(255, 255, 255, 0.5); }
         
-        .user-info {
+        .user-profile {
           display: flex;
           align-items: center;
-          gap: var(--space-3);
+          gap: 12px;
+        }
+
+        .avatar-glow {
+          padding: 2px;
+          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+          border-radius: 50%;
+          box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
         }
         
         .avatar {
-          width: 36px;
-          height: 36px;
-          border-radius: var(--radius-full);
-          background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: #000;
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
-          box-shadow: var(--shadow-glow);
         }
         
         .user-details {
           display: flex;
           flex-direction: column;
+          min-width: 0;
         }
         
         .user-name {
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
-          color: var(--color-text);
+          font-size: 13px;
+          font-weight: 700;
+          color: white;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         
         .user-name.clickable:hover {
-          color: var(--color-accent);
+          color: #3b82f6;
           cursor: pointer;
         }
 
-        .user-name-input {
-          background: var(--color-surface-elevated);
-          border: 1px solid var(--color-accent);
-          border-radius: var(--radius-sm);
-          color: var(--color-text);
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
-          padding: 2px 4px;
+        .user-name-edit {
+          background: #000;
+          border: 1px solid #3b82f6;
+          border-radius: 4px;
+          color: white;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 2px 6px;
           width: 100%;
           outline: none;
         }
         
-        .user-tier {
-          font-size: var(--text-xs);
-          color: var(--color-text-muted);
+        .user-status {
+          font-size: 10px;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.3);
         }
       `}</style>
     </aside>
@@ -504,7 +506,7 @@ function SpaceItem({ space, isActive, onClick, onDelete }: SpaceItemProps) {
         onClick={(e) => { e.stopPropagation(); onDelete(e); }}
         aria-label="Delete space"
       >
-        Ã—
+        <X size={14} />
       </button>
       <style>{`
         .space-item {
@@ -512,65 +514,64 @@ function SpaceItem({ space, isActive, onClick, onDelete }: SpaceItemProps) {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: var(--space-2) var(--space-3);
+          padding: 10px 12px;
           background: transparent;
-          border-radius: var(--radius-lg);
-          transition: all var(--transition-base);
+          border-radius: 12px;
+          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
           text-align: left;
           cursor: pointer;
           position: relative;
           margin-bottom: 2px;
-        }
-        
-        .space-item::before {
-          content: '';
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 3px;
-          height: 0;
-          background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
-          border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-          transition: height var(--transition-base);
+          border: 1px solid transparent;
         }
         
         .space-item:hover {
-          background: var(--color-glass);
+          background: rgba(255, 255, 255, 0.03);
+          border-color: rgba(255, 255, 255, 0.05);
         }
         
         .space-item.active {
-          background: var(--color-glass-active);
+          background: rgba(59, 130, 246, 0.08);
+          border-color: rgba(59, 130, 246, 0.2);
         }
 
-        .space-item.active::before {
-          height: 60%;
+        .space-item.active::after {
+          content: '';
+          position: absolute;
+          left: -8px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 4px;
+          height: 20px;
+          background: #3b82f6;
+          border-radius: 0 4px 4px 0;
+          box-shadow: 0 0 10px #3b82f6;
         }
         
         .space-info {
           display: flex;
           align-items: center;
-          gap: var(--space-3);
+          gap: 12px;
           overflow: hidden;
         }
         
         .space-icon {
           font-size: 16px;
           flex-shrink: 0;
+          opacity: 0.8;
         }
         
         .space-name {
-          font-size: var(--text-sm);
-          color: var(--color-text);
-          font-weight: var(--font-medium);
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.7);
+          font-weight: 600;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .space-item.active .space-name {
-          font-weight: var(--font-semibold);
-          color: var(--color-accent-light);
+          color: white;
         }
         
         .delete-btn {
@@ -579,11 +580,10 @@ function SpaceItem({ space, isActive, onClick, onDelete }: SpaceItemProps) {
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 16px;
-          color: var(--color-text-muted);
+          color: rgba(255, 255, 255, 0.2);
           opacity: 0;
-          border-radius: var(--radius-md);
-          transition: all var(--transition-base);
+          border-radius: 6px;
+          transition: all 0.2s;
         }
         
         .space-item:hover .delete-btn {
@@ -592,7 +592,7 @@ function SpaceItem({ space, isActive, onClick, onDelete }: SpaceItemProps) {
         
         .delete-btn:hover {
           background: rgba(239, 68, 68, 0.1);
-          color: var(--color-error);
+          color: #ef4444;
         }
       `}</style>
     </div>

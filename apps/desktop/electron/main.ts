@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { app, BrowserWindow, ipcMain, dialog, session } from 'electron'
@@ -317,8 +317,11 @@ if (!gotTheLock) {
         ensureModelsDir()
         ensureRuntimesDir()
         ensureExtensionsDir()
-        createWindow()
+        
+        // Register handlers BEFORE creating window to ensure they are available
         registerAllHandlers()
+        
+        createWindow()
         
         // Initialize extension host
         extensionHostManager.start().catch(err => {

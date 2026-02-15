@@ -219,6 +219,8 @@ export interface AgentLoopConfig {
     useRAG: boolean
     /** Maximum context chars from AIME */
     maxRAGContext: number
+    /** Optional model override */
+    model?: string
 }
 
 export const DEFAULT_LOOP_CONFIG: AgentLoopConfig = {

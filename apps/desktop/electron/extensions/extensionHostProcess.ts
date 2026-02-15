@@ -7,6 +7,7 @@
 import * as path from 'path'
 import * as fs from 'fs'
 import { fork, ChildProcess } from 'child_process'
+import Module from 'module'
 
 // Message types for communication with main process
 interface HostMessage {
@@ -39,11 +40,38 @@ class ExtensionHost {
   }> = new Map()
 
   private extensionPaths: Map<string, string> = new Map()
+  private apiFactory: Map<string, unknown> = new Map()
   private nextMessageId = 1
   private pendingResponses: Map<number, { resolve: (value: unknown) => void }> = new Map()
 
   constructor() {
+    this.hookModuleLoader()
     this.setupMessageHandlers()
+  }
+
+  private hookModuleLoader(): void {
+    const originalLoad = (Module as any)._load
+    ;(Module as any)._load = (request: string, parent: any, isMain: boolean) => {
+      if (request === 'vscode') {
+        const extensionId = this.findExtensionIdByPath(parent.filename)
+        if (extensionId) {
+          const api = this.apiFactory.get(extensionId)
+          if (api) return api
+        }
+      }
+      return originalLoad.apply(Module, [request, parent, isMain])
+    }
+  }
+
+  private findExtensionIdByPath(filePath: string): string | undefined {
+    const normalizedPath = filePath.replace(/\\/g, '/')
+    for (const [id, rootPath] of this.extensionPaths) {
+      const normalizedRoot = rootPath.replace(/\\/g, '/')
+      if (normalizedPath.startsWith(normalizedRoot)) {
+        return id
+      }
+    }
+    return undefined
   }
 
   private setupMessageHandlers(): void {
@@ -137,11 +165,40 @@ class ExtensionHost {
       // Read manifest to find main entry point
       const packageJsonPath = path.join(extensionPath, 'package.json')
       const manifest = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
-      const mainFile = manifest.main || 'index.js'
-      const mainPath = path.join(extensionPath, mainFile)
+      
+      // Handle extensions without a main file (e.g. themes, snippets)
+      if (!manifest.main) {
+        // Store extension with dummy module
+        this.extensions.set(id, {
+          module: {},
+          context: {
+            subscriptions: [],
+            extensionPath,
+            asAbsolutePath: (relativePath: string) => path.join(extensionPath, relativePath),
+            storagePath: path.join(extensionPath, '.kalynt', 'workspace-storage'),
+            globalStoragePath: path.join(extensionPath, '.kalynt', 'global-storage'),
+            logPath: path.join(extensionPath, '.kalynt', 'logs')
+          },
+          manifest,
+          exports: undefined
+        })
+
+        this.sendMessage({
+          type: 'extension-activated',
+          payload: { id, exports: undefined }
+        })
+        return
+      }
+
+      const mainFile = manifest.main
+      let mainPath = path.join(extensionPath, mainFile)
 
       if (!fs.existsSync(mainPath)) {
-        throw new Error(`Extension main file not found: ${mainPath}`)
+        if (fs.existsSync(mainPath + '.js')) {
+          mainPath += '.js'
+        } else {
+          throw new Error(`Extension main file not found: ${mainPath}`)
+        }
       }
 
       // Create extension context
@@ -156,6 +213,9 @@ class ExtensionHost {
 
       // Create a minimal vscode API
       const vscode = this.createVSCodeAPI(id, context)
+      
+      // Register API for loader
+      this.apiFactory.set(id, vscode)
 
       // Clear require cache to allow reload
       delete require.cache[require.resolve(mainPath)]
@@ -183,6 +243,7 @@ class ExtensionHost {
         payload: { id, exports }
       })
     } catch (error) {
+      this.apiFactory.delete(id) // Cleanup on error
       this.sendError('activate-failed', `Failed to activate extension ${id}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -213,6 +274,7 @@ class ExtensionHost {
 
       // Remove extension
       this.extensions.delete(id)
+      this.apiFactory.delete(id) // Cleanup API
 
       this.sendMessage({
         type: 'extension-deactivated',
@@ -250,6 +312,147 @@ class ExtensionHost {
   private createVSCodeAPI(extensionId: string, context: ExtensionContext): unknown {
     // Create a minimal vscode API compatible with VS Code extensions
     // This is a simplified version - full implementation would be much larger
+    
+    // Helper classes
+    class Position {
+      constructor(public line: number, public character: number) {}
+      isBefore(other: Position) { return this.line < other.line || (this.line === other.line && this.character < other.character) }
+      isBeforeOrEqual(other: Position) { return this.line < other.line || (this.line === other.line && this.character <= other.character) }
+      isAfter(other: Position) { return !this.isBeforeOrEqual(other) }
+      isAfterOrEqual(other: Position) { return !this.isBefore(other) }
+      isEqual(other: Position) { return this.line === other.line && this.character === other.character }
+      compareTo(other: Position) { return this.isBefore(other) ? -1 : (this.isAfter(other) ? 1 : 0) }
+      translate(lineDelta: number = 0, characterDelta: number = 0) { return new Position(this.line + lineDelta, this.character + characterDelta) }
+      with(change: { line?: number, character?: number }) { return new Position(change.line ?? this.line, change.character ?? this.character) }
+    }
+
+    class Range {
+      start: Position
+      end: Position
+      constructor(startLine: number | Position, startChar: number | Position, endLine?: number, endChar?: number) {
+        if (startLine instanceof Position && startChar instanceof Position) {
+          this.start = startLine
+          this.end = startChar
+        } else if (typeof startLine === 'number' && typeof startChar === 'number' && typeof endLine === 'number' && typeof endChar === 'number') {
+          this.start = new Position(startLine, startChar)
+          this.end = new Position(endLine, endChar)
+        } else {
+            throw new Error('Invalid arguments for Range constructor')
+        }
+      }
+      isEmpty() { return this.start.isEqual(this.end) }
+      isSingleLine() { return this.start.line === this.end.line }
+      contains(positionOrRange: Position | Range) {
+          if (positionOrRange instanceof Position) {
+              return positionOrRange.isAfterOrEqual(this.start) && positionOrRange.isBeforeOrEqual(this.end)
+          }
+          return positionOrRange.start.isAfterOrEqual(this.start) && positionOrRange.end.isBeforeOrEqual(this.end)
+      }
+    }
+
+    class Selection extends Range {
+        anchor: Position;
+        active: Position;
+        isReversed: boolean;
+        constructor(anchor: Position, active: Position) {
+            super(anchor, active);
+            this.anchor = anchor;
+            this.active = active;
+            this.isReversed = anchor.isAfter(active);
+        }
+    }
+
+    class Disposable {
+        constructor(private callOnDispose: () => void) {}
+        dispose() { this.callOnDispose() }
+        static from(...disposables: { dispose: () => any }[]) {
+            return new Disposable(() => {
+                for (const d of disposables) d.dispose();
+            });
+        }
+    }
+
+    class EventEmitter<T> {
+        private listeners: Array<(e: T) => void> = []
+        
+        get event() {
+          return (listener: (e: T) => void) => {
+            this.listeners.push(listener)
+            return {
+              dispose: () => {
+                const index = this.listeners.indexOf(listener)
+                if (index > -1) this.listeners.splice(index, 1)
+              }
+            }
+          }
+        }
+        
+        fire(data: T): void {
+          this.listeners.forEach(listener => listener(data))
+        }
+        
+        dispose(): void {
+          this.listeners = []
+        }
+    }
+
+    class Uri {
+        constructor(
+            public readonly scheme: string,
+            public readonly authority: string,
+            public readonly path: string,
+            public readonly query: string,
+            public readonly fragment: string
+        ) {}
+        get fsPath() { return this.scheme === 'file' ? (process.platform === 'win32' ? this.path.substring(1) : this.path) : this.path }
+        toString() { return `${this.scheme}://${this.authority}${this.path}${this.query ? '?' + this.query : ''}${this.fragment ? '#' + this.fragment : ''}` }
+        with(change: any) {
+            return new Uri(
+                change.scheme ?? this.scheme,
+                change.authority ?? this.authority,
+                change.path ?? this.path,
+                change.query ?? this.query,
+                change.fragment ?? this.fragment
+            )
+        }
+        static file(path: string) {
+            const normalized = path.replace(/\\/g, '/')
+            return new Uri('file', '', normalized.startsWith('/') ? normalized : `/${normalized}`, '', '')
+        }
+        static parse(uri: string) {
+            try {
+                const url = new URL(uri)
+                return new Uri(url.protocol.replace(':', ''), url.host, url.pathname, url.search, url.hash)
+            } catch {
+                return new Uri('file', '', uri, '', '')
+            }
+        }
+        static joinPath(uri: Uri, ...pathSegments: string[]) {
+            return uri.with({ path: path.join(uri.path, ...pathSegments).replace(/\\/g, '/') })
+        }
+        static from(components: any) {
+            return new Uri(components.scheme, components.authority, components.path, components.query, components.fragment)
+        }
+        static revive(data: any) { return data instanceof Uri ? data : new Uri(data.scheme, data.authority, data.path, data.query, data.fragment) }
+    }
+
+    // Stubs for other classes
+    class CancellationTokenSource { token = { onCancellationRequested: () => ({ dispose: () => {} }) } }
+    class CodeAction {}
+    class CompletionItem {}
+    class Diagnostic {}
+    class Hover {}
+    class Location {}
+    class MarkdownString {}
+    class ParameterInformation {}
+    class SignatureInformation {}
+    class SnippetString {}
+    class SymbolInformation {}
+    class TextEdit {}
+    class ThemeColor {}
+    class TreeItem {}
+    class WorkspaceEdit {}
+
     return {
       version: '1.85.0',
       
@@ -257,10 +460,32 @@ class ExtensionHost {
       extension: {
         id: extensionId,
         extensionPath: context.extensionPath,
-        extensionUri: { fsPath: context.extensionPath },
+        extensionUri: Uri.file(context.extensionPath),
         packageJSON: {}
       },
 
+      // Types
+      Position,
+      Range,
+      Selection,
+      Disposable,
+      Uri,
+      CancellationTokenSource,
+      CodeAction,
+      CompletionItem,
+      Diagnostic,
+      Hover,
+      Location,
+      MarkdownString,
+      ParameterInformation,
+      SignatureInformation,
+      SnippetString,
+      SymbolInformation,
+      TextEdit,
+      ThemeColor,
+      TreeItem,
+      WorkspaceEdit,
+      
       // Commands
       commands: {
         registerCommand: (command: string, callback: (...args: unknown[]) => unknown) => {
@@ -359,19 +584,6 @@ class ExtensionHost {
         machineId: 'unknown',
         sessionId: 'unknown',
         shell: process.platform === 'win32' ? 'powershell' : 'bash'
-      },
-
-      // URI
-      Uri: {
-        file: (path: string) => ({ fsPath: path, scheme: 'file' }),
-        parse: (uri: string) => ({ fsPath: uri, scheme: 'file' })
-      },
-
-      // Disposable
-      Disposable: {
-        from: (...disposables: Array<{ dispose(): void }>) => ({
-          dispose: () => disposables.forEach(d => d.dispose())
-        })
       },
 
       // Event

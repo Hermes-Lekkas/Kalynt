@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import os from 'os'
+import { exec } from 'child_process'
 
 export interface HardwareInfo {
     cpuCores: number
@@ -28,7 +29,191 @@ export interface RealTimeStats {
     gpuUsage: number // 0-100 (cached/throttled)
     vramUsage: number // Used MB
     vramTotal: number // Total MB
+    ivramUsage: number // Integrated VRAM Used MB
+    ivramTotal: number // Integrated VRAM Total MB
 }
+
+/**
+ * Lightweight GPU detector that caches results to avoid heavy process spawning
+ */
+class CachedGPUDetector {
+    private static gpuName: string = 'Unknown GPU'
+    private static totalVRAM: number = 0
+    private static lastUsage: number = 0
+    private static lastVramUsed: number = 0
+    
+    private static igpuName: string = 'Integrated GPU'
+    private static totalIVRAM: number = 0
+    private static lastIUsage: number = 0
+    private static lastIvramUsed: number = 0
+
+    private static lastCheck: number = 0
+    private static isNvidia: boolean = false
+    private static hasChecked: boolean = false
+
+    static async init() {
+        if (this.hasChecked) return
+        
+        try {
+            if (process.platform === 'win32') {
+                // Try nvidia-smi first (most accurate for NVIDIA)
+                const nvidia = await this.execCommand('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits')
+                if (nvidia) {
+                    const [name, total] = nvidia.split(',').map(s => s.trim())
+                    this.gpuName = name
+                    this.totalVRAM = parseInt(total) || 0
+                    this.isNvidia = true
+                }
+
+                // Comprehensive detection via PowerShell (Works for AMD, Intel, and NVIDIA)
+                const psCmd = 'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object Caption, AdapterRAM | ConvertTo-Json"'
+                const psOutput = await this.execCommand(psCmd)
+                if (psOutput) {
+                    try {
+                        const data = JSON.parse(psOutput)
+                        const controllers = Array.isArray(data) ? data : [data]
+                        
+                        for (const ctrl of controllers) {
+                            const name = ctrl.Caption || ''
+                            // AdapterRAM is often reported as a large negative number or 0 for some drivers, 
+                            // we take the absolute value and handle 0
+                            let ram = Math.round(Math.abs(ctrl.AdapterRAM || 0) / 1024 / 1024)
+                            
+                            // Drivers sometimes report weird values like 4GB for iGPUs that share system RAM
+                            // If it's over 256MB, we treat it as valid VRAM
+                            if (ram < 128) ram = 128 // Minimum floor for modern iGPUs (like yours)
+
+                            const isAMD = name.toLowerCase().includes('amd') || name.toLowerCase().includes('radeon')
+                            const isIntel = name.toLowerCase().includes('intel')
+                            const isNvidiaCard = name.toLowerCase().includes('nvidia')
+
+                            if (isNvidiaCard) {
+                                if (this.totalVRAM === 0) {
+                                    this.gpuName = name
+                                    this.totalVRAM = ram
+                                    this.isNvidia = true
+                                }
+                            } else if (isAMD || isIntel) {
+                                // Found AMD/Intel Integrated or Dedicated
+                                this.igpuName = name
+                                this.totalIVRAM = ram
+                                
+                                // If this is an AMD Dedicated card (usually has high RAM), set as primary if no NVIDIA
+                                if (this.totalVRAM === 0) {
+                                    this.gpuName = name
+                                    this.totalVRAM = ram
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[HardwareService] GPU PS Parse Error:', e)
+                    }
+                }
+            } else if (process.platform === 'darwin') {
+                this.gpuName = 'Apple Metal GPU'
+                this.totalVRAM = Math.round(os.totalmem() / 1024 / 1024 / 2)
+                this.totalIVRAM = this.totalVRAM
+            }
+        } catch (e) {
+            console.error('[HardwareService] GPU Init Error:', e)
+        }
+        
+        this.hasChecked = true
+    }
+
+    static async getStats(): Promise<{ usage: number, vramUsed: number, iusage: number, ivramUsed: number }> {
+        const now = Date.now()
+        if (now - this.lastCheck < 2000) { // Only check every 2 seconds
+            return { 
+                usage: this.lastUsage, 
+                vramUsed: this.lastVramUsed,
+                iusage: this.lastIUsage,
+                ivramUsed: this.lastIvramUsed
+            }
+        }
+
+        try {
+            if (this.isNvidia) {
+                const stats = await this.execCommand('nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader,nounits')
+                if (stats) {
+                    const [usage, used] = stats.split(',').map(s => parseInt(s.trim()))
+                    this.lastUsage = usage || 0
+                    this.lastVramUsed = used || 0
+                }
+            } else {
+                // Real-time GPU Usage via Performance Counters (Intel/AMD)
+                const usageCmd = 'powershell -Command "(Get-Counter \'\\GPU Engine(*engtype_3D)\\Utilization Percentage\' -ErrorAction SilentlyContinue).CounterSamples | Select-Object -ExpandProperty CookedValue | Measure-Object -Sum | Select-Object -ExpandProperty Sum"'
+                const usageOutput = await this.execCommand(usageCmd)
+                if (usageOutput) {
+                    this.lastUsage = Math.round(parseFloat(usageOutput)) || 0
+                }
+            }
+            
+            // Integrated Graphics Stats (PowerShell Performance Counters)
+            // We sum Dedicated + Shared usage for iGPUs since they share system RAM
+            const memCmd = 'powershell -Command "$s = (Get-Counter \'\\GPU Adapter Memory(*)\\Shared Usage\' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Sum; $d = (Get-Counter \'\\GPU Adapter Memory(*)\\Dedicated Usage\' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Sum; ($s.Sum + $d.Sum) / 1024 / 1024"'
+            const memOutput = await this.execCommand(memCmd)
+            if (memOutput) {
+                const usedMB = Math.round(parseFloat(memOutput))
+                this.lastIvramUsed = usedMB || 0
+                
+                // If integrated is the primary, mirror it
+                if (!this.isNvidia) {
+                    this.lastVramUsed = this.lastIvramUsed
+                }
+
+                // Estimation for iGPU utilization (usually correlates with memory movement or CPU load)
+                if (this.lastUsage > 0) {
+                    this.lastIUsage = this.lastUsage
+                } else {
+                    this.lastIUsage = Math.min(Math.round((os.loadavg()[0] || 0) * 5), 100)
+                }
+            }
+            
+        } catch (e) {
+            // Silence errors during periodic checks
+        }
+
+        this.lastCheck = now
+        return { 
+            usage: this.lastUsage, 
+            vramUsed: this.lastVramUsed,
+            iusage: this.lastIUsage,
+            ivramUsed: this.lastIvramUsed
+        }
+    }
+
+    static getStaticInfo() {
+        return {
+            gpuName: this.gpuName,
+            totalVRAM: this.totalVRAM,
+            hasGPU: this.totalVRAM > 0,
+            igpuName: this.igpuName,
+            totalIVRAM: this.totalIVRAM
+        }
+    }
+
+    static getStatsSnapshot() {
+        return {
+            usage: this.lastUsage,
+            vramUsed: this.lastVramUsed,
+            iusage: this.lastIUsage,
+            ivramUsed: this.lastIvramUsed
+        }
+    }
+
+    private static execCommand(cmd: string): Promise<string> {
+        return new Promise((resolve) => {
+            exec(cmd, { timeout: 1000 }, (error, stdout) => {
+                if (error) resolve('')
+                else resolve(stdout.trim())
+            })
+        })
+    }
+}
+
+// Start async init
+CachedGPUDetector.init()
 
 // CPU tracking for usage calculation
 let previousCpuInfo: os.CpuInfo[] | null = null
@@ -37,6 +222,9 @@ let previousCpuInfo: os.CpuInfo[] | null = null
  * Get hardware info - uses only Node.js os module for reliability
  */
 export async function detectHardwareInfo(): Promise<HardwareInfo> {
+    await CachedGPUDetector.init()
+    const gpuInfo = CachedGPUDetector.getStaticInfo()
+    
     const cpus = os.cpus()
     const cpuModel = cpus[0]?.model || 'Unknown CPU'
     const cpuCores = cpus.length
@@ -53,10 +241,10 @@ export async function detectHardwareInfo(): Promise<HardwareInfo> {
         totalRAM,
         availableRAM: freeRAM,
         usedRAM,
-        hasGPU: false,
-        gpuName: undefined,
-        totalVRAM: undefined,
-        availableVRAM: undefined,
+        hasGPU: gpuInfo.hasGPU,
+        gpuName: gpuInfo.gpuName,
+        totalVRAM: gpuInfo.totalVRAM,
+        availableVRAM: gpuInfo.totalVRAM - 512, // Buffering guess
         totalDiskSpace: 500000,
         availableDiskSpace: 200000
     }
@@ -99,15 +287,24 @@ export function getRealTimeStats(): RealTimeStats {
     const freeRAM = Math.round(os.freemem() / 1024 / 1024)
     const usedRAM = totalRAM - freeRAM
 
+    // GPU Stats (Sync-ish access to cached values)
+    const gpuInfo = CachedGPUDetector.getStaticInfo()
+    
+    // We trigger an async update for next time, but return cached values now
+    CachedGPUDetector.getStats() 
+    const gpuStats = CachedGPUDetector.getStatsSnapshot()
+
     return {
         cpuUsage,
         ramUsage: usedRAM,
         ramTotal: totalRAM,
-        diskIOSpeed: 0, // TODO: Implement real disk I/O tracking
+        diskIOSpeed: 0,
         networkConnected: true,
         networkLatency: 50,
-        gpuUsage: 0, // TODO: Implement cached GPU detection
-        vramUsage: 0, // TODO: Implement cached VRAM detection
-        vramTotal: 8192 // Fallback: 8GB VRAM
+        gpuUsage: gpuStats.usage,
+        vramUsage: gpuStats.vramUsed,
+        vramTotal: gpuInfo.totalVRAM || 0,
+        ivramUsage: gpuStats.ivramUsed,
+        ivramTotal: gpuInfo.totalIVRAM || 0
     }
 }

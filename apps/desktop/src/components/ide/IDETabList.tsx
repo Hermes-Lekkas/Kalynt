@@ -1,7 +1,8 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React from 'react'
+import { X } from 'lucide-react'
 
 interface OpenFile {
     path: string
@@ -32,15 +33,15 @@ export const IDETabList: React.FC<IDETabListProps> = ({
                     className={`file-tab ${file.path === activeFile ? 'active' : ''}`}
                     onClick={() => onSelectFile(file.path)}
                 >
-                    <span className="tab-name">
-                        {file.isDirty && <span className="dirty-dot">â—</span>}
+                    <span className="tab-name flex items-center gap-2">
+                        {file.isDirty && <div className="w-2 h-2 rounded-full bg-blue-500" />}
                         {file.name}
                     </span>
                     <button
-                        className="tab-close"
+                        className="tab-close p-1 hover:bg-white/10 rounded-md transition-colors"
                         onClick={(e) => onCloseFile(file.path, e)}
                     >
-                        Ã—
+                        <X size={14} />
                     </button>
                 </div>
             ))}

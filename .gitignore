@@ -23,7 +23,7 @@ tsc_output.txt
 validation-output.txt
 
 # Temp/Misc
-bugs.md
+
 Applied_Fixes.md
 implement.md
 CROSS_PLATFORM_BUILD.md

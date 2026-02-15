@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useEffect, useCallback } from 'react'
@@ -7,7 +7,8 @@ import {
     Download, CheckCircle, XCircle, Loader2, Package,
     Hexagon, Terminal, Box, Zap, Coffee, Hash, Database,
     Code, Braces, FileCode, Cpu, Sparkles, Palette, Globe,
-    Wrench, Music, Layers, Radio, Rocket, Triangle, Crown, FileText
+    Wrench, Music, Layers, Radio, Rocket, Triangle, Crown, FileText,
+    X
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -573,7 +574,7 @@ export default function PluginsPanel({ onClose }: { onClose: () => void }) {
                             <p>Install programming language runtimes to execute code in the IDE</p>
                         </div>
                     </div>
-                    <button className="close-btn" onClick={onClose}>Ã—</button>
+                    <button className="close-btn" onClick={onClose}><X size={24} /></button>
                 </div>
 
                 <div className="plugins-actions">

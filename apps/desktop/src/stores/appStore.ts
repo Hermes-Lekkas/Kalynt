@@ -75,6 +75,8 @@ interface AppState {
     sidebarCollapsed: boolean
     _hasHydrated: boolean
     startupStatus: string // [NEW] Real-time status for splash screen
+    showSettings: boolean // [NEW] Global settings toggle
+    settingsTab: string | null // [NEW] Current active settings tab
 
     // Actions
     initialize: () => Promise<void>
@@ -84,6 +86,8 @@ interface AppState {
     setConnectedPeers: (peers: Peer[]) => void
     toggleSidebarCollapsed: () => void
     setStartupStatus: (status: string) => void // [NEW]
+    setShowSettings: (show: boolean) => void // [NEW]
+    setSettingsTab: (tab: string | null) => void // [NEW]
 
     // API Key actions (now async for safeStorage)
     setAPIKey: (provider: string, key: string) => Promise<void>
@@ -113,8 +117,12 @@ export const useAppStore = create<AppState>()(
             sidebarCollapsed: false,
             _hasHydrated: false,
             startupStatus: 'Initializing Agent Core...', // Default start message
+            showSettings: false,
+            settingsTab: null,
 
             setStartupStatus: (status) => set({ startupStatus: status }),
+            setShowSettings: (show) => set({ showSettings: show }),
+            setSettingsTab: (tab) => set({ settingsTab: tab }),
 
             initialize: async () => {
                 set({ startupStatus: 'Connecting to Secure Local Interface...' })

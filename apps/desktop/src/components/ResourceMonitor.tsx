@@ -20,12 +20,23 @@ interface ResourceMonitorProps {
 export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
     const scrollRef = useRef<HTMLDivElement>(null)
     const [stats, setStats] = useState<RealTimeStats | null>(null)
+    
+    // Robust number conversion
+    const safeNum = (n: any): number => {
+        const num = typeof n === 'number' ? n : parseFloat(n)
+        return (isNaN(num) || !isFinite(num)) ? 0 : num
+    }
+
     const [cpuHistory, setCpuHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
     const [ramHistory, setRamHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
     const [gpuHistory, setGpuHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
     const [vramHistory, setVramHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
+    const [ivramHistory, setIvramHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
     const [diskIOHistory, setDiskIOHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
     const [networkHistory, setNetworkHistory] = useState<number[]>(new Array(GRAPH_POINTS).fill(0))
+
+    // VRAM Toggle state
+    const [showIntegrated, setShowIntegrated] = useState(false)
 
     // Session timer state
     const [timerSeconds, setTimerSeconds] = useState(0)
@@ -70,17 +81,35 @@ export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
     useEffect(() => {
         const cleanup = hardwareService.startResourceMonitoring((newStats) => {
             setStats(newStats)
-            setCpuHistory(prev => [...prev.slice(1), newStats.cpuUsage])
-            setRamHistory(prev => [...prev.slice(1), (newStats.ramUsage / newStats.ramTotal) * 100])
-            setGpuHistory(prev => [...prev.slice(1), newStats.gpuUsage])
-            setVramHistory(prev => [...prev.slice(1), (newStats.vramUsage / newStats.vramTotal) * 100])
+            setCpuHistory(prev => [...prev.slice(1), safeNum(newStats.cpuUsage)])
+            
+            // Guard against division by zero and invalid inputs
+            const totalRAM = safeNum(newStats.ramTotal)
+            const usedRAM = safeNum(newStats.ramUsage)
+            const ramPercent = totalRAM > 0 ? (usedRAM / totalRAM) * 100 : 0
+            setRamHistory(prev => [...prev.slice(1), ramPercent])
+            
+            setGpuHistory(prev => [...prev.slice(1), safeNum(newStats.gpuUsage)])
+            
+            // Guard against division by zero and invalid inputs
+            const totalVRAM = safeNum(newStats.vramTotal)
+            const usedVRAM = safeNum(newStats.vramUsage)
+            const vramPercent = totalVRAM > 0 ? (usedVRAM / totalVRAM) * 100 : 0
+            setVramHistory(prev => [...prev.slice(1), vramPercent])
+
+            const totalIVRAM = safeNum(newStats.ivramTotal)
+            const usedIVRAM = safeNum(newStats.ivramUsage)
+            const ivramPercent = totalIVRAM > 0 ? (usedIVRAM / totalIVRAM) * 100 : 0
+            setIvramHistory(prev => [...prev.slice(1), ivramPercent])
+            
             setDiskIOHistory(prev => {
                 // Normalize to 0-100 scale (0-100 MB/s)
-                const normalized = Math.min((newStats.diskIOSpeed / 100) * 100, 100)
+                const speed = safeNum(newStats.diskIOSpeed)
+                const normalized = Math.min((speed / 100) * 100, 100)
                 return [...prev.slice(1), normalized]
             })
             setNetworkHistory(prev => {
-                const lat = newStats.networkLatency || 0
+                const lat = safeNum(newStats.networkLatency)
                 const latPercent = Math.min((lat / 500) * 100, 100)
                 return [...prev.slice(1), newStats.networkConnected ? latPercent : 0]
             })
@@ -114,7 +143,9 @@ export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
         networkLatency: 0,
         gpuUsage: 0,
         vramUsage: 0,
-        vramTotal: 1
+        vramTotal: 1,
+        ivramUsage: 0,
+        ivramTotal: 1
     }
 
     const formatTime = (seconds: number) => {
@@ -167,14 +198,34 @@ export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
                 )}
 
                 {showVram && (
-                    <MiniGraph
-                        icon={<MemoryStick size={11} />}
-                        label="VRAM"
-                        value={`${Math.round((displayStats.vramUsage / displayStats.vramTotal) * 100)}%`}
-                        history={vramHistory}
-                        color="#FF9500"
-                        onClick={() => { }}
-                    />
+                    <div 
+                        className={`vram-flip-card ${showIntegrated ? 'is-flipped' : ''}`}
+                        onClick={() => setShowIntegrated(!showIntegrated)}
+                    >
+                        <div className="vram-card-inner">
+                            <div className="vram-flip-shimmer" />
+                            <div className="vram-card-front">
+                                <MiniGraph
+                                    icon={<MemoryStick size={11} />}
+                                    label="VRAM"
+                                    value={`${displayStats.vramTotal > 0 ? Math.round((displayStats.vramUsage / displayStats.vramTotal) * 100) : 0}%`}
+                                    history={vramHistory}
+                                    color="#FF9500"
+                                    onClick={() => { }}
+                                />
+                            </div>
+                            <div className="vram-card-back">
+                                <MiniGraph
+                                    icon={<MemoryStick size={11} />}
+                                    label="iVRAM"
+                                    value={`${displayStats.ivramTotal > 0 ? Math.round((displayStats.ivramUsage / displayStats.ivramTotal) * 100) : 0}%`}
+                                    history={ivramHistory}
+                                    color="#FFCC00"
+                                    onClick={() => { }}
+                                />
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {showDiskIO && (
@@ -270,6 +321,89 @@ export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
           background: rgba(255, 255, 255, 0.08);
           border-color: rgba(255, 255, 255, 0.15);
           transform: translateY(-1px);
+        }
+
+        .vram-flip-card {
+          width: 165px;
+          height: 28px;
+          perspective: 1000px;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+
+        .vram-card-inner {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+          transform-style: preserve-3d;
+        }
+
+        .vram-flip-card:active .vram-card-inner {
+          transform: scale(0.95);
+        }
+
+        .vram-flip-card.is-flipped .vram-card-inner {
+          transform: rotateX(180deg);
+        }
+
+        /* Cinematic Shimmer Sweep */
+        .vram-flip-shimmer {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            135deg,
+            transparent 0%,
+            transparent 40%,
+            rgba(255, 255, 255, 0.3) 50%,
+            transparent 60%,
+            transparent 100%
+          );
+          background-size: 200% 200%;
+          background-position: -150% -150%;
+          opacity: 0;
+          z-index: 10;
+          pointer-events: none;
+          border-radius: 8px;
+        }
+
+        .vram-flip-card:active .vram-flip-shimmer {
+          animation: shimmer-sweep 0.6s ease-in-out;
+        }
+
+        @keyframes shimmer-sweep {
+          0% { background-position: -150% -150%; opacity: 0; }
+          50% { opacity: 0.5; }
+          100% { background-position: 150% 150%; opacity: 0; }
+        }
+
+        .vram-card-front, .vram-card-back {
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          top: 0;
+          left: 0;
+          background: rgba(15, 15, 20, 0.98); 
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+        }
+
+        .vram-card-front {
+          z-index: 2;
+          transform: rotateX(0deg);
+        }
+
+        .vram-card-back {
+          transform: rotateX(180deg);
+        }
+
+        /* Ensure the MiniGraph inside doesn't have its own blur during flip */
+        .vram-card-inner .mini-graph-item {
+          backdrop-filter: none !important;
+          background: transparent !important;
         }
 
         .stat-label, .graph-label {
@@ -417,7 +551,9 @@ function MiniGraph({ icon, label, value, history, color, onClick }: any) {
 
     const points = history.map((val: number, i: number) => {
         const x = (i / (history.length - 1)) * width
-        const y = height - (val / 100) * height
+        // Extra safety check for NaN values in history
+        const safeVal = (typeof val === 'number' && !isNaN(val)) ? val : 0
+        const y = height - (safeVal / 100) * height
         return `${x},${y}`
     }).join(' ')
 

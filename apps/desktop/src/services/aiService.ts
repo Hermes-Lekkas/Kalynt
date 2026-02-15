@@ -51,21 +51,28 @@ const PROVIDER_CONFIG = {
         models: {
             chat: 'gpt-4o-mini',
             chatPro: 'gpt-4o',
+            chatUltra: 'gpt-5-preview',
+            thinking: 'o3-mini',
+            thinkingPro: 'o1',
+            codex: 'codex-v6-pro',
             image: 'dall-e-3'
         }
     },
     anthropic: {
         baseUrl: 'https://api.anthropic.com/v1',
         models: {
-            chat: 'claude-3-haiku-20240307',
-            chatPro: 'claude-3-5-sonnet-20241022'
+            chat: 'claude-3-5-haiku-latest',
+            chatPro: 'claude-4-5-sonnet-20260215',
+            chatUltra: 'claude-4-5-opus-20260215',
+            chatMax: 'claude-4-6-opus-latest'
         }
     },
     google: {
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
         models: {
             chat: 'gemini-1.5-flash',
-            chatPro: 'gemini-1.5-pro'
+            chatPro: 'gemini-3-flash',
+            chatUltra: 'gemini-3-pro-high'
         }
     }
 }
@@ -88,6 +95,25 @@ class AIService {
 
     getAvailableProviders(): AIProvider[] {
         return Object.keys(this.apiKeys).filter(k => this.apiKeys[k]) as AIProvider[]
+    }
+
+    async verifyKey(provider: AIProvider, key: string): Promise<boolean> {
+        try {
+            const messages: AIMessage[] = [{ role: 'user', content: 'Test' }]
+            const options = { maxTokens: 1 }
+
+            if (provider === 'openai') {
+                await this.chatOpenAI(messages, key, options)
+            } else if (provider === 'anthropic') {
+                await this.chatAnthropic(messages, key, options)
+            } else if (provider === 'google') {
+                await this.chatGoogle(messages, key, options)
+            }
+            return true
+        } catch (error) {
+            logger.ai.warn(`API Key verification failed for ${provider}`, error)
+            return false
+        }
     }
 
     async chat(
@@ -260,11 +286,28 @@ class AIService {
         apiKey: string,
         callbacks: StreamCallbacks,
         signal: AbortSignal,
-        options?: { model?: string; maxTokens?: number; temperature?: number }
+        options?: { model?: string; maxTokens?: number; temperature?: number; thinking?: boolean }
     ): Promise<string> {
         const model = options?.model || PROVIDER_CONFIG.anthropic.models.chat
         const systemMsg = messages.find(m => m.role === 'system')
         const chatMessages = messages.filter(m => m.role !== 'system')
+
+        const requestBody: any = {
+            model,
+            max_tokens: options?.maxTokens || 2048,
+            system: systemMsg?.content || 'You are a helpful AI assistant.',
+            messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
+            stream: true
+        }
+
+        if (options?.thinking) {
+            requestBody.thinking = {
+                type: 'enabled',
+                budget_tokens: Math.min(options.maxTokens || 2048, 16000) // Thinking budget
+            }
+            // Anthropic requires max_tokens to be larger than thinking budget
+            requestBody.max_tokens = Math.max(requestBody.max_tokens, (requestBody.thinking.budget_tokens || 0) + 1024)
+        }
 
         const response = await fetch(`${PROVIDER_CONFIG.anthropic.baseUrl}/messages`, {
             method: 'POST',
@@ -274,13 +317,7 @@ class AIService {
                 'anthropic-version': '2023-06-01',
                 'anthropic-dangerous-direct-browser-access': 'true'
             },
-            body: JSON.stringify({
-                model,
-                max_tokens: options?.maxTokens || 2048,
-                system: systemMsg?.content || 'You are a helpful AI assistant.',
-                messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
-                stream: true
-            }),
+            body: JSON.stringify(requestBody),
             signal
         })
 
@@ -316,6 +353,17 @@ class AIService {
                 const json = JSON.parse(line.slice(6))
                 if (json.type === 'content_block_delta') {
                     const token = json.delta?.text || ''
+                    const thought = json.delta?.thought || ''
+                    
+                    if (thought) {
+                        // For the UI to detect thinking, we wrap it in tags
+                        // Since multiple deltas come, we only add tags if it's the first time
+                        // or we just stream the raw tokens if the UI handles partial tags
+                        // Actually, the easiest is to just send wrapped tokens
+                        const wrappedThought = `<thinking>${thought}</thinking>`
+                        callbacks.onToken(wrappedThought)
+                    }
+                    
                     if (token) {
                         content += token
                         callbacks.onToken(token)

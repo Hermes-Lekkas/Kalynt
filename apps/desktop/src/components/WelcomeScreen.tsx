@@ -1,342 +1,377 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState } from 'react'
-import { useAppStore, AI_PROVIDERS } from '../stores/appStore'
-import { Check } from 'lucide-react'
+import { useMemo } from 'react'
+import { useAppStore } from '../stores/appStore'
+import { 
+  ArrowRight, Sparkles, 
+  Code2, Terminal, FolderTree, Key, Activity, ChevronRight
+} from 'lucide-react'
 
 export default function WelcomeScreen() {
-  const { apiKeys, setAPIKey, removeAPIKey } = useAppStore()
-  const [showAPISetup, setShowAPISetup] = useState(false)
-  const [editingProvider, setEditingProvider] = useState<string | null>(null)
-  const [keyInput, setKeyInput] = useState('')
+  const { version, spaces, setCurrentSpace, setShowSettings } = useAppStore()
 
-  const handleSaveKey = (providerId: string) => {
-    if (keyInput.trim()) {
-      setAPIKey(providerId, keyInput.trim())
+  // Parse version string (e.g., "v1.0 beta")
+  const versionInfo = useMemo(() => {
+    const parts = version.split(' ')
+    return {
+      number: parts[0] || 'v1.0',
+      label: parts[1] ? parts[1].toUpperCase() : 'BETA'
     }
-    setEditingProvider(null)
-    setKeyInput('')
-  }
+  }, [version])
 
   return (
-    <div className="welcome">
-      <div className="welcome-content animate-fadeIn">
-        <div className="welcome-header">
-          <h1>Kalynt</h1>
-          <p className="tagline">Serverless collaboration. Peer-to-peer sync. Your data stays yours.</p>
-          <div className="beta-badge">Free Beta</div>
+    <div className="welcome-container">
+      {/* Background Decorative Elements */}
+      <div className="bg-glow bg-glow-1"></div>
+      <div className="bg-glow bg-glow-2"></div>
+      
+      <div className="welcome-content">
+        <div className="welcome-hero animate-reveal-up">
+          <div className="hero-badge">
+             <span className="pulse-dot"></span>
+             {versionInfo.number} {versionInfo.label} ACTIVE
+          </div>
+          <h1 className="hero-title">
+            The Future of <span className="gradient-text">Private Intelligence</span>
+          </h1>
+          <p className="hero-subtitle">
+            Experience the world's first P2P-powered, end-to-end encrypted AI development environment. 
+            No cloud accounts. No data harvesting. Just pure speed.
+          </p>
         </div>
 
-        {showAPISetup ? (
-          <div className="api-setup">
-            <div className="setup-header">
-              <h2>API Keys</h2>
-              <button className="btn btn-ghost" onClick={() => setShowAPISetup(false)}>Done</button>
-            </div>
-            <p className="setup-desc">Add your own API keys to use AI features. Keys are stored locally.</p>
-
-            <div className="providers-list">
-              {Object.values(AI_PROVIDERS).map((provider) => {
-                const hasKey = !!apiKeys[provider.id as keyof typeof apiKeys]
-                const isEditing = editingProvider === provider.id
-
-                return (
-                  <div key={provider.id} className="provider-card">
-                    <div className="provider-header">
-                      <span className="provider-name">{provider.name}</span>
-                      {hasKey && <span className="configured-badge"><Check size={14} /></span>}
-                    </div>
-
-                    <div className="provider-models">
-                      {provider.models.slice(0, 3).join(', ')}
-                      {provider.models.length > 3 && ` +${provider.models.length - 3}`}
-                    </div>
-
-                    {isEditing ? (
-                      <div className="key-input-row">
-                        <input
-                          type="password"
-                          className="input"
-                          placeholder={provider.keyPlaceholder}
-                          value={keyInput}
-                          onChange={(e) => setKeyInput(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSaveKey(provider.id)}
-                          autoFocus
-                        />
-                        <button className="btn btn-primary" onClick={() => handleSaveKey(provider.id)}>Save</button>
-                        <button className="btn btn-ghost" onClick={() => { setEditingProvider(null); setKeyInput(''); }}>Cancel</button>
-                      </div>
-                    ) : (
-                      <div className="key-actions">
-                        {hasKey ? (
-                          <>
-                            <span className="key-masked">â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢</span>
-                            <button className="btn btn-ghost" onClick={() => { setEditingProvider(provider.id); setKeyInput(''); }}>Change</button>
-                            <button className="btn btn-ghost" onClick={() => removeAPIKey(provider.id)}>Remove</button>
-                          </>
-                        ) : (
-                          <button className="btn btn-secondary" onClick={() => setEditingProvider(provider.id)}>Add Key</button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+        <div className="welcome-layout">
+          <div className="layout-main animate-reveal-up delay-100">
+            <div className="features-grid">
+              <div className="feature-card glass-panel">
+                <div className="feature-icon-box bg-blue-500/10"><Code2 size={24} className="text-blue-400" /></div>
+                <div className="feature-text">
+                  <h3>Intelligent Coding</h3>
+                  <p>State-of-the-art agentic workflows for refactoring and debugging.</p>
+                </div>
+              </div>
+              <div className="feature-card glass-panel">
+                  <div className="feature-icon-box bg-purple-500/10"><Terminal size={24} className="text-purple-400" /></div>
+                  <div className="feature-text">
+                  <h3>Local Runtime</h3>
+                  <p>Execute code in secure sandboxes without leaving your machine.</p>
+                </div>
+              </div>
+              <div className="feature-card glass-panel">
+                  <div className="feature-icon-box bg-emerald-500/10"><Activity size={24} className="text-emerald-400" /></div>
+                  <div className="feature-text">
+                  <h3>Live Collaboration</h3>
+                  <p>Peer-to-peer sync with zero latency and full encryption.</p>
+                </div>
+              </div>
             </div>
           </div>
-        ) : (
-          <>
-            <div className="features-grid">
-              <div className="feature-card">
-                <h3>Unlimited Everything</h3>
-                <p>No limits on workspaces, collaborators, or AI models during beta</p>
-              </div>
-              <div className="feature-card">
-                <h3>All AI Providers</h3>
-                <p>OpenAI, Anthropic, Google AI - bring your own keys</p>
-              </div>
-              <div className="feature-card">
-                <h3>Full Encryption</h3>
-                <p>E2E encryption â€¢ P2P sync â€¢ Your data never leaves your machine</p>
-              </div>
-            </div>
 
+          <div className="layout-sidebar animate-reveal-up delay-100">
+             <div className="action-card glass-panel highlight">
+                <div className="card-bg-effect"></div>
+                <div className="action-header">
+                   <Sparkles size={16} className="text-yellow-400" />
+                   <span>Quick Actions</span>
+                </div>
+                <h3>Get Started Now</h3>
+                <p>Create a new workspace or continue where you left off.</p>
+                
+                <div className="action-buttons">
+                   <button className="btn-hero-primary" onClick={() => {
+                      const sidebar = document.querySelector('.add-btn') as HTMLButtonElement;
+                      if (sidebar) sidebar.click();
+                   }}>
+                      <FolderTree size={18} />
+                      <span>New Workspace</span>
+                      <ArrowRight size={16} className="ml-auto" />
+                   </button>
+                   
+                   <button className="btn-hero-secondary" onClick={() => setShowSettings(true)}>
+                      <Key size={16} />
+                      <span>Setup AI Keys</span>
+                   </button>
+                </div>
 
-
-            <div className="included">
-              <span>Free Beta:</span> Unlimited workspaces â€¢ Unlimited collaborators â€¢ E2E encryption â€¢ P2P sync â€¢ BYOK (Bring Your Own Keys)
-            </div>
-          </>
-        )}
-
-        <div className="cta">
-          <p>Create a workspace to get started</p>
+                {spaces.length > 0 && (
+                   <div className="recent-spaces">
+                      <div className="recent-title">Recent Workspaces</div>
+                      {spaces.slice(0, 3).map(space => (
+                         <div key={space.id} className="recent-item" onClick={() => setCurrentSpace(space)}>
+                            <ChevronRight size={14} />
+                            <span>{space.name}</span>
+                         </div>
+                      ))}
+                   </div>
+                )}
+             </div>
+          </div>
         </div>
       </div>
 
       <style>{`
-        .welcome {
+        .welcome-container {
           flex: 1;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: var(--space-6);
-          overflow-y: auto;
+          padding: 60px 40px 40px;
+          height: 100%;
+          position: relative;
+          overflow-x: hidden;
+          background: #000;
         }
+
+        .bg-glow {
+          position: absolute;
+          width: 600px;
+          height: 600px;
+          border-radius: 50%;
+          filter: blur(140px);
+          opacity: 0.12;
+          z-index: 0;
+          pointer-events: none;
+        }
+        .bg-glow-1 { top: -150px; right: -150px; background: #3b82f6; }
+        .bg-glow-2 { bottom: -150px; left: -150px; background: #8b5cf6; }
 
         .welcome-content {
-          max-width: 900px;
+          width: 100%;
+          max-width: 1140px;
+          z-index: 10;
+          display: flex;
+          flex-direction: column;
+          gap: 40px;
+          margin: 0 auto;
+        }
+
+        .welcome-hero {
           text-align: center;
+          max-width: 800px;
+          margin: 0 auto;
         }
 
-        .welcome-header {
-          margin-bottom: var(--space-6);
+        .hero-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 14px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 99px;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+          color: rgba(255, 255, 255, 0.7);
+          margin-bottom: 24px;
         }
 
-        .welcome-header h1 {
-          font-size: var(--text-3xl);
-          font-weight: var(--font-bold);
-          background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-middle));
+        .pulse-dot {
+          width: 6px;
+          height: 6px;
+          background: #4ade80;
+          border-radius: 50%;
+          box-shadow: 0 0 10px #4ade80;
+          animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.5); opacity: 0.5; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+
+        .hero-title {
+          font-size: clamp(32px, 5vw, 56px);
+          font-weight: 900;
+          line-height: 1.1;
+          letter-spacing: -0.04em;
+          margin-bottom: 20px;
+          color: white;
+        }
+
+        .gradient-text {
+          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
-          letter-spacing: -0.04em;
-          margin-bottom: var(--space-3);
         }
 
-        .tagline {
-          font-size: var(--text-base);
-          color: var(--color-text-secondary);
+        .hero-subtitle {
+          font-size: 18px;
+          color: rgba(255, 255, 255, 0.4);
           line-height: 1.6;
-          margin-bottom: var(--space-3);
+          max-width: 620px;
+          margin: 0 auto;
         }
 
-        .beta-badge {
-          display: inline-block;
-          padding: 4px 12px;
-          background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
-          color: white;
-          border-radius: var(--radius-pill);
-          font-size: var(--text-xs);
-          font-weight: var(--font-semibold);
-          box-shadow: var(--shadow-glow);
+        .welcome-layout {
+          display: grid;
+          grid-template-columns: 1fr 360px;
+          gap: 24px;
+          align-items: stretch; 
         }
 
-        .api-setup {
-          text-align: left;
-          padding: var(--space-5);
-          background: var(--color-glass);
-          backdrop-filter: blur(var(--backdrop-blur));
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: var(--radius-xl);
-          margin-bottom: var(--space-4);
-          box-shadow: var(--shadow-lg);
+        .glass-panel {
+          background: rgba(15, 15, 18, 0.6);
+          backdrop-filter: blur(32px) saturate(180%);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 24px;
+          position: relative;
+          overflow: hidden;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }
 
-        .setup-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: var(--space-2);
-        }
-
-        .setup-header h2 {
-          font-size: var(--text-lg);
-          font-weight: var(--font-semibold);
-          color: var(--color-text);
-        }
-
-        .setup-desc {
-          font-size: var(--text-sm);
-          color: var(--color-text-muted);
-          margin-bottom: var(--space-4);
-        }
-
-        .providers-list {
+        .layout-main {
           display: flex;
           flex-direction: column;
-          gap: var(--space-2);
-        }
-
-        .provider-card {
-          padding: var(--space-4);
-          background: var(--color-glass);
-          border: 1px solid rgba(255, 255, 255, 0.05);
-          border-radius: var(--radius-lg);
-          transition: all var(--transition-base);
-        }
-
-        .provider-card:hover {
-          border-color: rgba(255, 255, 255, 0.15);
-          transform: translateY(-1px);
-        }
-
-        .provider-card.locked {
-          opacity: 0.5;
-        }
-
-        .provider-header {
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-          margin-bottom: var(--space-1);
-        }
-
-        .provider-name {
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
-          color: var(--color-text);
-        }
-
-        .locked-badge {
-          font-size: 10px;
-          padding: 2px 6px;
-          background: var(--color-surface);
-          border-radius: var(--radius-sm);
-          color: var(--color-text-muted);
-        }
-
-        .configured-badge {
-          color: var(--color-success);
-        }
-
-        .provider-models {
-          font-size: var(--text-xs);
-          color: var(--color-text-muted);
-          margin-bottom: var(--space-2);
-        }
-
-        .key-input-row {
-          display: flex;
-          gap: var(--space-2);
-        }
-
-        .key-input-row .input {
-          flex: 1;
-          height: 32px;
-        }
-
-        .key-input-row .btn {
-          height: 32px;
-          font-size: var(--text-xs);
-        }
-
-        .key-actions {
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-        }
-
-        .key-masked {
-          font-size: var(--text-sm);
-          color: var(--color-text-muted);
-        }
-
-        .key-actions .btn {
-          height: 28px;
-          font-size: var(--text-xs);
         }
 
         .features-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: var(--space-4);
-          margin-bottom: var(--space-6);
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          height: 100%;
         }
 
         .feature-card {
-          padding: var(--space-5);
-          background: var(--color-glass);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: var(--radius-xl);
-          text-align: center;
-          transition: all var(--transition-base);
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 24px;
+          padding: 24px 32px;
+          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .feature-card:hover {
-          transform: translateY(-4px);
-          border-color: rgba(255, 255, 255, 0.15);
-          box-shadow: 0 8px 32px rgba(59, 130, 246, 0.15);
+          transform: translateX(8px);
+          border-color: rgba(59, 130, 246, 0.4);
+          background: rgba(59, 130, 246, 0.08);
+        }
+
+        .feature-icon-box {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .feature-text {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          text-align: left;
         }
 
         .feature-card h3 {
-          font-size: var(--text-lg);
-          font-weight: var(--font-bold);
-          background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-middle));
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-          margin-bottom: var(--space-2);
+          font-size: 18px;
+          font-weight: 800;
+          color: white;
+          margin: 0;
         }
 
         .feature-card p {
-          font-size: var(--text-sm);
-          color: var(--color-text-muted);
-          line-height: 1.6;
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.4);
+          line-height: 1.5;
+          margin: 0;
         }
 
-
-
-        .included {
-          font-size: var(--text-sm);
-          color: var(--color-text-muted);
-          padding: var(--space-3) var(--space-4);
-          background: var(--color-glass);
-          border-radius: var(--radius-lg);
-          margin-bottom: var(--space-4);
-          line-height: 1.6;
+        /* Sidebar Cards */
+        .action-card {
+          padding: 32px;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
         }
 
-        .included span {
-          font-weight: var(--font-semibold);
-          color: var(--color-accent);
+        .action-card.highlight {
+          border-color: rgba(59, 130, 246, 0.4);
+          box-shadow: 0 10px 40px rgba(59, 130, 246, 0.15);
         }
 
-        .cta p {
-          font-size: var(--text-sm);
-          color: var(--color-text-muted);
+        .card-bg-effect {
+          position: absolute;
+          top: -50px; right: -50px; width: 150px; height: 150px;
+          background: #3b82f6; filter: blur(60px); opacity: 0.15;
+        }
+
+        .action-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 900;
+          color: #f59e0b;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-bottom: 16px;
+        }
+
+        .action-card h3 { font-size: 24px; font-weight: 900; margin-bottom: 12px; color: white; }
+        .action-card p { font-size: 14px; color: rgba(255, 255, 255, 0.4); line-height: 1.5; margin-bottom: 24px; }
+
+        .action-buttons {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-bottom: auto;
+        }
+
+        .btn-hero-primary {
+          width: 100%;
+          padding: 16px 20px;
+          background: #fff;
+          color: #000;
+          border-radius: 16px;
+          font-weight: 800;
+          font-size: 14px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .btn-hero-primary:hover { transform: scale(1.02); box-shadow: 0 12px 32px rgba(255, 255, 255, 0.2); }
+
+        .btn-hero-secondary {
+          width: 100%;
+          padding: 16px 20px;
+          background: rgba(255, 255, 255, 0.05);
+          color: #fff;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 16px;
+          font-weight: 700;
+          font-size: 14px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          cursor: pointer;
+        }
+
+        .btn-hero-secondary:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); }
+
+        .recent-spaces {
+          margin-top: 32px;
+          padding-top: 24px;
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .recent-title { font-size: 11px; font-weight: 800; color: rgba(255, 255, 255, 0.2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+        .recent-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 -8px; font-size: 13px; color: rgba(255, 255, 255, 0.5); cursor: pointer; border-radius: 10px; transition: all 0.2s; }
+        .recent-item:hover { color: #3b82f6; background: rgba(59, 130, 246, 0.1); transform: translateX(4px); }
+
+        @media (max-width: 1040px) {
+          .welcome-layout { grid-template-columns: 1fr; }
+          .welcome-content { gap: 32px; padding: 20px; }
+          .layout-sidebar { order: -1; }
         }
       `}</style>
     </div>

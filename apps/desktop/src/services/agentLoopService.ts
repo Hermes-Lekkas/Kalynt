@@ -805,6 +805,18 @@ ${ragContext.slice(0, config.maxRAGContext)}`
             content: m.content
         }))
 
+        // Determine best model for agent tasks
+        const options: any = {
+            temperature: 0.2,
+            maxTokens: 4096,
+            thinking: true
+        }
+
+        // Auto-select 'Ultra' models for cloud providers to ensure high-quality tool calling
+        if (this.cloudProvider === 'openai') options.model = 'gpt-5-preview'
+        else if (this.cloudProvider === 'anthropic') options.model = 'claude-4-6-opus-latest'
+        else if (this.cloudProvider === 'google') options.model = 'gemini-3-pro-high'
+
         const response = await new Promise<string>((resolve, reject) => {
             const onAbort = () => {
                 aiService.cancelStream()
@@ -831,11 +843,7 @@ ${ragContext.slice(0, config.maxRAGContext)}`
                     }
                 },
                 this.cloudProvider,
-                {
-                    temperature: 0.2,
-                    maxTokens: 4096,
-                    thinking: true
-                }
+                options
             )
         })
 

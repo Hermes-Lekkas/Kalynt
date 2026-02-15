@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React from 'react'
@@ -20,7 +20,7 @@ export const NotificationSystem: React.FC = () => {
                     position: fixed;
                     bottom: 24px;
                     right: 24px;
-                    z-index: 9999;
+                    z-index: 10001; /* Higher than header/modals */
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
@@ -29,60 +29,91 @@ export const NotificationSystem: React.FC = () => {
 
                 .notification-item {
                     pointer-events: auto;
-                    min-width: 300px;
+                    min-width: 320px;
                     max-width: 450px;
-                    background: var(--color-surface-elevated, #2d2d2d);
-                    border: 1px solid var(--color-border, #3c3c3c);
-                    border-radius: 8px;
-                    padding: 12px 16px;
+                    background: rgba(10, 10, 12, 0.85);
+                    backdrop-filter: blur(20px) saturate(180%);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 16px;
+                    padding: 16px;
                     display: flex;
                     align-items: flex-start;
-                    gap: 12px;
-                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-                    animation: slideIn 0.3s ease-out;
+                    gap: 14px;
+                    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+                    animation: slideInNotification 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                    position: relative;
+                    overflow: hidden;
                 }
 
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
+                .notification-item::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    height: 3px;
+                    background: currentColor;
+                    opacity: 0.3;
+                    width: 100%;
+                    transform-origin: left;
+                    animation: notificationProgress 5s linear forwards;
+                }
+
+                @keyframes notificationProgress {
+                    from { transform: scaleX(1); }
+                    to { transform: scaleX(0); }
+                }
+
+                @keyframes slideInNotification {
+                    from { transform: translateX(40px) scale(0.9); opacity: 0; }
+                    to { transform: translateX(0) scale(1); opacity: 1; }
                 }
 
                 .notification-icon {
                     margin-top: 2px;
                     flex-shrink: 0;
+                    padding: 8px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 10px;
                 }
 
                 .notification-content {
                     flex: 1;
                     font-size: 13px;
+                    font-weight: 500;
                     line-height: 1.5;
-                    color: var(--color-text, #ccc);
+                    color: rgba(255, 255, 255, 0.9);
+                    padding-top: 4px;
                 }
 
                 .notification-close {
                     background: transparent;
                     border: none;
-                    color: var(--color-text-muted, #777);
+                    color: rgba(255, 255, 255, 0.3);
                     cursor: pointer;
-                    padding: 2px;
-                    border-radius: 4px;
+                    padding: 4px;
+                    border-radius: 8px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     transition: all 0.2s;
+                    margin-top: 2px;
                 }
 
                 .notification-close:hover {
                     background: rgba(255, 255, 255, 0.1);
-                    color: var(--color-text, #ccc);
+                    color: #fff;
                 }
 
                 /* Type-specific styles */
-                .notification-item.info .notification-icon { color: #3b82f6; }
-                .notification-item.success .notification-icon { color: #22c55e; }
-                .notification-item.warning .notification-icon { color: #eab308; }
-                .notification-item.error .notification-icon { color: #ef4444; }
-                .notification-item.error { border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05); }
+                .notification-item.info .notification-icon { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+                .notification-item.success .notification-icon { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+                .notification-item.warning .notification-icon { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+                .notification-item.error .notification-icon { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+                
+                .notification-item.info { border-left: 4px solid #3b82f6; }
+                .notification-item.success { border-left: 4px solid #10b981; }
+                .notification-item.warning { border-left: 4px solid #f59e0b; }
+                .notification-item.error { border-left: 4px solid #ef4444; }
             `}</style>
         </div>
     )

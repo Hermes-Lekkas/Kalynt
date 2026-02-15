@@ -2,7 +2,8 @@
  * Extensions Module Exports
  */
 
-export { extensionService, VSCodeAPI } from './extensionService'
+export { extensionService } from './extensionService'
+export type { VSCodeAPI } from './extensionService'
 export { marketplaceService } from './marketplaceService'
 export type {
   OutputChannel,

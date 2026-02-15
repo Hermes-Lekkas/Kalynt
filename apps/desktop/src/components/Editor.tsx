@@ -22,8 +22,32 @@ export default function Editor() {
   const [currentMode, setCurrentMode] = useState<EditorMode>('general')
   const [showModeSelector, setShowModeSelector] = useState(false)
   const [showAgentPanel, setShowAgentPanel] = useState(true)
+  const [agentSidebarWidth, setAgentSidebarWidth] = useState(360)
+  const [isResizingAgent, setIsResizingAgent] = useState(false)
 
   const modeConfig = getModeConfig(currentMode)
+
+  const handleResizeAgent = useCallback((e: MouseEvent) => {
+    if (!isResizingAgent) return
+    const newWidth = window.innerWidth - e.clientX
+    if (newWidth > 200 && newWidth < 600) {
+      setAgentSidebarWidth(newWidth)
+    }
+  }, [isResizingAgent])
+
+  const stopResizingAgent = useCallback(() => {
+    setIsResizingAgent(false)
+  }, [])
+
+  useEffect(() => {
+    if (!isResizingAgent) return
+    window.addEventListener('mousemove', handleResizeAgent)
+    window.addEventListener('mouseup', stopResizingAgent)
+    return () => {
+      window.removeEventListener('mousemove', handleResizeAgent)
+      window.removeEventListener('mouseup', stopResizingAgent)
+    }
+  }, [isResizingAgent, handleResizeAgent, stopResizingAgent])
 
   // Sync content from Yjs to editor
   useEffect(() => {
@@ -216,14 +240,23 @@ export default function Editor() {
       </div>
 
       {showAgentPanel && currentSpace && canUseAgent && (
-        <div className="agent-sidebar">
-          <UnifiedAgentPanel
-            workspacePath={null}
-            currentFile={null}
-            currentFileContent={null}
-            editorMode={currentMode}
+        <>
+          <div
+            className={`agent-resizer ${isResizingAgent ? 'resizing' : ''}`}
+            onMouseDown={(e) => {
+              e.preventDefault()
+              setIsResizingAgent(true)
+            }}
           />
-        </div>
+          <div className="agent-sidebar" style={{ width: `${agentSidebarWidth}px` }}>
+            <UnifiedAgentPanel
+              workspacePath={null}
+              currentFile={null}
+              currentFileContent={null}
+              editorMode={currentMode}
+            />
+          </div>
+        </>
       )}
 
       <style>{`
@@ -242,12 +275,27 @@ export default function Editor() {
         }
         
         .agent-sidebar {
-          width: 360px;
           flex-shrink: 0;
           display: flex;
           flex-direction: column;
           border-left: 1px solid var(--color-border-subtle);
           overflow: hidden;
+        }
+        
+        .agent-resizer {
+          width: 4px;
+          background: transparent;
+          cursor: col-resize;
+          transition: background 0.2s;
+          z-index: 10;
+          flex-shrink: 0;
+          margin-left: -4px;
+        }
+
+        .agent-resizer:hover,
+        .agent-resizer.resizing {
+          background: var(--color-accent);
+          box-shadow: 0 0 8px var(--color-accent);
         }
         
         .agent-mode-toggle {

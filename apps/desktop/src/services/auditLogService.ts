@@ -47,14 +47,14 @@ const DB_NAME = 'kalynt-audit-logs'
 const DB_VERSION = 1
 const STORE_NAME = 'events'
 const MAX_LOG_AGE_DAYS = 30 // Auto-delete logs older than 30 days
-const MAX_LOGS_COUNT = 10000 // Maximum number of logs to keep
+// const MAX_LOGS_COUNT = 10000 // Maximum number of logs to keep
 
 class AuditLogService {
     private db: IDBDatabase | null = null
     private initPromise: Promise<void> | null = null
     private inMemoryQueue: AuditEvent[] = []
     private flushInterval: ReturnType<typeof setInterval> | null = null
-    private isOnline: boolean = true
+    // private isOnline: boolean = true
 
     async initialize(): Promise<void> {
         if (this.initPromise) return this.initPromise
@@ -99,12 +99,14 @@ class AuditLogService {
 
         // Handle online/offline status
         window.addEventListener('online', () => {
-            this.isOnline = true
+            // this.isOnline = true
             this.flushQueue()
         })
+        /*
         window.addEventListener('offline', () => {
             this.isOnline = false
         })
+        */
     }
 
     private async flushQueue(): Promise<void> {

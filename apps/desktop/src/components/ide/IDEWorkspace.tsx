@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
@@ -61,7 +61,8 @@ const STORAGE_KEYS = {
     STICKY_SCROLL_ENABLED: 'kalynt-sticky-scroll-enabled',
     SPLIT_EDITOR_ENABLED: 'kalynt-split-editor-enabled',
     SPLIT_EDITOR_RATIO: 'kalynt-split-editor-ratio',
-    SECONDARY_ACTIVE_FILE: 'kalynt-secondary-active-file'
+    SECONDARY_ACTIVE_FILE: 'kalynt-secondary-active-file',
+    RIGHT_PANEL_WIDTH: 'kalynt-right-panel-width'
 }
 
 export default function IDEWorkspace() {
@@ -116,6 +117,15 @@ export default function IDEWorkspace() {
         }
     })
     const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+    const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_WIDTH)
+            return saved ? parseInt(saved, 10) : 400
+        } catch (_error) {
+            return 400
+        }
+    })
+    const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
     const [isRunning, setIsRunning] = useState(false)
     const executionIdRef = useRef<string | null>(null)
     // SECURITY FIX: Store cleanup functions to prevent event listener leaks
@@ -230,12 +240,6 @@ export default function IDEWorkspace() {
     // Get active file object
     const activeFileObj = openFiles.find(f => f.path === activeFile)
     const secondaryFileObj = openFiles.find(f => f.path === secondaryActiveFile)
-
-    // Run command in terminal
-    const onRunCommand = useCallback((command: string) => {
-        setShowTerminal(true)
-        globalThis.window.electronAPI?.terminal.write({ id: 'term-1', data: command + '\r' })
-    }, [])
 
     // Persist workspace path
     useEffect(() => {
@@ -367,10 +371,11 @@ export default function IDEWorkspace() {
             localStorage.setItem(STORAGE_KEYS.TERMINAL_VISIBLE, String(showTerminal))
             localStorage.setItem(STORAGE_KEYS.TERMINAL_HEIGHT, String(terminalHeight))
             localStorage.setItem(STORAGE_KEYS.SIDEBAR_WIDTH, String(sidebarWidth))
+            localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_WIDTH, String(rightPanelWidth))
         } catch (error) {
             logger.ide.warn('Failed to persist UI state to localStorage', error)
         }
-    }, [sidebarOpen, showTerminal, terminalHeight, sidebarWidth])
+    }, [sidebarOpen, showTerminal, terminalHeight, sidebarWidth, rightPanelWidth])
 
     // Restore workspace on mount
     useEffect(() => {
@@ -647,7 +652,7 @@ export default function IDEWorkspace() {
         const execId = `exec-${Date.now()}`
         executionIdRef.current = execId
         setIsRunning(true)
-        setCodeOutput(`â–¶ Running ${activeFileObj.name}...\n`)
+        setCodeOutput(`▶ Running ${activeFileObj.name}...\n`)
 
         // Show terminal for output
         setShowTerminal(true)
@@ -673,8 +678,8 @@ export default function IDEWorkspace() {
                 setIsRunning(false)
                 executionIdRef.current = null
                 const exitMsg = data.exitCode === 0
-                    ? `\nâœ“ Process exited with code ${data.exitCode}`
-                    : `\nâœ— Process exited with code ${data.exitCode}`
+                    ? `\n✓ Process exited with code ${data.exitCode}`
+                    : `\n✗ Process exited with code ${data.exitCode}`
                 setCodeOutput(prev => prev + exitMsg)
 
                 // Cleanup listeners after execution completes
@@ -698,7 +703,7 @@ export default function IDEWorkspace() {
         console.log('[CodeExec] Execute result:', result)
 
         if (!result?.success) {
-            setCodeOutput(prev => prev + `\nâœ— Execution failed: ${result?.error || 'Unknown error'}`)
+            setCodeOutput(prev => prev + `\n✗ Execution failed: ${result?.error || 'Unknown error'}`)
             setIsRunning(false)
             executionIdRef.current = null
             // Cleanup on error
@@ -1012,7 +1017,7 @@ export default function IDEWorkspace() {
         const removeStoppedListener = window.electronAPI?.debug.onStopped(() => {
             globalThis.window.electronAPI?.terminal.writeOutput({
                 id: 'term-1',
-                data: `\r\n\x1b[33mâ¸ Debugger paused\x1b[0m\r\n`
+                data: `\r\n\x1b[33m⏸ Debugger paused\x1b[0m\r\n`
             })
         })
 
@@ -1022,7 +1027,7 @@ export default function IDEWorkspace() {
 
             globalThis.window.electronAPI?.terminal.writeOutput({
                 id: 'term-1',
-                data: `\r\n\x1b[36mâœ“ Debug session terminated\x1b[0m\r\n`
+                data: `\r\n\x1b[36m✓ Debug session terminated\x1b[0m\r\n`
             })
             addNotification('Debug session ended', 'info')
         })
@@ -1162,6 +1167,48 @@ export default function IDEWorkspace() {
         }
     }, [activeFile, pendingLine])
 
+    // Listen for file open requests from other components (e.g. AI scan cards)
+    useEffect(() => {
+        const handleOpen = (e: Event) => {
+            const detail = (e as CustomEvent<{ path: string; line?: number }>).detail
+            if (detail?.path) handleOpenFile(detail.path, detail.line)
+        }
+
+        // Listen for apply-fix requests: opens/updates file content without writing to disk
+        const handleApplyFix = (e: Event) => {
+            const detail = (e as CustomEvent<{ path: string; content: string; line?: number }>).detail
+            if (!detail?.path || detail?.content == null) return
+
+            const validation = validatePath(detail.path, workspacePath)
+            if (!validation.valid) return
+            const vPath = validation.normalizedPath!
+
+            if (detail.line) setPendingLine(detail.line)
+
+            const existing = openFiles.find(f => f.path === vPath)
+            if (existing) {
+                // Update existing tab content and mark dirty
+                setOpenFiles(prev => prev.map(f =>
+                    f.path === vPath ? { ...f, content: detail.content, isDirty: true } : f
+                ))
+                setActiveFile(vPath)
+            } else {
+                // Open new tab with the provided content
+                const fileName = vPath.split(/[/\\]/).pop() || 'untitled'
+                const language = getLanguageFromFileName(fileName)
+                setOpenFiles(prev => [...prev, { path: vPath, name: fileName, content: detail.content, language, isDirty: true }])
+                setActiveFile(vPath)
+            }
+        }
+
+        window.addEventListener('kalynt-open-file', handleOpen)
+        window.addEventListener('kalynt-apply-fix', handleApplyFix)
+        return () => {
+            window.removeEventListener('kalynt-open-file', handleOpen)
+            window.removeEventListener('kalynt-apply-fix', handleApplyFix)
+        }
+    })
+
     const handleResizeSidebar = useCallback((e: MouseEvent) => {
         if (!isResizingSidebar) return
         const newWidth = e.clientX - 48 // Subtract activity bar width
@@ -1172,6 +1219,18 @@ export default function IDEWorkspace() {
 
     const stopResizingSidebar = useCallback(() => {
         setIsResizingSidebar(false)
+    }, [])
+
+    const handleResizeRightPanel = useCallback((e: MouseEvent) => {
+        if (!isResizingRightPanel) return
+        const newWidth = window.innerWidth - e.clientX
+        if (newWidth > 250 && newWidth < 800) {
+            setRightPanelWidth(newWidth)
+        }
+    }, [isResizingRightPanel])
+
+    const stopResizingRightPanel = useCallback(() => {
+        setIsResizingRightPanel(false)
     }, [])
 
     const handleResizeSplit = useCallback((e: MouseEvent) => {
@@ -1217,6 +1276,18 @@ export default function IDEWorkspace() {
             window.removeEventListener('mouseup', stopResizingSidebar)
         }
     }, [isResizingSidebar, handleResizeSidebar, stopResizingSidebar])
+
+    useEffect(() => {
+        if (!isResizingRightPanel) return
+
+        window.addEventListener('mousemove', handleResizeRightPanel)
+        window.addEventListener('mouseup', stopResizingRightPanel)
+
+        return () => {
+            window.removeEventListener('mousemove', handleResizeRightPanel)
+            window.removeEventListener('mouseup', stopResizingRightPanel)
+        }
+    }, [isResizingRightPanel, handleResizeRightPanel, stopResizingRightPanel])
 
     return (
         <div className={`ide-workspace ${isResizingSidebar ? 'resizing-active' : ''}`}>
@@ -1444,12 +1515,21 @@ export default function IDEWorkspace() {
                 />
             </main>
 
-            <div className={`ide-right-panel ${agentOpen ? 'open' : ''}`}>
+            {agentOpen && (
+                <div
+                    className={`sidebar-resizer right ${isResizingRightPanel ? 'resizing' : ''}`}
+                    onMouseDown={(e) => {
+                        e.preventDefault()
+                        setIsResizingRightPanel(true)
+                    }}
+                />
+            )}
+
+            <div className={`ide-right-panel ${agentOpen ? 'open' : ''}`} style={{ width: agentOpen ? `${rightPanelWidth}px` : 0 }}>
                 <UnifiedAgentPanel
                     workspacePath={workspacePath}
                     currentFile={activeFile}
                     currentFileContent={activeFileObj?.content || null}
-                    onRunCommand={onRunCommand}
                 />
             </div>
 

@@ -8,6 +8,7 @@
     "main": "dist-electron/main.js",
     "scripts": {
         "dev": "vite",
+        "dev:web": "vite --config vite.config.web.ts",
         "build": "tsc && vite build && electron-builder",
         "build:vite": "tsc && vite build",
         "build:prod": "cross-env NODE_ENV=production tsc && cross-env NODE_ENV=production vite build && electron-builder",

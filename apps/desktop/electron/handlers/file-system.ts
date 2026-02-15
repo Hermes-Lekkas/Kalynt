@@ -483,24 +483,24 @@ export function registerFileSystemHandlers(
     })
 
     // Write file (with optional base64 encoding for binary data)
-    ipcMain.handle('fs:writeFile', async (_event, filePath: string, data: string, options?: { encoding?: 'utf-8' | 'base64' }) => {
-        try {
-            // Ensure directory exists
-            const dir = path.dirname(filePath)
-            await fs.promises.mkdir(dir, { recursive: true })
+    // ipcMain.handle('fs:writeFile', async (_event, filePath: string, data: string, options?: { encoding?: 'utf-8' | 'base64' }) => {
+    //     try {
+    //         // Ensure directory exists
+    //         const dir = path.dirname(filePath)
+    //         await fs.promises.mkdir(dir, { recursive: true })
 
-            // Write file
-            if (options?.encoding === 'base64') {
-                const buffer = Buffer.from(data, 'base64')
-                await fs.promises.writeFile(filePath, buffer)
-            } else {
-                await fs.promises.writeFile(filePath, data, 'utf-8')
-            }
+    //         // Write file
+    //         if (options?.encoding === 'base64') {
+    //             const buffer = Buffer.from(data, 'base64')
+    //             await fs.promises.writeFile(filePath, buffer)
+    //         } else {
+    //             await fs.promises.writeFile(filePath, data, 'utf-8')
+    //         }
 
-            return { success: true }
-        } catch (error) {
-            console.error('[Main] Write file failed:', error)
-            return { success: false, error: String(error) }
-        }
-    })
+    //         return { success: true }
+    //     } catch (error) {
+    //         console.error('[Main] Write file failed:', error)
+    //         return { success: false, error: String(error) }
+    //     }
+    // })
 }

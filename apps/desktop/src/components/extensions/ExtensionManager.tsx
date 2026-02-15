@@ -467,7 +467,7 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ onClose }) =
               <h3>{'displayName' in selectedExtension ? selectedExtension.displayName : selectedExtension.name}</h3>
               <button 
                 className="btn-close"
-                onClick={() => onClose ? onClose() : setSelectedExtension(null)}
+                onClick={() => setSelectedExtension(null)}
               >
                 <XCircle size={20} />
               </button>

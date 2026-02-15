@@ -18,7 +18,7 @@ export interface ExtensionMetadata {
   version: string
   description: string
   publisher: string
-  main: string
+  main?: string
   contributes: unknown
   activationEvents: string[]
   extensionPath: string
@@ -474,40 +474,69 @@ class ExtensionHostManager {
       throw new Error(`Failed to load extract-zip module: ${e}`)
     }
 
-    const extensionId = path.basename(vsixPath, '.vsix')
-    const targetDir = path.join(this.extensionsDir, extensionId)
+    // Use a temporary directory for extraction
+    const tempDir = path.join(os.tmpdir(), `kalynt-ext-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
+    fs.mkdirSync(tempDir, { recursive: true })
 
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true })
-    }
+    let extensionId: string
 
     try {
-      await extract.default(vsixPath, { dir: targetDir })
-    } catch (e: any) {
-      // Clean up on failure
+      await extract.default(vsixPath, { dir: tempDir })
+
+      // The extension files are inside 'extension' folder in VSIX
+      const sourceExtensionDir = path.join(tempDir, 'extension')
+      if (!fs.existsSync(sourceExtensionDir)) {
+        throw new Error('Invalid VSIX: missing "extension" folder')
+      }
+
+      // Read package.json to get the correct ID
+      const packageJsonPath = path.join(sourceExtensionDir, 'package.json')
+      if (!fs.existsSync(packageJsonPath)) {
+        throw new Error('Invalid VSIX: missing package.json')
+      }
+
+      const manifest = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+      if (!manifest.name || !manifest.publisher) {
+        throw new Error('Invalid VSIX: manifest missing name or publisher')
+      }
+
+      extensionId = `${manifest.publisher}.${manifest.name}`
+      const targetDir = path.join(this.extensionsDir, extensionId)
+
+      // Remove existing extension if it exists
       if (fs.existsSync(targetDir)) {
+        console.log(`[ExtensionHost] Removing existing extension at ${targetDir}`)
+        // Deactivate first if active
+        if (this.extensions.has(extensionId) && this.extensions.get(extensionId)?.isActive) {
+          await this.deactivateExtension(extensionId)
+        }
         fs.rmSync(targetDir, { recursive: true, force: true })
       }
-      throw new Error(`Failed to extract VSIX: ${e.message}. The file may be corrupted.`)
-    }
 
-    // The extension files are inside 'extension' folder in VSIX
-    const extensionDir = path.join(targetDir, 'extension')
-    if (fs.existsSync(extensionDir)) {
-      // Move files from extension subdir to root
-      const files = fs.readdirSync(extensionDir)
-      for (const file of files) {
-        fs.renameSync(path.join(extensionDir, file), path.join(targetDir, file))
+      // Move files from temp/extension to targetDir
+      // We use fs.cpSync and fs.rmSync because renameSync fails across different drives/partitions
+      fs.cpSync(sourceExtensionDir, targetDir, { recursive: true })
+      
+    } catch (e: any) {
+      throw new Error(`Failed to install extension: ${e.message}`)
+    } finally {
+      // Clean up temp directory
+      if (fs.existsSync(tempDir)) {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true })
+        } catch (cleanupError) {
+          console.warn('[ExtensionHost] Failed to clean up temp dir:', cleanupError)
+        }
       }
-      fs.rmdirSync(extensionDir)
     }
 
     // Reload extension list
     await this.scanExtensions()
     
-    const extension = Array.from(this.extensions.values()).find(e => e.extensionPath === targetDir)
+    // Find the installed extension by ID
+    const extension = this.extensions.get(extensionId)
     if (!extension) {
-      throw new Error('Failed to install extension')
+      throw new Error(`Failed to verify installation of extension ${extensionId}`)
     }
 
     return extension

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useCallback } from 'react'
@@ -129,7 +129,7 @@ Do not include any other text.`
         subtasks = fullResponse
           .split('\n')
           .filter(l => l.trim().length > 0)
-          .map(l => l.replace(/^[-*â€¢]\s*/, '').replace(/^\d+\.\s*/, '').trim())
+          .map(l => l.replace(/^[-*•]\s*/, '').replace(/^\d+\.\s*/, '').trim())
           .filter(l => l.length > 0)
           .slice(0, 5)
       }
@@ -159,7 +159,7 @@ Do not include any other text.`
       <div className="board-header">
         <div>
           <h2>Project Tasks</h2>
-          <p className="subtitle">{tasks.length} tasks â€¢ {peerCount > 0 ? `${peerCount} peers online` : 'Offline'}</p>
+          <p className="subtitle">{tasks.length} tasks • {peerCount > 0 ? `${peerCount} peers online` : 'Offline'}</p>
         </div>
         <button className="btn btn-primary" onClick={() => handleAddTask('todo')}>
           <Plus size={16} /> New Task
@@ -633,7 +633,7 @@ function TaskModal({
               {localTask.tags.map(tag => (
                 <span key={tag} className="tag-chip">
                   {tag}
-                  <button onClick={() => removeTag(tag)}>Ã—</button>
+                  <button onClick={() => removeTag(tag)}><X size={12} /></button>
                 </span>
               ))}
               <input
@@ -711,7 +711,7 @@ function TaskModal({
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 50;
+          z-index: 10000;
           animation: fadeIn 0.2s ease-out;
         }
 

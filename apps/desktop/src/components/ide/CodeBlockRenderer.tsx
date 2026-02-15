@@ -1,9 +1,10 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { Check, Copy, Zap } from 'lucide-react'
 
 interface CodeBlockProps {
     code: string
@@ -48,7 +49,7 @@ export default function CodeBlockRenderer({
                         onClick={handleCopy}
                         title="Copy code"
                     >
-                        {copied ? 'âœ“ Copied' : 'ðŸ“‹ Copy'}
+                        {copied ? <span className="flex items-center gap-1"><Check size={12} /> Copied</span> : <span className="flex items-center gap-1"><Copy size={12} /> Copy</span>}
                     </button>
                     {onApply && (
                         <button
@@ -56,7 +57,7 @@ export default function CodeBlockRenderer({
                             onClick={handleApply}
                             title="Apply to editor"
                         >
-                            {applied ? 'âœ“ Applied' : 'âš¡ Apply'}
+                            {applied ? <span className="flex items-center gap-1"><Check size={12} /> Applied</span> : <span className="flex items-center gap-1"><Zap size={12} /> Apply</span>}
                         </button>
                     )}
                 </div>
@@ -123,6 +124,8 @@ export default function CodeBlockRenderer({
           font-size: 11px;
           cursor: pointer;
           transition: all 0.2s;
+          display: flex;
+          align-items: center;
         }
 
         .code-action:hover {

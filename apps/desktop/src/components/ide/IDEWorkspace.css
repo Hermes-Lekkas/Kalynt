@@ -498,14 +498,17 @@
     border-left: 1px solid transparent;
     display: flex;
     flex-direction: column;
-    transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-        border-color 0.3s ease;
+    transition: border-color 0.3s ease;
     flex-shrink: 0;
 }
 
 .ide-right-panel.open {
-    width: 400px;
     border-left-color: var(--color-border-subtle);
+}
+
+.sidebar-resizer.right {
+    cursor: col-resize;
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .file-tabs {

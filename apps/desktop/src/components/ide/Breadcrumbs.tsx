@@ -1,7 +1,7 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { Folder, FileCode, FileJson, FileText, FileEdit, Palette, Globe, FileImage, Terminal } from 'lucide-react'
+import { Folder, FileCode, FileJson, FileText, FileEdit, Palette, Globe, FileImage, Terminal, ChevronRight } from 'lucide-react'
 
 interface BreadcrumbsProps {
   filePath: string | null
@@ -77,7 +77,7 @@ export default function Breadcrumbs({ filePath, workspacePath, onNavigate }: Bre
           >
             <Folder size={16} />
           </span>
-          <span className="separator">â€º</span>
+          <ChevronRight size={12} className="separator" />
         </>
       )}
 
@@ -92,7 +92,7 @@ export default function Breadcrumbs({ filePath, workspacePath, onNavigate }: Bre
             <span className="breadcrumb-name">{segment}</span>
           </span>
           {idx < segments.length - 1 && (
-            <span className="separator">â€º</span>
+            <ChevronRight size={12} className="separator" />
           )}
         </span>
       ))}
@@ -161,7 +161,7 @@ export default function Breadcrumbs({ filePath, workspacePath, onNavigate }: Bre
         .separator {
           margin: 0 2px;
           color: var(--color-text-muted, #555);
-          font-size: 10px;
+          flex-shrink: 0;
         }
       `}</style>
     </nav>

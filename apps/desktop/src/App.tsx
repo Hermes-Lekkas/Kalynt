@@ -12,6 +12,7 @@ import { EncryptionProvider } from './hooks/useEncryption'
 import { NotificationSystem } from './components/NotificationSystem'
 import UpdateModal from './components/UpdateModal'
 import { ExtensionManager } from './components/extensions'
+import UnifiedSettingsPanel from './components/UnifiedSettingsPanel'
 import { setModelsDirectory } from './services/modelDownloadService'
 import { logger } from './utils/logger'
 
@@ -23,7 +24,7 @@ import './styles/window-animations.css'
 // ... existing imports ...
 
 function App() {
-  const { currentSpace, initialize, _hasHydrated, startupStatus } = useAppStore()
+  const { currentSpace, initialize, _hasHydrated, startupStatus, showSettings, setShowSettings } = useAppStore()
   const { initialize: initializeUpdates } = useUpdateStore()
   const isWebMode = !window.electronAPI || (window as any).electronAPI?.platform === 'browser'
   const [isLoading, setIsLoading] = useState(!isWebMode)
@@ -194,6 +195,9 @@ function App() {
         <UpdateModal />
         {showExtensions && (
           <ExtensionManager onClose={() => setShowExtensions(false)} />
+        )}
+        {showSettings && (
+          <UnifiedSettingsPanel onClose={() => setShowSettings(false)} />
         )}
       </div>
     </EncryptionProvider>

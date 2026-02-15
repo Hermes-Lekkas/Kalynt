@@ -1,8 +1,9 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useRef, useEffect } from 'react'
 import { aiService } from '../../services/aiService'
+import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
 
 interface InlineEditWidgetProps {
   visible: boolean
@@ -117,9 +118,9 @@ Return ONLY the modified code:`
       style={{ top: position.top, left: position.left }}
     >
       <div className="widget-header">
-        <span className="widget-icon">âœ¨</span>
+        <span className="widget-icon"><Sparkles size={14} /></span>
         <span className="widget-title">AI Edit</span>
-        <button className="widget-close" onClick={onCancel}>âœ•</button>
+        <button className="widget-close" onClick={onCancel}><X size={14} /></button>
       </div>
 
       {!showDiff ? (
@@ -140,7 +141,7 @@ Return ONLY the modified code:`
               onClick={handleSubmit}
               disabled={isLoading || !prompt.trim()}
             >
-              {isLoading ? '...' : 'â†’'}
+              {isLoading ? '...' : <ArrowRight size={14} />}
             </button>
           </div>
 
@@ -161,13 +162,13 @@ Return ONLY the modified code:`
                   setGeneratedCode(null)
                 }}
               >
-                âœ• Reject
+                <X size={12} /> Reject
               </button>
               <button
                 className="diff-btn accept"
                 onClick={() => generatedCode && onApply(generatedCode)}
               >
-                âœ“ Accept
+                <Check size={12} /> Accept
               </button>
             </div>
           </div>
@@ -213,6 +214,8 @@ Return ONLY the modified code:`
 
         .widget-icon {
           font-size: 14px;
+          display: flex;
+          align-items: center;
         }
 
         .widget-title {
@@ -228,6 +231,8 @@ Return ONLY the modified code:`
           cursor: pointer;
           opacity: 0.7;
           font-size: 14px;
+          display: flex;
+          align-items: center;
         }
 
         .widget-close:hover {
@@ -267,6 +272,9 @@ Return ONLY the modified code:`
           color: white;
           font-weight: 500;
           cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .widget-submit:disabled {
@@ -311,6 +319,9 @@ Return ONLY the modified code:`
           font-size: 12px;
           font-weight: 500;
           cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
         }
 
         .diff-btn.reject {
