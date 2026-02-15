@@ -130,7 +130,7 @@
             "releaseType": "release"
         },
         "win": {
-            "icon": "build/icon.ico",
+            "icon": "public/Kalynt_256x256.ico",
             "target": [
                 {
                     "target": "nsis",
