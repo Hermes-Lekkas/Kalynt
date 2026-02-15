@@ -130,6 +130,7 @@
             "releaseType": "release"
         },
         "win": {
+            "icon": "build/icon.ico",
             "target": [
                 {
                     "target": "nsis",
@@ -142,6 +143,7 @@
             "verifyUpdateCodeSignature": false
         },
         "mac": {
+            "icon": "public/Kalynt.png",
             "target": [
                 "dmg"
             ],
@@ -150,6 +152,7 @@
             "gatekeeperAssess": false
         },
         "linux": {
+            "icon": "public/Kalynt.png",
             "target": [
                 "AppImage",
                 "deb"
