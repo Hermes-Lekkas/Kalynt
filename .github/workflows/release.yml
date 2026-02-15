@@ -2,8 +2,16 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
 
     steps:
       - name: Checkout Code
@@ -37,17 +45,35 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libarchive-tools icnsutils graphicsmagick
+          sudo apt-get install -y \
+            libarchive-tools \
+            icnsutils \
+            graphicsmagick \
+            build-essential \
+            cmake \
+            pkg-config \
+            libsecret-1-dev \
+            libx11-dev \
+            libxkbfile-dev \
+            libasound2 \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libgtk-3-0 \
+            libgbm1
 
       - name: Install Dependencies
         run: npm install
 
       # Build & Publish
-      # Set OBFUSCATE=true to enable code obfuscation (see OBFUSCATION.md)
+      # Set OBFUSCATE=true to enable code protection for the release
       - name: Build and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OBFUSCATE: "false"
+          OBFUSCATE: "true"
+          # Increase memory for large builds and obfuscation
+          NODE_OPTIONS: "--max-old-space-size=6144"
+          # Skip signing if secrets are not available (for PRs/manual builds)
+          CSC_SKIP_SIGN: ${{ (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && 'true' || 'false' }}
         working-directory: apps/desktop
         run: |
           npm run build:vite
