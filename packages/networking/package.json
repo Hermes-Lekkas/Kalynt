@@ -1,7 +1,10 @@
 {
     "name": "@kalynt/networking",
-    "version": "1.0.0-beta",
-    "author": "Hermes Lekkas",
+    "version": "1.0.4-beta",
+    "author": {
+        "name": "Hermes Lekkas",
+        "email": "hermeslekkasdev@gmail.com"
+    },
     "private": true,
     "main": "src/index.ts",
     "types": "src/index.ts",

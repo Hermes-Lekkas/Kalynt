@@ -897,7 +897,7 @@ function SupportTab() {
         </div>
         
         <div className="version-info mt-4" style={{ textAlign: 'center', opacity: 0.5, fontSize: '11px' }}>
-          <p>Kalynt Desktop v1.0.3 beta</p>
+          <p>Kalynt Desktop v1.0.4 beta</p>
           <p>&copy; 2026 Hermes Lekkas. All rights reserved.</p>
         </div>
       </div>

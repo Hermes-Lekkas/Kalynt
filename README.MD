@@ -11,8 +11,8 @@
   </p>
 
   [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-  [![Version](https://img.shields.io/badge/version-v1.0.4--beta-green)](https://github.com/Hermes-Lekkas/Kalynt/releases)
-  [![Platform](https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey)](https://github.com/Hermes-Lekkas/Kalynt/releases)
+  [![Version](https://img.shields.io/badge/version-v1.0.4--beta-green)](https://github.com/RoodyNorman/Kalynt_Development/releases)
+  [![Platform](https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey)](https://github.com/RoodyNorman/Kalynt_Development/releases)
 </div>
 
 ---
@@ -56,7 +56,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for a deep dive into the system design.
 ##  Installation
 
 ### Pre-built Binaries
-Download the latest installer for Windows, macOS, or Linux from the [Releases Page](https://github.com/Hermes-Lekkas/Kalynt/releases).
+Download the latest installer for Windows, macOS, or Linux from the [Releases Page](https://github.com/RoodyNorman/Kalynt_Development/releases).
 
 ### Building from Source
 
@@ -67,7 +67,7 @@ Download the latest installer for Windows, macOS, or Linux from the [Releases Pa
 
 ```bash
 # Clone the repository
-git clone https://github.com/Hermes-Lekkas/Kalynt.git
+git clone https://github.com/RoodyNorman/Kalynt_Development.git
 cd Kalynt
 
 # Install dependencies

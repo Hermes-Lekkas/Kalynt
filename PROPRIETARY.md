@@ -1,7 +1,7 @@
 # Proprietary Files & Scripts
 
 The following files and scripts in this repository are **Proprietary & Confidential**. 
-They are the exclusive intellectual property of **Hermes Lekkas**.
+They are the exclusive intellectual property of **Hermes Lekkas** (hermeslekkasdev@gmail.com).
 
 **IMPORTANT NOTICE:**
 These files are visible for reference purposes only. You may **NOT**:

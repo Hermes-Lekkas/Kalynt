@@ -1,11 +1,11 @@
 {
     "name": "@kalynt/desktop",
-    "version": "1.0.3-beta",
+    "version": "1.0.4-beta",
     "private": true,
     "productName": "Kalynt",
     "author": {
         "name": "Hermes Lekkas",
-        "email": "lekkasermis@gmail.com"
+        "email": "hermeslekkasdev@gmail.com"
     },
     "homepage": "https://github.com/RoodyNorman/Kalynt_Development",
     "description": "Kalynt Desktop Application",
@@ -130,8 +130,8 @@
         ],
         "publish": {
             "provider": "github",
-            "owner": "Hermes-Lekkas",
-            "repo": "Kalynt",
+            "owner": "RoodyNorman",
+            "repo": "Kalynt_Development",
             "private": false,
             "releaseType": "release"
         },

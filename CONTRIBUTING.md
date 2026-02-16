@@ -26,7 +26,7 @@ kalynt/
 
 2.  **Setup**:
     ```bash
-    git clone https://github.com/HermesLekkas/kalynt.git
+    git clone https://github.com/RoodyNorman/Kalynt_Development.git
     cd kalynt
     npm install
     ```
@@ -78,4 +78,4 @@ These files are marked with a `PROPRIETARY & CONFIDENTIAL` header (or similar in
 By contributing, you agree that your contributions will be licensed under the **AGPL-3.0-only** license.
 
 ---
-© 2026 Hermes Lekkas. All rights reserved.
+© 2026 Hermes Lekkas (hermeslekkasdev@gmail.com). All rights reserved.

@@ -1,6 +1,6 @@
 {
     "name": "kalynt",
-    "version": "1.0.3-beta",
+    "version": "1.0.4-beta",
     "private": true,
     "description": "Serverless P2P Team Collaboration Platform",
     "workspaces": [
@@ -37,6 +37,9 @@
         "class-validator": "0.14.1",
         "validator": "13.15.22"
     },
-    "author": "Hermes Lekkas",
+    "author": {
+        "name": "Hermes Lekkas",
+        "email": "hermeslekkasdev@gmail.com"
+    },
     "license": "Proprietary"
 }
