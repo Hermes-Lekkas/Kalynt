@@ -15,10 +15,10 @@ const shouldObfuscate = process.env.OBFUSCATE === 'true'
 // These are the ONLY files that will be obfuscated to prevent build failures
 // ============================================================================
 const PROPRIETARY_FILES = [
-    // Backend Services
+    // Backend Services (Node.js)
     'electron/handlers/llm-inference.ts',
 
-    // Frontend Services
+    // Frontend Services (Browser)
     'src/services/agentService.ts',
     'src/services/offlineLLMService.ts',
     'src/services/aiService.ts',
@@ -35,24 +35,38 @@ const PROPRIETARY_PATHS = PROPRIETARY_FILES.map(p =>
 
 // ============================================================================
 // HEAVY OBFUSCATION CONFIGURATION
+// Optimized for stability and protection
 // ============================================================================
-const OBFUSCATION_OPTIONS = {
-    compact: true,
-    simplify: true,
-    identifierNamesGenerator: 'hexadecimal' as const,
-    stringArray: true,
-    stringArrayCallsTransform: true,
-    stringArrayCallsTransformThreshold: 0.75,
-    stringArrayEncoding: ['rc4' as const],
-    stringArrayThreshold: 0.75,
-    controlFlowFlattening: true,
-    controlFlowFlatteningThreshold: 0.75,
-    deadCodeInjection: true,
-    deadCodeInjectionThreshold: 0.4,
-    numbersToExpressions: true,
-    transformObjectKeys: true,
-    unicodeEscapeSequence: false,
-    sourceMap: false
+function getObfuscationOptions(target: 'node' | 'browser') {
+    return {
+        compact: true,
+        simplify: true,
+        identifierNamesGenerator: 'hexadecimal' as const,
+        
+        // String Protection
+        stringArray: true,
+        stringArrayCallsTransform: true,
+        stringArrayCallsTransformThreshold: 0.5, // Reduced for stability
+        stringArrayEncoding: ['rc4' as const],
+        stringArrayThreshold: 0.5, // Reduced for stability
+        
+        // Control Flow
+        controlFlowFlattening: true,
+        controlFlowFlatteningThreshold: 0.5, // Reduced for stability
+        deadCodeInjection: false, // Disabled as it frequently causes build crashes in large files
+        
+        // Safety
+        numbersToExpressions: true,
+        transformObjectKeys: true,
+        unicodeEscapeSequence: false,
+        splitStrings: true,
+        splitStringsChunkLength: 50,
+        
+        // Environment
+        target: target as any,
+        sourceMap: false,
+        selfDefending: false // Disabled to prevent runtime infinite loops in some environments
+    }
 }
 
 function createObfuscatorPlugin(): Plugin {
@@ -70,10 +84,14 @@ function createObfuscatorPlugin(): Plugin {
 
             if (!shouldObfuscateFile) return null
 
-            console.log(`[Obfuscator] Obfuscating proprietary file: ${path.basename(normalizedId)}`)
+            const isNodeFile = normalizedId.includes('/electron/') || normalizedId.includes('/handlers/')
+            const target = isNodeFile ? 'node' : 'browser'
+            const options = getObfuscationOptions(target)
+
+            console.log(`[Obfuscator] Obfuscating proprietary ${target} file: ${path.basename(normalizedId)}`)
 
             try {
-                const result = JavaScriptObfuscator.obfuscate(code, OBFUSCATION_OPTIONS)
+                const result = JavaScriptObfuscator.obfuscate(code, options)
                 return {
                     code: result.getObfuscatedCode(),
                     map: null
