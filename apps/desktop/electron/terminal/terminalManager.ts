@@ -5,6 +5,7 @@
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
+import { app } from 'electron'
 
 export interface TerminalSession {
     id: string
@@ -42,11 +43,17 @@ export class TerminalSessionManager extends EventEmitter {
 
     constructor(storagePath?: string) {
         super()
-        this.sessionStoragePath = storagePath || path.join(process.cwd(), '.kalynt', 'sessions')
+        // Use app.getPath('userData') instead of process.cwd() to avoid permission issues on Linux
+        const defaultPath = path.join(app.getPath('userData'), 'terminal-sessions')
+        this.sessionStoragePath = storagePath || defaultPath
 
         // Ensure storage directory exists
         if (!fs.existsSync(this.sessionStoragePath)) {
-            fs.mkdirSync(this.sessionStoragePath, { recursive: true })
+            try {
+                fs.mkdirSync(this.sessionStoragePath, { recursive: true })
+            } catch (err) {
+                console.error('[SessionManager] Failed to create sessions dir:', err)
+            }
         }
 
         // Load saved sessions

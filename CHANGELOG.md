@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v1.0.4-beta] - 2026-02-15
+## [v1.0.4-beta] - 2026-02-16
 
 ### Key Highlights
 
@@ -50,10 +50,11 @@ All notable changes to this project will be documented in this file.
 - **XSS Mitigation:** Replaced unsafe HTML rendering with `react-syntax-highlighter` in code blocks.
 - **Filesystem Hardening:** Enhanced path validation logic to resolve symlinks before checking bounds.
 
-#### Visual Polish
-- Added missing icons (`Globe`, `History`, `Settings`).
-- Fixed styling in Member Management tab.
-- Improved button hover states and active indicators.
+#### Linux Compatibility
+- **Fixed Crash on Launch:** Disabled window transparency on Linux platforms to prevent segmentation faults common on Wayland and modern Ubuntu versions.
+- **Binary Naming:** Fixed an issue where the executable was incorrectly named `@kalyntdesktop`. It is now correctly named `kalynt`.
+- **Permission Fixes:** Updated terminal session storage to use `userData` directory instead of `process.cwd()`, preventing crashes when launched from read-only environments.
+- **Icon Support:** Improved desktop integration by using PNG icons specifically for Linux builds.
 
 #### Documentation
 - Updated licensing information to clearly distinguish between AGPL-3.0 core modules and Proprietary Pro modules.

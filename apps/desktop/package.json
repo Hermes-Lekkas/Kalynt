@@ -160,6 +160,7 @@
         },
         "linux": {
             "icon": "public/Kalynt.png",
+            "executableName": "kalynt",
             "target": [
                 "AppImage",
                 "deb"

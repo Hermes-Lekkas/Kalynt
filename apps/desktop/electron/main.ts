@@ -113,6 +113,8 @@ function ensureExtensionsDir() {
 
 // Window management
 function createWindow() {
+    const isLinux = process.platform === 'linux'
+    
     const win = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -121,15 +123,17 @@ function createWindow() {
         frame: false,
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         ...(process.platform === 'darwin' && { trafficLightPosition: { x: 16, y: 16 } }),
-        icon: path.join(__dirname, VITE_DEV_SERVER_URL ? '../public/Kalynt_256x256.ico' : '../dist/Kalynt_256x256.ico'),
+        icon: path.join(__dirname, VITE_DEV_SERVER_URL 
+            ? (isLinux ? '../public/Kalynt.png' : '../public/Kalynt_256x256.ico')
+            : (isLinux ? '../dist/Kalynt.png' : '../dist/Kalynt_256x256.ico')),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true  // SECURITY: Enable OS-level process isolation
         },
-        transparent: true,
-        backgroundColor: '#00000000',
+        transparent: !isLinux, // Disable transparency on Linux to prevent crashes
+        backgroundColor: isLinux ? '#1e1e1e' : '#00000000', // Use solid background on Linux
         show: false
     })
 
