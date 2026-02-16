@@ -4,23 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [v1.0.4-beta] - 2026-02-15
 
-### 🌟 Key Highlights
+### Key Highlights
 
-#### 🎨 Unified & Modern UI
+#### Unified & Modern UI
 - **Redesigned Settings Panel:** Completely rebuilt `UnifiedSettingsPanel` with a sleek, glassmorphism-based design, proper sidebar, responsive tabs, and a dedicated "Danger Zone".
 - **Streamlined Agent Header:** Simplified `UnifiedAgentPanel` header by removing cluttered buttons and adding a unified "Configure AI" entry point.
 - **Compact Mode Switcher:** Added pill-style toggles for "Cloud" vs "Local" AI modes and "Chat" vs "AI Scan" tabs.
 
-#### 💬 Persistent Chat History
+#### Persistent Chat History
 - **Automatic Saving:** AI conversations are now automatically saved to a local SQLite/JSON database.
 - **History Panel:** Added a "Previous Chats" overlay for browsing, renaming, and deleting past sessions.
 - **Session Management:** Users can now pick up exactly where they left off.
 
-#### ↔️ Resizable Panels Everywhere
+#### Resizable Panels Everywhere
 - **Draggable Agent Sidebar:** The right-hand Agent panel is now fully resizable.
 - **Consistent Layout:** Resizing logic matches Terminal and File Explorer behavior.
 
-### 🛠️ Improvements & Fixes
+### Improvements & Fixes
 
 #### Resource Monitor
 - Fixed crash caused by missing iVRAM (Integrated VRAM) stats on some systems.
@@ -39,7 +39,11 @@ All notable changes to this project will be documented in this file.
 - Fixed styling in Member Management tab.
 - Improved button hover states and active indicators.
 
-### 🧩 Architecture
+#### Documentation
+- Updated licensing information to clearly distinguish between AGPL-3.0 core modules and Proprietary Pro modules.
+- Removed emojis from documentation for a cleaner, professional look.
+
+### Architecture
 
 #### Chat Store
 - Introduced dedicated `chatStore` (Zustand + Persistence) to manage sessions independently of main application state.
@@ -49,7 +53,7 @@ All notable changes to this project will be documented in this file.
 
 ## [v1.0.3-beta] - 2026-02-03
 
-### 🔧 Team Collaboration Fixes
+### Team Collaboration Fixes
 
 #### Workspace Sharing Bug Fixed
 - **Issue**: When sharing a workspace link, the joiner would see "Shared Space" instead of the actual workspace name
@@ -68,7 +72,7 @@ All notable changes to this project will be documented in this file.
 - **Root Cause**: Password was stored in localStorage AFTER setting the current space, causing `useYDoc` to connect before the password was available
 - **Fix**: Password is now stored BEFORE triggering the space change, ensuring both users join the same encrypted room (`kalynt-{spaceId}#{password}`)
 
-### 🛡️ Security Hardening
+### Security Hardening
 
 #### Command Injection Prevention
 - Added allowlists for safe commands in `dependencyManager.ts` and `debug.ts`
@@ -99,7 +103,7 @@ All notable changes to this project will be documented in this file.
 - Restricts script sources to 'self' and required API endpoints
 - Prevents XSS attacks from loading external malicious scripts
 
-### 🔧 Bug Fixes
+### Bug Fixes
 
 #### Offline LLM ESM Loading Fixed
 - **Issue**: Offline AI engine failed to load with "require() of ES Module not supported" error
@@ -122,7 +126,7 @@ All notable changes to this project will be documented in this file.
 - **Issue**: `storageService.ts` used `fromCodePoint`/`codePointAt` instead of `fromCharCode`/`charCodeAt`
 - **Fix**: Corrected to use byte-appropriate methods for Uint8Array serialization
 
-### 📁 Files Modified
+### Files Modified
 - `apps/desktop/src/services/p2pService.ts` - Added `spaceName` parameter to link generation/parsing
 - `apps/desktop/src/components/CollaborationPanel.tsx` - Fixed join flow race condition, use parsed workspace name
 - `apps/desktop/src/hooks/useYjs.ts` - Salt sharing, memory leak fix for salt listener
