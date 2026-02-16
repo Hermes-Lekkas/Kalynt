@@ -61,6 +61,13 @@ Kalynt is built on a robust, modern tech stack:
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for a deep dive into the system design.
 
+### Codebase Statistics
+As of February 2026, the Kalynt project consists of **~67,785 lines of code**:
+*   **Renderer (React/UI):** 53,542 lines
+*   **Main Process (Electron/Native):** 13,024 lines
+*   **Shared Packages:** 443 lines
+*   **Build Scripts & Utils:** 776 lines
+
 ---
 
 ## Installation
