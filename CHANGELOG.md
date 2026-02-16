@@ -52,8 +52,11 @@ All notable changes to this project will be documented in this file.
 
 #### Linux Compatibility
 - **Fixed Crash on Launch:** Disabled window transparency on Linux platforms to prevent segmentation faults common on Wayland and modern Ubuntu versions.
+- **Early Path Resolution:** Fixed a critical crash caused by accessing `app.getPath('userData')` before the Electron app was ready.
+- **Native Module Synchronization:** Rebuilt `node-pty` and `better-sqlite3` specifically for Electron 28 to resolve ABI-related segmentation faults.
 - **Binary Naming:** Fixed an issue where the executable was incorrectly named `@kalyntdesktop`. It is now correctly named `kalynt`.
 - **Permission Fixes:** Updated terminal session storage to use `userData` directory instead of `process.cwd()`, preventing crashes when launched from read-only environments.
+- **Stability Flags:** Integrated `--disable-software-rasterizer` and `--no-sandbox` into development scripts for maximum reliability on modern distributions.
 - **Icon Support:** Improved desktop integration by using PNG icons specifically for Linux builds.
 
 #### Documentation

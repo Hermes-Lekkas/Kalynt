@@ -56,6 +56,7 @@ Kalynt Website/
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
 .codesight/scan_configs/Rapid_Scan_Static_Kalynt.json
+SKILL.md
 
 # Documentation cleanup
 *.md
@@ -65,3 +66,4 @@ Kalynt Website/
 !CHANGELOG.md
 !ARCHITECTURE.md
 !PROPRIETARY.md
+!DEVELOPER_GUIDE.md

@@ -70,7 +70,7 @@ interface ActiveExtension {
 
 class ExtensionHostManager {
   private extensionHostProcess: ChildProcess | null = null
-  private extensionsDir: string
+  private extensionsDir: string = ''
   private extensions: Map<string, ExtensionMetadata> = new Map()
   private activeExtensions: Map<string, ActiveExtension> = new Map()
   private loadedExtensions: Set<string> = new Set()
@@ -81,18 +81,20 @@ class ExtensionHostManager {
   private pendingMessages: Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }> = new Map()
 
   constructor() {
-    this.extensionsDir = path.join(app.getPath('userData'), 'extensions')
-    this.ensureExtensionsDir()
     this.setupIPCHandlers()
   }
 
-  private ensureExtensionsDir(): void {
-    if (!fs.existsSync(this.extensionsDir)) {
-      fs.mkdirSync(this.extensionsDir, { recursive: true })
+  private initExtensionsDir(): void {
+    if (!this.extensionsDir) {
+      this.extensionsDir = path.join(app.getPath('userData'), 'extensions')
+      if (!fs.existsSync(this.extensionsDir)) {
+        fs.mkdirSync(this.extensionsDir, { recursive: true })
+      }
     }
   }
 
   async start(): Promise<void> {
+    this.initExtensionsDir()
     if (this.extensionHostProcess) {
       return
     }

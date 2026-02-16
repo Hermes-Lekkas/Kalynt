@@ -120,7 +120,7 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        frame: false,
+        frame: isLinux, // Enable frame on Linux for better compatibility
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         ...(process.platform === 'darwin' && { trafficLightPosition: { x: 16, y: 16 } }),
         icon: path.join(__dirname, VITE_DEV_SERVER_URL 
@@ -130,7 +130,7 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: true  // SECURITY: Enable OS-level process isolation
+            sandbox: !isLinux  // Disable sandbox on Linux for dev stability
         },
         transparent: !isLinux, // Disable transparency on Linux to prevent crashes
         backgroundColor: isLinux ? '#1e1e1e' : '#00000000', // Use solid background on Linux
@@ -310,11 +310,13 @@ if (!gotTheLock) {
     })
 
     app.whenReady().then(() => {
+        console.log('[Main] App ready, initializing...');
         // Initialize directory paths
         MODELS_DIR = path.join(app.getPath('userData'), 'models')
         RUNTIMES_DIR = path.join(app.getPath('userData'), 'runtimes')
         EXTENSIONS_DIR = path.join(app.getPath('userData'), 'extensions')
 
+        console.log('[Main] Ensuring directories...');
         // Initialize services
         runtimeManager = new RuntimeManager(RUNTIMES_DIR)
 
@@ -322,18 +324,22 @@ if (!gotTheLock) {
         ensureRuntimesDir()
         ensureExtensionsDir()
         
+        console.log('[Main] Registering handlers...');
         // Register handlers BEFORE creating window to ensure they are available
         registerAllHandlers()
         
+        console.log('[Main] Creating window...');
         createWindow()
         
         // Initialize extension host
+        console.log('[Main] Starting extension host...');
         extensionHostManager.start().catch(err => {
             console.error('[Main] Failed to start extension host:', err)
         })
 
         // Initialize auto-updater (after window is created)
         if (mainWindow) {
+            console.log('[Main] Initializing auto-updater...');
             initializeAutoUpdater(mainWindow).catch(err => {
                 console.error('[Main] Failed to initialize auto-updater:', err)
             })

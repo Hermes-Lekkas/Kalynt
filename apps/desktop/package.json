@@ -18,7 +18,8 @@
         "build:prod": "cross-env NODE_ENV=production tsc && cross-env NODE_ENV=production vite build && electron-builder",
         "build:secure": "cross-env NODE_ENV=production OBFUSCATE=false tsc && cross-env NODE_ENV=production vite build && electron-builder",
         "preview": "vite preview",
-        "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+        "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox --disable-gpu --disable-software-rasterizer\"",
+        "electron:dev:linux": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox --disable-gpu --disable-software-rasterizer --ozone-platform-hint=auto\"",
         "electron:build": "vite build && electron-builder",
         "electron:build:secure": "cross-env NODE_ENV=production OBFUSCATE=false vite build && electron-builder"
     },
@@ -66,6 +67,7 @@
         "zustand": "^4.4.0"
     },
     "devDependencies": {
+        "@electron/rebuild": "^4.0.3",
         "@types/better-sqlite3": "^7.6.0",
         "@types/lodash.debounce": "^4.0.9",
         "@types/path-browserify": "^1.0.3",

@@ -10,6 +10,8 @@
     "scripts": {
         "dev": "npm run dev --workspace=apps/desktop",
         "dev:web": "npm run dev:web --workspace=apps/desktop",
+        "electron:dev": "npm run electron:dev --workspace=apps/desktop",
+        "electron:dev:linux": "npm run electron:dev:linux --workspace=apps/desktop",
         "build": "npm run build --workspace=apps/desktop",
         "build:secure": "npm run build:secure --workspace=apps/desktop",
         "electron:build:secure": "npm run electron:build:secure --workspace=apps/desktop",

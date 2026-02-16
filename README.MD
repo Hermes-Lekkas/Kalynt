@@ -39,6 +39,16 @@
 
 ---
 
+## Compatibility & Testing
+
+Kalynt is a cross-platform application, but testing coverage varies by operating system:
+
+*   **Windows:** **Extensively Tested.** Full support for local LLM acceleration (CUDA/DirectML) and native PTY.
+*   **Linux (Ubuntu/Debian):** **Extensively Tested.** Optimized for modern distributions (Ubuntu 24.04+). Includes specific stability fixes for Wayland and transparency.
+*   **macOS:** **Limited Testing.** Support for Apple Silicon (M1/M2/M3) is implemented but has received less frequent verification.
+
+---
+
 ## Architecture
 
 Kalynt is built on a robust, modern tech stack:
