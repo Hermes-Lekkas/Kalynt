@@ -52,10 +52,11 @@ Thumbs.db
 Kalynt Website/
 
 # Internal Scripts
-/scripts/clean-proprietary-files.js
+/scripts/
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
-.codesight/scan_configs/Rapid_Scan_Static_Kalynt.json
+.codesight/scan_configs/
+.github/workflows/
 SKILL.md
 
 # Documentation cleanup
