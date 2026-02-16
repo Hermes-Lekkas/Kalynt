@@ -63,8 +63,11 @@ const BINARY_EXTENSIONS = new Set([
 // Security: ReDoS protection
 const MAX_REGEX_TIME_MS = 100
 const DANGEROUS_PATTERNS = [
+  // eslint-disable-next-line security/detect-unsafe-regex
   /(\(.*\+.*\))+/,
+  // eslint-disable-next-line security/detect-unsafe-regex
   /(\(.*\*.*\))+/,
+  // eslint-disable-next-line security/detect-unsafe-regex
   /(\(.*\{.*,.*\}.*\))+/,
 ]
 

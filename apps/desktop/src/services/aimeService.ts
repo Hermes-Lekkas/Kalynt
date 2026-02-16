@@ -74,7 +74,7 @@ class AIMEService {
                     total: data.total 
                 })
                 break
-            case 'indexingComplete':
+            case 'indexingComplete': {
                 this.isIndexing = false
                 logger.agent.info('AIME Worker: Indexing complete', {
                     processed: data.processed,
@@ -88,13 +88,15 @@ class AIMEService {
                     this.workerCallbacks.delete('indexComplete')
                 }
                 break
-            case 'searchResults':
+            }
+            case 'searchResults': {
                 const searchCallback = this.workerCallbacks.get(`search:${data.query}`)
                 if (searchCallback) {
                     searchCallback(data.results)
                     this.workerCallbacks.delete(`search:${data.query}`)
                 }
                 break
+            }
             case 'error':
                 logger.agent.error('AIME Worker error:', data)
                 break
@@ -497,7 +499,7 @@ class AIMEService {
                     const end = Math.min(file.content.split('\n').length, firstSymbol.line + 20)
                     context += file.content.split('\n').slice(start, end).join('\n')
                 }
-                context += '\n\`\`\`\n\n'
+                context += '\n```\n\n'
             }
         }
 

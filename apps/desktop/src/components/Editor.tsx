@@ -215,7 +215,7 @@ export default function Editor() {
         <div className="editor-body">
           {!canEdit && (
             <div className="permission-notice">
-              ðŸ”’ View Only - You don't have permission to edit
+              ðŸ”’ View Only - You don&apos;t have permission to edit
             </div>
           )}
 

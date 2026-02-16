@@ -858,7 +858,7 @@ export default function UnifiedAgentPanel({
         }
 
         if (msg.role === 'tool') {
-            let output = msg.toolResult || ''
+            const output = msg.toolResult || ''
             let isJson = false
             let jsonResult: any = null
 

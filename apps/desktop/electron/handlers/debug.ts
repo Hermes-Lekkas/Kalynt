@@ -34,10 +34,12 @@ interface WatchExpression {
   error?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 interface DebugSessionManager {
   watchExpressions: Map<string, WatchExpression[]>; // sessionId -> expressions
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 class DebugSessionManager {
   private sessions: Map<string, DebugSession> = new Map();
   private adapters: Map<string, DebugAdapter> = new Map();

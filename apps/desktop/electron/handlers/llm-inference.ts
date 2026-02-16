@@ -473,7 +473,7 @@ export function registerLLMInferenceHandlers(
             // Capture model reference at start to detect if it gets unloaded during generation
             const currentModel = llamaModel
             let sequence: any = null
-            let draftContext: any = null
+            const draftContext: any = null
             let draftSequence: any = null
             try {
                 sequence = llamaContext!.getSequence()
@@ -606,9 +606,7 @@ export function registerLLMInferenceHandlers(
                     if (!event.sender.isDestroyed()) {
                         event.sender.send(channel, data)
                     }
-                } catch (_error) {
-
-                }
+                            } catch (_error) { /* ignore */ }
             }
 
             const abortController = new AbortController()
@@ -775,14 +773,14 @@ export function registerLLMInferenceHandlers(
                     event.sender.send('generate-completion-complete', { requestId, error: errorMessage })
                 }
             } catch (_error) {
-
+                // ignore
             }
         } finally {
 
             activeGenerations.delete(requestId)
 
             if (!event.sender.isDestroyed()) {
-
+                // ignore
             }
         }
     })

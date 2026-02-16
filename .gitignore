@@ -55,6 +55,7 @@ Kalynt Website/
 /scripts/clean-proprietary-files.js
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
+.codesight/scan_configs/Rapid_Scan_Static_Kalynt.json
 
 # Documentation cleanup
 *.md

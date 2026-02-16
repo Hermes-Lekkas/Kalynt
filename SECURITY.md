@@ -1,6 +1,6 @@
 # Security Policy
 
-## 🛡️ Security Philosophy
+##  Security Philosophy
 
 Kalynt is built on a "Trust No One" (Zero Trust) architecture. We assume that networks are compromised and that privacy is a fundamental right.
 
@@ -13,7 +13,7 @@ Kalynt is built on a "Trust No One" (Zero Trust) architecture. We assume that ne
 
 ---
 
-## 🔒 Security Features
+##  Security Features
 
 ### 1. P2P Collaboration Encryption
 *   **Protocol:** WebRTC (Data Channels).
@@ -35,7 +35,7 @@ Kalynt is built on a "Trust No One" (Zero Trust) architecture. We assume that ne
 
 ---
 
-## 🐛 Reporting Vulnerabilities
+##  Reporting Vulnerabilities
 
 We take security vulnerabilities seriously. If you discover a security issue, please **DO NOT** open a public issue.
 
@@ -50,8 +50,14 @@ We will acknowledge receipt within 48 hours and strive to provide a patch within
 
 ---
 
-## 📝 Security Updates (v1.0.4-beta)
+##  Security Updates (v1.0.4-beta)
 
+*   **Electron Sandboxing (SEC-001):** Enabled the `sandbox: true` flag for Electron renderers to enforce strict process isolation.
+*   **Dynamic Import Validation (SEC-002):** Implemented strict path validation for local LLM modules before dynamic `import()` to prevent unauthorized code execution.
+*   **Deep Link Hardening (SEC-003):** Added rigorous validation for custom protocol deep links to prevent URL-based injection attacks.
+*   **Environment Filtering (SEC-004):** Whitelisted safe environment variables for child processes to prevent credential leakage.
+*   **Sanitized Debugging (SEC-006):** Hardened the debug handler to sanitize input from `package.json` fields, preventing path traversal during debugger initialization.
+*   **Update Integrity (SEC-008):** Added GitHub token validation and checksum verification to the update handler.
 *   **Enhanced Path Sanitization:** Hardened `file-system.ts` against advanced path traversal techniques involving complex symlink chains.
+*   **XSS Mitigation:** Replaced `dangerouslySetInnerHTML` with `react-syntax-highlighter` in `CodeBlockRenderer.tsx` and enhanced AI response sanitization in `UnifiedAgentPanel.tsx`.
 *   **Dependency Audits:** Updated `node-llama-cpp` and `electron` to patched versions.
-*   **Chat Persistence:** Chat history database is stored locally in the user's `AppData` folder, ensuring conversation data remains private and is not synced to any cloud.

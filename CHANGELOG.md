@@ -22,17 +22,33 @@ All notable changes to this project will be documented in this file.
 
 ### Improvements & Fixes
 
-#### Resource Monitor
-- Fixed crash caused by missing iVRAM (Integrated VRAM) stats on some systems.
+#### Performance & Stability
+- **Resource Monitor:** Fixed crash caused by missing iVRAM (Integrated VRAM) stats on some systems.
+- **Build Stability:** Resolved numerous TypeScript errors and unused variable warnings blocking production builds.
+- **File Watcher:** Optimized watcher to prevent over-firing during workspace indexing.
+- **Resize Lifecycle (BUG-001):** Fixed resize listener lifecycle in `IDEWorkspace.tsx` to prevent memory leaks.
+- **Agent Service (BUG-009/010):** Added immediate state sync for callbacks and introduced error type classification.
+- **Member Sync (BUG-002/003):** Improved promise handling and prevented double-processing in `MemberSyncService`.
 
-#### Build Stability
-- Resolved numerous TypeScript errors and unused variable warnings blocking production builds.
+#### Collaboration & P2P
+- **P2P Hardening (SEC-007/BUG-011/012):** Added rate limiter cleanup and fixed peer count consistency in `p2pService.ts`.
+- **Encryption Flow (BUG-007):** Added proper error handling for encryption initialization failures.
+- **State Sync (BUG-005/006):** Fixed race conditions in salt listener setup in `useYjs.ts`.
 
-#### Performance
-- Optimized file watcher to prevent over-firing during workspace indexing.
+#### AI & Agent Panel
+- **Scan Stability (BUG-008):** Added `isMounted` checks to prevent state updates on unmounted scan loops.
+- **Error Handling (BUG-004):** Introduced `AnalysisTimeoutError` for better feedback during long AI scans.
+- **Action Handlers (FEAT-001):** Implemented a new "Suggest Action" handler in the agent service.
 
 #### Security
-- Enhanced path validation in file system handlers to prevent potential traversal attacks.
+- **Electron Sandboxing (SEC-001):** Enabled renderer sandboxing for enhanced process isolation.
+- **Import Validation (SEC-002):** Added module path validation before dynamic imports in LLM inference.
+- **Deep Link Security (SEC-003):** Implemented validation for application deep links to prevent injection.
+- **Env Var Filtering (SEC-004):** Whitelisted safe environment variables for child processes in the debugger.
+- **Path Sanitization (SEC-006):** Sanitized entry point paths in the debug handler to prevent traversal.
+- **Update Integrity (SEC-008):** Added validation for update tokens and metadata.
+- **XSS Mitigation:** Replaced unsafe HTML rendering with `react-syntax-highlighter` in code blocks.
+- **Filesystem Hardening:** Enhanced path validation logic to resolve symlinks before checking bounds.
 
 #### Visual Polish
 - Added missing icons (`Globe`, `History`, `Settings`).
@@ -142,25 +158,3 @@ All notable changes to this project will be documented in this file.
 - `apps/desktop/src/services/agentService.ts` - Promise handling fix
 - `apps/desktop/src/services/storageService.ts` - Binary encoding fix
 
-Summary of Fixes
-Phase 1: Critical Security (1 fix)
-SEC-001: Enabled Electron sandbox (sandbox: true) in main.ts
-Phase 2: High Security (5 fixes)
-SEC-002: Added module path validation in llm-inference.ts - validates paths before dynamic import
-SEC-003: Added deep link URL validation in main.ts - prevents URL-based attacks
-SEC-004: Added env var filtering in debug.ts - whitelist of safe debug env vars
-SEC-006: Added file path sanitization in debug.ts - sanitizes package.json main field
-Phase 3: High Bugs (6 fixes)
-BUG-001: Fixed resize listener lifecycle in IDEWorkspace.tsx
-BUG-002/003: Fixed MemberSyncService promise handling and double-processing in memberSyncService.ts
-BUG-004: Added custom AnalysisTimeoutError class in UnifiedAgentPanel.tsx
-BUG-005/006: Fixed salt listener race condition in useYjs.ts with setup instance tracking
-Phase 4: Medium Issues (9 fixes)
-SEC-007/BUG-011/012: Added P2P rate limiter cleanup, peer count consistency in p2pService.ts
-BUG-007: Added encryption init error handling in UnifiedAgentPanel.tsx
-BUG-008: Added isMounted ref for scan loop in UnifiedAgentPanel.tsx
-BUG-009: Added immediate state sync in setCallbacks in agentService.ts
-BUG-010: Added error type classification in aiService.ts
-SEC-008: Added GitHub token validation in update-handler.ts
-Phase 5: Feature (1 implementation)
-FEAT-001: Implemented suggest action handler in agentService.ts

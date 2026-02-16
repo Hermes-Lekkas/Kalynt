@@ -218,7 +218,7 @@ function extractPlan(response: string): AgentPlan | null {
                 id: crypto.randomUUID(),
                 title: 'Execution Plan',
                 steps: lines.map((line: string) => ({
-                    description: line.replace(/^\d+[\.\)]\s*/, '').trim(),
+                    description: line.replace(/^\d+[.)]\s*/, '').trim(),
                     status: 'pending' as const
                 })),
                 status: 'proposed',

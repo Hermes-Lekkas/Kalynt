@@ -80,7 +80,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for gu
 
 ## Licensing & Proprietary Modules
 
-Kalynt is open-source software with specific proprietary modules.
+Kalynt is open-core software with specific proprietary modules.
 
 ### Open Source Core (AGPL-3.0)
 The core of the application, including the UI, basic editor functions, networking, and CRDT logic, is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
