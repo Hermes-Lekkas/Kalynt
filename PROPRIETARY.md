@@ -32,7 +32,7 @@ The following modules are also designated as proprietary in `CONTRIBUTING.md`, e
 ## License Terms
 
 Per the [LICENSE](./LICENSE) file:
-> The "Proprietary Pro Modules" are the exclusive intellectual property of Hermes Lekkas.
-> This applies to all files containing the header: `Copyright 2026 Hermes Lekkas. PROPRIETARY & CONFIDENTIAL.`
+> The "Proprietary Pro Modules" are the exclusive intellectual property of Hermes Lekkas (hermeslekkasdev@gmail.com).
+> This applies to all files containing the header: `Copyright 2026 Hermes Lekkas (hermeslekkasdev@gmail.com). PROPRIETARY & CONFIDENTIAL.`
 
 By downloading or using this software, you agree to these terms.

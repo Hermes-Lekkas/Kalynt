@@ -94,4 +94,4 @@ Kalynt is open-source software licensed under the **AGPL-3.0**.
 *   **Core:** Free and open.
 *   **Extensions:** Can be proprietary or open.
 
-Copyright © 2026 Hermes Lekkas.
+Copyright © 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).

@@ -1,5 +1,5 @@
 /**
- * Copyright 2026 Hermes Lekkas.
+ * Copyright 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).
  * PROPRIETARY & CONFIDENTIAL.
  * 
  * Persistent Audit Logging Service
