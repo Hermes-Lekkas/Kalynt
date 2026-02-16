@@ -3,7 +3,11 @@
     "version": "1.0.3-beta",
     "private": true,
     "productName": "Kalynt",
-    "author": "Hermes Lekkas",
+    "author": {
+        "name": "Hermes Lekkas",
+        "email": "lekkasermis@gmail.com"
+    },
+    "homepage": "https://github.com/RoodyNorman/Kalynt_Development",
     "description": "Kalynt Desktop Application",
     "main": "dist-electron/main.js",
     "scripts": {
@@ -149,6 +153,7 @@
             "target": [
                 "dmg"
             ],
+            "artifactName": "${productName}-${version}.${ext}",
             "category": "public.app-category.developer-tools",
             "hardenedRuntime": true,
             "gatekeeperAssess": false
@@ -159,6 +164,7 @@
                 "AppImage",
                 "deb"
             ],
+            "artifactName": "${productName}-${version}.${ext}",
             "category": "Development"
         }
     }
