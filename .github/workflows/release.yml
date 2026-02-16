@@ -55,9 +55,9 @@ jobs:
             libsecret-1-dev \
             libx11-dev \
             libxkbfile-dev \
-            libasound2 \
+            libasound2t64 || sudo apt-get install -y libasound2 \
             libnss3 \
-            libatk-bridge2.0-0 \
+            libatk-bridge2.0-0t64 || sudo apt-get install -y libatk-bridge2.0-0 \
             libgtk-3-0 \
             libgbm1
 
@@ -69,7 +69,7 @@ jobs:
       - name: Build and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OBFUSCATE: "true"
+          OBFUSCATE: "false"
           # Increase memory for large builds and obfuscation
           NODE_OPTIONS: "--max-old-space-size=6144"
           # Skip signing if secrets are not available (for PRs/manual builds)
