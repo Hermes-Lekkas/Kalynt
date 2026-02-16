@@ -12,11 +12,11 @@
         "build": "tsc && vite build && electron-builder",
         "build:vite": "tsc && vite build",
         "build:prod": "cross-env NODE_ENV=production tsc && cross-env NODE_ENV=production vite build && electron-builder",
-        "build:secure": "cross-env NODE_ENV=production OBFUSCATE=true tsc && cross-env NODE_ENV=production vite build && electron-builder",
+        "build:secure": "cross-env NODE_ENV=production OBFUSCATE=false tsc && cross-env NODE_ENV=production vite build && electron-builder",
         "preview": "vite preview",
         "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
         "electron:build": "vite build && electron-builder",
-        "electron:build:secure": "cross-env NODE_ENV=production OBFUSCATE=true vite build && electron-builder"
+        "electron:build:secure": "cross-env NODE_ENV=production OBFUSCATE=false vite build && electron-builder"
     },
     "dependencies": {
         "@monaco-editor/react": "^4.7.0",
@@ -145,7 +145,7 @@
             "verifyUpdateCodeSignature": false
         },
         "mac": {
-            "icon": "public/Kalynt_256x256.ico",
+            "icon": "public/Kalynt.png",
             "target": [
                 "dmg"
             ],
@@ -154,7 +154,7 @@
             "gatekeeperAssess": false
         },
         "linux": {
-            "icon": "public/Kalynt_256x256.ico",
+            "icon": "public/Kalynt.png",
             "target": [
                 "AppImage",
                 "deb"
