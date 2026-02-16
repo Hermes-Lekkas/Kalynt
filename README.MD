@@ -17,29 +17,29 @@
 
 ---
 
-##  Key Features
+## 🚀 Key Features
 
-###  Autonomous AI Agent (AIME)
+### 🤖 Autonomous AI Agent (AIME)
 *   **Local Inference:** Run LLMs (Llama 3, Mistral, CodeQwen) directly on your CPU/GPU using `node-llama-cpp`. No internet required.
 *   **Agentic Loop:** An autonomous ReAct (Reasoning + Acting) loop that can plan, execute terminal commands, edit files, and fix bugs without hand-holding.
-*   **Shadow Workspace:** AI changes are sandboxed and validated before touching your real code.
+*   **Shadow Workspace:** **Safety First.** AI changes are sandboxed and validated in a temporary "shadow" environment before touching your real code.
 *   **Cloud Fallback:** Seamlessly switch to OpenAI (GPT-4o), Anthropic (Claude 3.5), or Google (Gemini 1.5) when you need extra horsepower.
 
-###  Privacy & Security by Design
-*   **Local-First:** Your code, chat history, and embeddings live on your disk.
-*   **P2P Collaboration:** Serverless, end-to-end encrypted collaboration (CRDT + WebRTC). No central server sees your keystrokes.
-*   **Security Scanning:** Integrated static analysis and dependency scanning (Snyk/Trivy compatible).
+### 🔒 Privacy & Security by Design
+*   **Local-First:** Your code, chat history, and vector embeddings live strictly on your disk.
+*   **P2P Collaboration:** Serverless, end-to-end encrypted (AES-256-GCM) collaboration using CRDTs and WebRTC. No central server sees your keystrokes.
+*   **Security Scanning:** Integrated static analysis and dependency scanning.
 
-###  Modern Developer Experience
-*   **Unified & Modern UI:** A sleek, glassmorphism-based interface with a redesigned Settings Panel and streamlined Agent controls.
-*   **Monaco Editor:** The battle-tested core of VS Code, enhanced with AI inline completions and diff views.
+### 💻 Modern Developer Experience
+*   **Unified & Modern UI:** A sleek, glassmorphism-based interface with a redesigned Settings Panel.
+*   **Monaco Editor:** The battle-tested core of VS Code, enhanced with AI inline completions.
 *   **Resizable Panels:** Fully customizable layout with draggable Terminal, File Explorer, and Agent Sidebar.
 *   **Chat History:** Persistent, searchable chat sessions with your AI pair programmer.
 *   **Integrated Terminal:** Hardware-accelerated terminal with smart command suggestions.
 
 ---
 
-##  Architecture
+## 🏗️ Architecture
 
 Kalynt is built on a robust, modern tech stack:
 
@@ -53,42 +53,32 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for a deep dive into the system design.
 
 ---
 
-##  Installation
+## 📥 Installation
 
 ### Pre-built Binaries
 Download the latest installer for Windows, macOS, or Linux from the [Releases Page](https://github.com/RoodyNorman/Kalynt_Development/releases).
 
 ### Building from Source
 
-**Prerequisites:**
-*   Node.js 18+
-*   Python 3.10+ (for node-gyp dependencies)
-*   C++ Build Tools (Visual Studio Build Tools on Windows, Xcode on Mac)
+See the [Developer Guide](./DEVELOPER_GUIDE.md) for detailed build instructions.
 
 ```bash
-# Clone the repository
+# Quick Start
 git clone https://github.com/RoodyNorman/Kalynt_Development.git
-cd Kalynt
-
-# Install dependencies
+cd Kalynt_Development
 npm install
-
-# Start in development mode
 npm run dev
-
-# Build for production
-npm run build
 ```
 
 ---
 
-##  Contributing
+## 🤝 Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to submit PRs, report bugs, and request features.
 
 ---
 
-##  License
+## 📜 License
 
 Kalynt is open-source software licensed under the **AGPL-3.0**.
 *   **Core:** Free and open.

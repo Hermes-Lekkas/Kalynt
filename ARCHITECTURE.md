@@ -75,6 +75,9 @@ The command center of the IDE. It unifies:
 *   **Tech:** `simple-peer` (WebRTC) + `y-webrtc`.
 *   **Topology:** Mesh network.
 *   **Conflict Resolution:** CRDTs (Conflict-free Replicated Data Types) via `Yjs` ensure that all peers eventually converge to the same state, even with latency or offline edits.
+*   **Security:**
+    *   **Encryption:** AES-256-GCM for all data channels.
+    *   **Signaling:** Encrypted signaling via STUN/TURN (no payload access by signal server).
 
 ---
 
@@ -98,7 +101,16 @@ The command center of the IDE. It unifies:
 
 ---
 
-## 4. Technology Standards
+## 4. Modular Package Structure
+
+Kalynt uses a monorepo structure to separate concerns and allow for code reuse.
+
+*   **`apps/desktop`**: The main application logic (Renderer & Main).
+*   **`packages/crdt`**: Shared Conflict-free Replicated Data Type logic using `Yjs`. Handles document state and conflict resolution.
+*   **`packages/networking`**: Low-level WebRTC connection management, abstracting peer discovery and connection maintenance.
+*   **`packages/shared`**: Common types, interfaces, and utility functions shared between packages and the main app.
+
+## 5. Technology Standards
 
 *   **Language:** TypeScript (Strict Mode).
 *   **Bundler:** Vite (Fast HMR).
