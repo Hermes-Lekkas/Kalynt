@@ -7,7 +7,7 @@
         "name": "Hermes Lekkas",
         "email": "hermeslekkasdev@gmail.com"
     },
-    "homepage": "https://github.com/RoodyNorman/Kalynt_Development",
+    "homepage": "https://github.com/Hermes-Lekkas/Kalynt",
     "description": "Kalynt Desktop Application",
     "main": "dist-electron/main.js",
     "scripts": {
@@ -132,8 +132,8 @@
         ],
         "publish": {
             "provider": "github",
-            "owner": "RoodyNorman",
-            "repo": "Kalynt_Development",
+            "owner": "Hermes-Lekkas",
+            "repo": "Kalynt",
             "private": false,
             "releaseType": "release"
         },

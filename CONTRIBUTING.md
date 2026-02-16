@@ -26,8 +26,8 @@ kalynt/
 
 2.  **Setup**:
     ```bash
-    git clone https://github.com/RoodyNorman/Kalynt_Development.git
-    cd kalynt
+    git clone https://github.com/Hermes-Lekkas/Kalynt.git
+    cd Kalynt
     npm install
     ```
 

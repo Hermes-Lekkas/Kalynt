@@ -20,8 +20,8 @@ Kalynt is a monorepo managed by npm workspaces.
 
 ```bash
 # Clone the repository
-git clone https://github.com/RoodyNorman/Kalynt_Development.git
-cd Kalynt_Development
+git clone https://github.com/Hermes-Lekkas/Kalynt.git
+cd Kalynt
 
 # Install dependencies
 npm install
