@@ -1,10 +1,5 @@
 /**
- * Copyright 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).
- * PROPRIETARY & CONFIDENTIAL.
- * 
- * This file is part of the Kalynt "Pro" Edition.
- * Unauthorized copying, distribution, or modification of this file, 
- * via any medium, is strictly prohibited.
+ * SPDX-License-Identifier: AGPL-3.0-only
  */
 
 import { logger } from '../utils/logger'

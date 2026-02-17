@@ -1,9 +1,8 @@
 /**
- * Copyright 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).
- * PROPRIETARY & CONFIDENTIAL.
- * 
+ * SPDX-License-Identifier: AGPL-3.0-only
+ *
  * Persistent Audit Logging Service
- * 
+ *
  * This service provides persistent security event logging for compliance
  * and security monitoring. Events are stored in IndexedDB with automatic
  * rotation and export capabilities.

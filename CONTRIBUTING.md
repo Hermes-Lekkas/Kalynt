@@ -49,16 +49,6 @@ We accept Pull Requests (PRs) for the **Open Source Core**:
 
 **Files marked with `SPDX-License-Identifier: AGPL-3.0-only` are open for contribution.**
 
-## What You Cannot Contribute To
-
-The **Proprietary Pro Modules** are closed source. We **do not** accept PRs for:
-
-*   **Agent Logic**: `agentService.ts`, `offlineLLMService.ts`
-*   **AIME Engine**: `llm-inference.ts`
-*   **Cloud Integrations**: `aiService.ts`
-
-These files are marked with a `PROPRIETARY & CONFIDENTIAL` header (or similar indication) and are often obfuscated in production.
-
 ## Submission Guidelines
 
 1.  **Fork the repository**.

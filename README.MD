@@ -95,27 +95,10 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for gu
 
 ---
 
-## Licensing & Proprietary Modules
+## Licensing
 
-Kalynt is open-core software with specific proprietary modules.
+Kalynt is free and open-source software licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-### Open Source Core (AGPL-3.0)
-The core of the application, including the UI, basic editor functions, networking, and CRDT logic, is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 Files marked with `SPDX-License-Identifier: AGPL-3.0-only` are free to use, modify, and distribute under the terms of the AGPL.
-
-### Proprietary Pro Modules
-Certain advanced features are **Proprietary & Confidential** and are the exclusive intellectual property of Hermes Lekkas. You may NOT copy, modify, distribute, or reverse engineer these files.
-
-**Proprietary Files:**
-*   `apps/desktop/electron/handlers/llm-inference.ts`
-*   `apps/desktop/src/components/AIMESettings.tsx`
-*   `apps/desktop/src/services/agentService.ts`
-*   `apps/desktop/src/services/aiService.ts`
-*   `apps/desktop/src/services/auditLogService.ts`
-*   `apps/desktop/src/services/hardwareService.ts`
-*   `apps/desktop/src/services/offlineLLMService.ts`
-*   `apps/desktop/src/types/aime.ts`
-
-These files contain the header: `Copyright 2026 Hermes Lekkas (hermeslekkasdev@gmail.com). PROPRIETARY & CONFIDENTIAL.`
 
 Copyright © 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).
