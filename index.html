@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalynt | Privacy-First AI IDE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .hero-gradient { background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%); }
+        .accent-text { background: linear-gradient(90deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    </style>
+</head>
+<body class="hero-gradient min-h-screen">
+    <nav class="p-6 flex justify-between items-center max-w-7xl mx-auto">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                <i class="fas fa-brain text-white text-xl"></i>
+            </div>
+            <span class="text-2xl font-bold tracking-tight">Kalynt</span>
+        </div>
+        <div class="space-x-8 hidden md:flex items-center">
+            <a href="#features" class="hover:text-blue-400 transition">Features</a>
+            <a href="https://github.com/Hermes-Lekkas/Kalynt" class="hover:text-blue-400 transition">GitHub</a>
+            <a href="https://github.com/Hermes-Lekkas/Kalynt/releases" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 rounded-full font-semibold transition">Download</a>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 pt-20 pb-32 text-center">
+        <h1 class="text-5xl md:text-7xl font-extrabold mb-6">
+            The IDE for <span class="accent-text">Privacy-First</span> AI
+        </h1>
+        <p class="text-xl text-slate-400 max-w-3xl mx-auto mb-10">
+            Local-First AI. End-to-End Encrypted Collaboration. No Subscription Required. 
+            Kalynt embeds autonomous agents directly into your workflow while keeping your code 100% private.
+        </p>
+        
+        <div class="flex flex-wrap justify-center gap-4 mb-20">
+            <a href="https://github.com/Hermes-Lekkas/Kalynt/releases" class="px-8 py-4 bg-blue-600 hover:bg-blue-700 rounded-xl text-lg font-bold transition flex items-center">
+                <i class="fab fa-windows mr-3"></i> Download for Windows
+            </a>
+            <a href="https://github.com/Hermes-Lekkas/Kalynt" class="px-8 py-4 glass hover:bg-slate-800 rounded-xl text-lg font-bold transition">
+                View Source on GitHub
+            </a>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-8 text-left mt-20" id="features">
+            <div class="glass p-8 rounded-2xl">
+                <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-6">
+                    <i class="fas fa-shield-halved text-blue-400 text-xl"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-3">Local-First Privacy</h3>
+                <p class="text-slate-400">Your code, chat history, and vector embeddings live strictly on your disk. No telemetry, no cloud storage by default.</p>
+            </div>
+            <div class="glass p-8 rounded-2xl">
+                <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-6">
+                    <i class="fas fa-microchip text-purple-400 text-xl"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-3">Local Inference</h3>
+                <p class="text-slate-400">Run Llama 3, Mistral, and CodeQwen directly on your hardware using node-llama-cpp with zero latency.</p>
+            </div>
+            <div class="glass p-8 rounded-2xl">
+                <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-6">
+                    <i class="fas fa-users text-emerald-400 text-xl"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-3">P2P Collaboration</h3>
+                <p class="text-slate-400">End-to-end encrypted real-time collaboration. Connect directly with peers via WebRTC—no central server involved.</p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="border-t border-slate-800 py-12 text-center text-slate-500">
+        <p>&copy; 2026 Hermes Lekkas. Released under AGPL-3.0 License.</p>
+    </footer>
+</body>
+</html>

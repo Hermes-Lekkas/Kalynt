@@ -57,6 +57,8 @@ Kalynt Website/
 .agent/rules/snyk_rules.md
 .codesight/scan_configs/
 .github/workflows/
+!index.html
+!.github/workflows/pages.yml
 SKILL.md
 
 # Documentation cleanup
