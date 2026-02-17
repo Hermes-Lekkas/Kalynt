@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .agent/
+/video
 
 # Build outputs
 /dist/

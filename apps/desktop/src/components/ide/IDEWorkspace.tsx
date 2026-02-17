@@ -77,7 +77,17 @@ export default function IDEWorkspace() {
     })
     const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
     const [activeFile, setActiveFile] = useState<string | null>(null)
+    const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
     const [pendingLine, setPendingLine] = useState<number | null>(null)
+
+    const writeToActiveTerminal = useCallback((data: string) => {
+        if (activeTerminalId) {
+            globalThis.window.electronAPI?.terminal.writeOutput({
+                id: activeTerminalId,
+                data
+            })
+        }
+    }, [activeTerminalId])
     const { addNotification } = useNotificationStore()
     const [showTerminal, setShowTerminal] = useState(() => {
         try {
@@ -715,10 +725,7 @@ export default function IDEWorkspace() {
     const handleStopCode = () => {
         if (executionIdRef.current) {
             window.electronAPI?.code.kill(executionIdRef.current)
-            globalThis.window.electronAPI?.terminal.writeOutput({
-                id: 'term-1',
-                data: `\r\n\x1b[33m⚠ Execution stopped by user\x1b[0m\r\n`
-            })
+            writeToActiveTerminal(`\r\n\x1b[33m⚠ Execution stopped by user\x1b[0m\r\n`)
             setIsRunning(false)
             executionIdRef.current = null
         }
@@ -757,10 +764,7 @@ export default function IDEWorkspace() {
                     debugSessionIdRef.current = result.sessionId
                     setIsDebugging(true)
 
-                    globalThis.window.electronAPI?.terminal.writeOutput({
-                        id: 'term-1',
-                        data: `\r\n\x1b[1m\x1b[36m▶ Starting debug session...\x1b[0m\r\n`
-                    })
+                    writeToActiveTerminal(`\r\n\x1b[1m\x1b[36m▶ Starting debug session...\x1b[0m\r\n`)
                 } else {
                     addNotification(result?.error || 'Failed to start debug session', 'error')
                 }
@@ -773,10 +777,7 @@ export default function IDEWorkspace() {
                     debugSessionIdRef.current = result.sessionId
                     setIsDebugging(true)
 
-                    globalThis.window.electronAPI?.terminal.writeOutput({
-                        id: 'term-1',
-                        data: `\r\n\x1b[1m\x1b[36m▶ Starting debug session: ${config.name}\x1b[0m\r\n`
-                    })
+                    writeToActiveTerminal(`\r\n\x1b[1m\x1b[36m▶ Starting debug session: ${config.name}\x1b[0m\r\n`)
                 } else {
                     addNotification(result?.error || 'Failed to start debug session', 'error')
                 }
@@ -791,10 +792,7 @@ export default function IDEWorkspace() {
             try {
                 await window.electronAPI?.debug.stop(debugSessionIdRef.current)
 
-                globalThis.window.electronAPI?.terminal.writeOutput({
-                    id: 'term-1',
-                    data: `\r\n\x1b[33m⚠ Debug session stopped by user\x1b[0m\r\n`
-                })
+                writeToActiveTerminal(`\r\n\x1b[33m⚠ Debug session stopped by user\x1b[0m\r\n`)
 
                 setIsDebugging(false)
                 debugSessionIdRef.current = null
@@ -870,10 +868,7 @@ export default function IDEWorkspace() {
             if (!tasksResult?.success || !tasksResult.tasks || tasksResult.tasks.length === 0) {
                 addNotification('No build tasks found. Make sure you have a tasks.json file or package.json', 'warning')
 
-                globalThis.window.electronAPI?.terminal.writeOutput({
-                    id: 'term-1',
-                    data: `\r\n\x1b[33m⚠ No build tasks found in workspace\x1b[0m\r\n`
-                })
+                writeToActiveTerminal(`\r\n\x1b[33m⚠ No build tasks found in workspace\x1b[0m\r\n`)
                 return
             }
 
@@ -904,10 +899,7 @@ export default function IDEWorkspace() {
             try {
                 await window.electronAPI?.build.killTask(buildTaskIdRef.current)
 
-                globalThis.window.electronAPI?.terminal.writeOutput({
-                    id: 'term-1',
-                    data: `\r\n\x1b[33m⚠ Build task stopped by user\x1b[0m\r\n`
-                })
+                writeToActiveTerminal(`\r\n\x1b[33m⚠ Build task stopped by user\x1b[0m\r\n`)
 
                 setIsBuilding(false)
                 buildTaskIdRef.current = null
@@ -1015,29 +1007,20 @@ export default function IDEWorkspace() {
         })
 
         const removeStoppedListener = window.electronAPI?.debug.onStopped(() => {
-            globalThis.window.electronAPI?.terminal.writeOutput({
-                id: 'term-1',
-                data: `\r\n\x1b[33m⏸ Debugger paused\x1b[0m\r\n`
-            })
+            writeToActiveTerminal(`\r\n\x1b[33m⏸ Debugger paused\x1b[0m\r\n`)
         })
 
         const removeTerminatedListener = window.electronAPI?.debug.onTerminated(() => {
             setIsDebugging(false)
             debugSessionIdRef.current = null
 
-            globalThis.window.electronAPI?.terminal.writeOutput({
-                id: 'term-1',
-                data: `\r\n\x1b[36m✓ Debug session terminated\x1b[0m\r\n`
-            })
+            writeToActiveTerminal(`\r\n\x1b[36m✓ Debug session terminated\x1b[0m\r\n`)
             addNotification('Debug session ended', 'info')
         })
 
         const removeOutputListener = window.electronAPI?.debug.onOutput((data: { data?: string }) => {
             if (data.data) {
-                globalThis.window.electronAPI?.terminal.writeOutput({
-                    id: 'term-1',
-                    data: data.data
-                })
+                writeToActiveTerminal(data.data)
             }
         })
 
@@ -1512,6 +1495,7 @@ export default function IDEWorkspace() {
                     workspacePath={workspacePath}
                     codeOutput={codeOutput}
                     isRunning={isRunning}
+                    onActiveTerminalChange={setActiveTerminalId}
                 />
             </main>
 

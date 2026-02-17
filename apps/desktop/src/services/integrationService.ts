@@ -104,7 +104,21 @@ class GitHubAdapter implements IntegrationAdapter {
     async connect(config: IntegrationConfig): Promise<boolean> {
         this.accessToken = config.credentials.accessToken || ''
         this.repo = (config.settings.repo as string) || ''
-        return !!this.accessToken
+        
+        if (!this.accessToken) return false
+
+        try {
+            const response = await fetch('https://api.github.com/user', {
+                headers: {
+                    'Authorization': `token ${this.accessToken}`,
+                    'User-Agent': 'Kalynt-Desktop'
+                }
+            })
+            return response.ok
+        } catch (e) {
+            console.error('[GitHubAdapter] Connection verification failed:', e)
+            return false
+        }
     }
 
     async disconnect(): Promise<void> {
@@ -142,7 +156,11 @@ class SlackAdapter implements IntegrationAdapter {
     async connect(config: IntegrationConfig): Promise<boolean> {
         this.webhookUrl = config.credentials.webhookUrl || ''
         this.channel = (config.settings.channel as string) || ''
-        return !!this.webhookUrl
+        
+        if (!this.webhookUrl) return false
+        
+        // Basic validation for Slack webhook URL
+        return this.webhookUrl.startsWith('https://hooks.slack.com/services/')
     }
 
     async disconnect(): Promise<void> {

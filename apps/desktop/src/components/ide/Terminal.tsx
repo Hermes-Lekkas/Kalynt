@@ -22,7 +22,7 @@ interface CommandHistoryItem {
     isBookmarked?: boolean
 }
 
-export default function Terminal({ cwd }: Readonly<TerminalProps>) {
+export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalProps & { onActiveTabChange?: (id: string) => void }>) {
     const containerRef = useRef<HTMLDivElement>(null)
     const [searchVisible, setSearchVisible] = useState(false)
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
@@ -46,15 +46,37 @@ export default function Terminal({ cwd }: Readonly<TerminalProps>) {
         activeTabId,
         addTab,
         closeTab,
-        switchTab
-    } = useTerminalManager()
+        switchTab,
+        renameTab,
+        updateTab
+    } = useTerminalManager(cwd)
+
+    // Notify parent of active tab change and fetch history
+    useEffect(() => {
+        if (activeTabId) {
+            onActiveTabChange?.(activeTabId)
+            
+            // Sync history from backend
+            window.electronAPI?.terminal.getCommandHistory(activeTabId).then(result => {
+                if (result.success && result.history) {
+                    const formattedHistory = result.history.map((h: any) => ({
+                        command: h.command,
+                        timestamp: h.timestamp,
+                        exitCode: h.exitCode,
+                        frequency: 1
+                    }))
+                    setCommandHistory(formattedHistory)
+                }
+            })
+        }
+    }, [activeTabId, onActiveTabChange])
 
     // Terminal session management (xterm instances)
     const {
         getCurrentTerminal,
         destroyTerminal,
         clearTerminal
-    } = useTerminalSession(containerRef, activeTabId, tabs, cwd)
+    } = useTerminalSession(containerRef, activeTabId, tabs, updateTab, cwd)
 
     // Terminal I/O handling
     useTerminalIO(getCurrentTerminal, activeTabId)
@@ -181,6 +203,26 @@ export default function Terminal({ cwd }: Readonly<TerminalProps>) {
         ))
     }, [])
 
+    // Listen for command finished events
+    useEffect(() => {
+        if (window.electronAPI?.terminal.onCommandFinished) {
+            window.electronAPI.terminal.onCommandFinished((data: { terminalId: string; command: any }) => {
+                if (data.terminalId === activeTabId) {
+                    setCommandHistory(prev => [
+                        {
+                            command: data.command.command,
+                            timestamp: data.command.endTime,
+                            exitCode: data.command.exitCode,
+                            frequency: 1
+                        },
+                        ...prev.slice(0, 99) // Keep last 100
+                    ])
+                    setCommandCount(prev => prev + 1)
+                }
+            })
+        }
+    }, [activeTabId])
+
     const currentTab = tabs.find(t => t.id === activeTabId)
 
     return (
@@ -207,6 +249,7 @@ export default function Terminal({ cwd }: Readonly<TerminalProps>) {
                 onAddTab={addTab}
                 onToggleSearch={() => setSearchVisible(!searchVisible)}
                 onClearTerminal={handleClearTerminal}
+                onRenameTab={renameTab}
                 searchVisible={searchVisible}
             />
 
@@ -231,6 +274,7 @@ export default function Terminal({ cwd }: Readonly<TerminalProps>) {
 
             {/* Status bar */}
             <TerminalStatusBar
+                pid={currentTab?.pid}
                 shell={currentTab?.shell}
                 cwd={cwd}
                 isRunning={isRunning}

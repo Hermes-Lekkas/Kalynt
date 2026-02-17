@@ -14,6 +14,7 @@ export interface TerminalTab {
     shell: string
     cwd: string
     processType: 'shell' | 'task' | 'debug'
+    pid?: number
 }
 
 export interface TerminalProps {

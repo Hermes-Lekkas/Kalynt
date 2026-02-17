@@ -6,6 +6,7 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebrtcProvider } from 'y-webrtc'
+import { p2pService } from './p2pService'
 
 export interface CursorPosition {
     clientId: number
@@ -51,7 +52,6 @@ const DEFAULT_CONFIG: CollabConfig = {
 
 class CollaborativeEngine {
     private docs: Map<string, Y.Doc> = new Map()
-    private providers: Map<string, WebrtcProvider> = new Map()
     private persistence: Map<string, IndexeddbPersistence> = new Map()
     private undoManagers: Map<string, Y.UndoManager> = new Map()
     private snapshots: Map<string, DocumentSnapshot[]> = new Map()
@@ -159,20 +159,18 @@ class CollaborativeEngine {
     }
 
     // Connect to P2P network with error handling
-    connectP2P(docId: string, roomId: string, signalingServers?: string[]): WebrtcProvider | null {
+    connectP2P(docId: string, roomId: string, password?: string): WebrtcProvider | null {
         try {
             const doc = this.getDocument(docId)
 
-            if (this.providers.has(docId)) {
-                return this.providers.get(docId)!
+            let provider = p2pService.getProvider(roomId)
+            if (provider) {
+                return provider
             }
 
-            const provider = new WebrtcProvider(roomId, doc, {
-                signaling: signalingServers || [
-                    'wss://signaling.yjs.dev',
-                    'wss://y-webrtc-signaling-eu.herokuapp.com'
-                ]
-            })
+            provider = p2pService.connect(roomId, doc, password) as WebrtcProvider
+
+            if (!provider) return null
 
             // Handle sync events
             provider.on('synced', (event: { synced: boolean }) => {
@@ -183,17 +181,16 @@ class CollaborativeEngine {
             if (this.config.enablePresence) {
                 provider.awareness.on('change', () => {
                     try {
-                        const cursors = this.getCursors(docId)
+                        const cursors = this.getCursors(docId, roomId)
                         this.onCursor?.(docId, cursors)
                         // BUG-057: Trigger stats update on peer change
-                        this.onStats?.(docId, this.getStats(docId))
+                        this.onStats?.(docId, this.getStats(docId, roomId))
                     } catch (error) {
                         console.error(`[CollabEngine] Error in awareness handler for ${docId}:`, error)
                     }
                 })
             }
 
-            this.providers.set(docId, provider)
             return provider
         } catch (error) {
             console.error(`[CollabEngine] Failed to connect P2P for ${docId}:`, error)
@@ -202,12 +199,8 @@ class CollaborativeEngine {
     }
 
     // Disconnect from P2P
-    disconnectP2P(docId: string) {
-        const provider = this.providers.get(docId)
-        if (provider) {
-            provider.destroy()
-            this.providers.delete(docId)
-        }
+    disconnectP2P(roomId: string) {
+        p2pService.disconnect(roomId)
     }
 
     // Get text content
@@ -320,8 +313,8 @@ class CollaborativeEngine {
     }
 
     // Get cursors
-    getCursors(docId: string): CursorPosition[] {
-        const provider = this.providers.get(docId)
+    getCursors(docId: string, roomId?: string): CursorPosition[] {
+        const provider = p2pService.getProvider(roomId || docId)
         // BUG-081: Check connection status to avoid stuck loops
         if (!provider || !provider.connected) return []
 
@@ -341,16 +334,16 @@ class CollaborativeEngine {
     }
 
     // Set local cursor
-    setCursor(docId: string, anchor: number, head: number) {
-        const provider = this.providers.get(docId)
+    setCursor(docId: string, anchor: number, head: number, roomId?: string) {
+        const provider = p2pService.getProvider(roomId || docId)
         if (provider) {
             provider.awareness.setLocalStateField('cursor', { anchor, head })
         }
     }
 
     // Set local user
-    setLocalUser(docId: string, name: string, color: string) {
-        const provider = this.providers.get(docId)
+    setLocalUser(docId: string, name: string, color: string, roomId?: string) {
+        const provider = p2pService.getProvider(roomId || docId)
         if (provider) {
             provider.awareness.setLocalStateField('user', { name, color })
         }
@@ -388,7 +381,7 @@ class CollaborativeEngine {
 
 
     // Get stats
-    getStats(docId: string): {
+    getStats(docId: string, roomId?: string): {
         textLength: number
         taskCount: number
         messageCount: number
@@ -396,7 +389,7 @@ class CollaborativeEngine {
         peerCount: number
     } {
         const doc = this.docs.get(docId)
-        const provider = this.providers.get(docId)
+        const provider = p2pService.getProvider(roomId || docId)
 
         return {
             textLength: doc?.getText('editor-content').length || 0,

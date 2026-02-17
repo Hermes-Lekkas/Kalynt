@@ -55,6 +55,10 @@ export interface DebugSession {
     socket?: net.Socket
     configuration: object
     status: 'starting' | 'running' | 'stopped' | 'error'
+    // DAP Protocol State
+    seq: number
+    pendingRequests: Map<number, { resolve: (res: any) => void; reject: (err: any) => void }>
+    buffer: string
 }
 
 export class LanguageRuntimeGateway extends EventEmitter {
@@ -406,7 +410,10 @@ export class LanguageRuntimeGateway extends EventEmitter {
                     stopOnEntry: options.stopOnEntry,
                     port
                 },
-                status: 'starting'
+                status: 'starting',
+                seq: 0,
+                pendingRequests: new Map(),
+                buffer: ''
             }
 
             this.debugSessions.set(sessionId, session)
@@ -429,6 +436,7 @@ export class LanguageRuntimeGateway extends EventEmitter {
             if (config.transport === 'stdio') {
                 // Stdio transport - ready immediately
                 session.status = 'running'
+                this.setupDebugListeners(session)
                 this.emit('debug_session_started', {
                     sessionId,
                     languageId: options.languageId,
@@ -468,6 +476,7 @@ export class LanguageRuntimeGateway extends EventEmitter {
                     .on('connect', () => {
                         session.status = 'running'
                         session.socket = socket
+                        this.setupDebugListeners(session)
                         this.emit('debug_session_started', {
                             sessionId,
                             languageId: options.languageId,
@@ -503,6 +512,69 @@ export class LanguageRuntimeGateway extends EventEmitter {
     }
 
     /**
+     * Setup listeners for DAP message stream
+     */
+    private setupDebugListeners(session: DebugSession) {
+        const onData = (data: Buffer) => {
+            session.buffer += data.toString('utf8')
+            
+            while (true) {
+                // Check for Content-Length header
+                const lengthMatch = session.buffer.match(/Content-Length: (\d+)\r\n\r\n/)
+                if (!lengthMatch) break
+
+                const headerLength = lengthMatch[0].length
+                const contentLength = parseInt(lengthMatch[1], 10)
+
+                // Check if we have the full message
+                if (session.buffer.length >= headerLength + contentLength) {
+                    const rawMessage = session.buffer.slice(headerLength, headerLength + contentLength)
+                    session.buffer = session.buffer.slice(headerLength + contentLength)
+
+                    try {
+                        const message = JSON.parse(rawMessage)
+                        this.handleDebugMessage(session, message)
+                    } catch (e) {
+                        console.error('[LanguageGateway] Failed to parse DAP message', e)
+                    }
+                } else {
+                    break // Wait for more data
+                }
+            }
+        }
+
+        if (session.socket) {
+            session.socket.on('data', onData)
+        } else {
+            session.process.stdout?.on('data', onData)
+        }
+    }
+
+    /**
+     * Handle parsed DAP message
+     */
+    private handleDebugMessage(session: DebugSession, message: any) {
+        if (message.type === 'response') {
+            const requestSeq = message.request_seq
+            if (session.pendingRequests.has(requestSeq)) {
+                const { resolve, reject } = session.pendingRequests.get(requestSeq)!
+                if (message.success) {
+                    resolve(message)
+                } else {
+                    reject(new Error(message.message || 'Debug request failed'))
+                }
+                session.pendingRequests.delete(requestSeq)
+            }
+        } else if (message.type === 'event') {
+            this.emit('debug_event', {
+                sessionId: session.id,
+                event: message.event,
+                body: message.body
+            })
+        }
+    }
+
+    /**
      * Send LSP request through the message connection
      */
     async sendLSPRequest(sessionId: string, method: string, params: unknown): Promise<unknown> {
@@ -520,37 +592,6 @@ export class LanguageRuntimeGateway extends EventEmitter {
 
     /**
      * Send debug adapter request
-     * 
-     * TODO: CRITICAL - This is a placeholder!
-     * Currently, this does NOT implement the Debug Adapter Protocol (DAP).
-     * 
-     * What works:
-     * - Spawning debug processes
-     * - Socket connections with retry logic
-     * - Process cleanup
-     * 
-     * What is missing:
-     * - DAP message protocol (Content-Length headers + JSON-RPC body)
-     * - Reading from socket/stdio streams
-     * - Writing commands (setBreakpoints, continue, stepOver, etc.)
-     * - Parsing DAP responses
-     * 
-     * To implement:
-     * 1. Install vscode-debugprotocol package
-     * 2. Create DAP message reader/writer for socket/stdio
-     * 3. Implement request/response handling
-     * 
-     * Example implementation:
-     * ```typescript
-     * if (session.socket) {
-     *     // For socket transport
-     *     const message = JSON.stringify({ seq: 1, type: 'request', command: method, arguments: params })
-     *     session.socket.write(`Content-Length: ${message.length}\r\n\r\n${message}`)
-     * } else {
-     *     // For stdio transport  
-     *     session.process.stdin.write(...)
-     * }
-     * ```
      */
     async sendDebugRequest(sessionId: string, method: string, params: unknown): Promise<unknown> {
         const session = this.debugSessions.get(sessionId)
@@ -558,14 +599,50 @@ export class LanguageRuntimeGateway extends EventEmitter {
             throw new Error(`Debug session ${sessionId} not found`)
         }
 
-        // TODO: Implement actual DAP protocol communication
-        // For socket transport, send through session.socket
-        // For stdio, send through session.process.stdin
-        // This would need full DAP protocol implementation
-        return new Promise((resolve, _reject) => {
-            // Placeholder - full DAP implementation would go here
-            console.warn('[LanguageGateway] sendDebugRequest not implemented - placeholder only')
-            resolve({ success: true, method, params })
+        const seq = ++session.seq
+        const request = {
+            seq,
+            type: 'request',
+            command: method,
+            arguments: params
+        }
+
+        const json = JSON.stringify(request)
+        const message = `Content-Length: ${Buffer.byteLength(json, 'utf8')}\r\n\r\n${json}`
+
+        return new Promise((resolve, reject) => {
+            // Set timeout for request
+            const timeout = setTimeout(() => {
+                if (session.pendingRequests.has(seq)) {
+                    session.pendingRequests.delete(seq)
+                    reject(new Error(`Debug request ${method} timed out`))
+                }
+            }, 10000)
+
+            session.pendingRequests.set(seq, {
+                resolve: (res) => {
+                    clearTimeout(timeout)
+                    resolve(res)
+                },
+                reject: (err) => {
+                    clearTimeout(timeout)
+                    reject(err)
+                }
+            })
+
+            try {
+                if (session.socket) {
+                    session.socket.write(message)
+                } else if (session.process.stdin) {
+                    session.process.stdin.write(message)
+                } else {
+                    throw new Error('No transport available for debug session')
+                }
+            } catch (error) {
+                clearTimeout(timeout)
+                session.pendingRequests.delete(seq)
+                reject(error)
+            }
         })
     }
 

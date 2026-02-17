@@ -1,27 +1,25 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
 import Editor from './Editor'
-import CollaborationPanel from './collaboration'
 import TaskBoard from './TaskBoard'
 import VersionPanel from './VersionPanel'
 import FilesPanel from './FilesPanel'
 import ResourceMonitor from './ResourceMonitor'
-import { Users, Settings } from 'lucide-react'
+import { Users, Shield } from 'lucide-react'
 
 type Tab = 'editor' | 'tasks' | 'files' | 'history'
 
 interface MainContentProps {
   activeTab: Tab
+  onShowCollaboration?: () => void
 }
 
-export default function MainContent({ activeTab }: MainContentProps) {
-  const { currentSpace, setShowSettings } = useAppStore()
-  const [showCollaboration, setShowCollaboration] = useState(false)
+export default function MainContent({ activeTab, onShowCollaboration }: MainContentProps) {
+  const { currentSpace } = useAppStore()
 
-  // Resource monitor visibility state (with persistence)
   const [resourceVisibility, setResourceVisibility] = useState({
     cpu: true,
     ram: true,
@@ -29,7 +27,6 @@ export default function MainContent({ activeTab }: MainContentProps) {
     network: true
   })
 
-  // Load visibility preferences from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('resource-monitor-visibility')
     if (saved) {
@@ -52,142 +49,173 @@ export default function MainContent({ activeTab }: MainContentProps) {
   if (!currentSpace) return null
 
   return (
-    <div className="main-content">
-      <header className="content-header glass-header">
-        <h1 className="space-name">{currentSpace.name}</h1>
-
-        <div className="header-center-scroll-wrapper">
-          <div className="header-center">
-            <ResourceMonitor
-              visible={resourceVisibility}
-              onToggle={handleToggleResource}
-            />
+    <div className="main-viewport">
+      <header className="content-subheader">
+        <div className="space-identity">
+          <div className="space-status-dot active" />
+          <h1 className="space-title">{currentSpace.name}</h1>
+          <div className="v-sep" />
+          <div className="security-tag">
+            <Shield size={10} />
+            <span>Encrypted Node</span>
           </div>
         </div>
 
-        <div className="header-right">
+        <div className="monitor-container">
+          <ResourceMonitor
+            visible={resourceVisibility}
+            onToggle={handleToggleResource}
+          />
+        </div>
+
+        <div className="header-actions">
           <button
-            className="icon-btn share-btn"
-            onClick={() => setShowCollaboration(true)}
-            title="Team & Collaboration"
+            className="btn-action-circle"
+            onClick={() => onShowCollaboration?.()}
+            title="Collaboration"
           >
             <Users size={16} />
-          </button>
-
-          <button
-            className="icon-btn settings-btn"
-            onClick={() => setShowSettings(true)}
-            title="Space Settings"
-          >
-            <Settings size={16} />
           </button>
         </div>
       </header>
 
-      <div className="content-body">
-        {activeTab === 'editor' && <Editor />}
-        {activeTab === 'tasks' && <TaskBoard />}
-        {activeTab === 'history' && <VersionPanel />}
-        {activeTab === 'files' && <FilesPanel />}
+      <div className="content-area">
+        <div className="view-wrapper animate-tab-switch" key={activeTab}>
+          {activeTab === 'editor' && <Editor />}
+          {activeTab === 'tasks' && <TaskBoard />}
+          {activeTab === 'history' && <VersionPanel />}
+          {activeTab === 'files' && <FilesPanel />}
+        </div>
       </div>
 
-      {showCollaboration && <CollaborationPanel onClose={() => setShowCollaboration(false)} spaceId={currentSpace?.id} />}
-
       <style>{`
-        .main-content {
+        .main-viewport {
           flex: 1;
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          background: var(--color-bg);
+          background: #000;
+          position: relative;
         }
-        
-        .content-header {
+
+        .animate-tab-switch {
+          animation: tabReveal 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        @keyframes tabReveal {
+          from {
+            opacity: 0;
+            transform: scale(0.995) translateY(4px);
+            filter: blur(4px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            filter: blur(0);
+          }
+        }
+
+        .content-subheader {
+          height: 56px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 var(--space-4);
-          height: 48px;
-          background: rgba(10, 10, 12, 0.4);
-          backdrop-filter: blur(12px);
+          padding: 0 32px;
+          background: rgba(255, 255, 255, 0.01);
           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          z-index: 1000;
-          position: relative;
-          gap: 12px;
+          z-index: 100;
         }
 
-        .space-name {
-          font-size: var(--text-sm);
-          font-weight: var(--font-semibold);
-          color: var(--color-text);
-          margin: 0;
-          flex-shrink: 0;
-          max-width: 200px;
+        .space-identity {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex: 1;
+        }
+
+        .space-status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 10px #10b981;
+        }
+
+        .space-title {
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: -0.01em;
+          color: white;
+          max-width: 240px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .header-center-scroll-wrapper {
-          flex: 1;
-          position: relative;
-          overflow: hidden;
-          margin: 0 8px;
-          min-width: 0;
-        }
-
-        .header-center-scroll-wrapper::after {
-          content: '';
-          position: absolute;
-          top: 0;
-          right: 0;
-          bottom: 0;
-          width: 40px;
-          background: linear-gradient(to right, transparent, rgba(10, 10, 12, 0.8));
-          pointer-events: none;
-          z-index: 10;
-        }
-
-        .header-center {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 0; /* Allow shrinking */
-          height: 100%;
-        }
-
-        .header-right {
-          display: flex;
-          align-items: center;
-          gap: var(--space-4);
-          flex-shrink: 0;
-          z-index: 1001;
-          position: relative;
-        }
-
-        .icon-btn {
-          width: 32px;
-          height: 32px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--color-text-tertiary);
-          border-radius: 8px;
-          transition: all 0.2s ease;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-        }
-
-        .icon-btn:hover {
+        .v-sep {
+          width: 1px;
+          height: 16px;
           background: rgba(255, 255, 255, 0.08);
-          color: var(--color-text);
         }
-        
-        .content-body {
+
+        .security-tag {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 6px;
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.4);
+        }
+
+        .monitor-container {
+          flex: 2;
+          display: flex;
+          justify-content: center;
+        }
+
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
           flex: 1;
-          overflow: hidden;
+          justify-content: flex-end;
+        }
+
+        .btn-action-circle {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          color: rgba(255, 255, 255, 0.4);
+          transition: all 0.2s;
+        }
+
+        .btn-action-circle:hover {
+          background: rgba(255, 255, 255, 0.05);
+          color: white;
+          transform: scale(1.05);
+        }
+
+        .content-area {
+          flex: 1;
           position: relative;
+          overflow: hidden;
+        }
+
+        .view-wrapper {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
         }
       `}</style>
     </div>

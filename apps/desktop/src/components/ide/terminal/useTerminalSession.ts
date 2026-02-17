@@ -14,6 +14,7 @@ export function useTerminalSession(
     containerRef: React.RefObject<HTMLDivElement>,
     activeTabId: string,
     tabs: TerminalTab[],
+    updateTab: (id: string, updates: Partial<TerminalTab>) => void,
     initialCwd?: string
 ) {
     const terminals = useRef<Map<string, TerminalState>>(new Map())
@@ -95,13 +96,17 @@ export function useTerminalSession(
         // Spawn backend process
         const tab = tabs.find(t => t.id === tabId)
         try {
-            await window.electronAPI?.terminal.spawn({
+            const result = await window.electronAPI?.terminal.spawn({
                 id: tabId,
                 cwd: tab?.cwd || initialCwd,
                 shell: tab?.shell,
                 cols: term.cols,
                 rows: term.rows
             })
+
+            if (result.success && result.pid) {
+                updateTab(tabId, { pid: result.pid })
+            }
 
             // Handle resize - send to backend
             term.onResize(({ cols, rows }) => {

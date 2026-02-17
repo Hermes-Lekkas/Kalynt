@@ -13,6 +13,7 @@ import { NotificationSystem } from './components/NotificationSystem'
 import UpdateModal from './components/UpdateModal'
 import { ExtensionManager } from './components/extensions'
 import UnifiedSettingsPanel from './components/UnifiedSettingsPanel'
+import CollaborationPanel from './components/collaboration'
 import { setModelsDirectory } from './services/modelDownloadService'
 import { logger } from './utils/logger'
 
@@ -20,8 +21,6 @@ type Tab = 'editor' | 'tasks' | 'files' | 'history'
 
 import { StartupLayout } from './components/StartupLayout'
 import './styles/window-animations.css'
-
-// ... existing imports ...
 
 function App() {
   const { currentSpace, initialize, _hasHydrated, startupStatus, showSettings, setShowSettings } = useAppStore()
@@ -31,6 +30,7 @@ function App() {
   const [isSplashComplete, setIsSplashComplete] = useState(isWebMode)
   const [activeTab, setActiveTab] = useState<Tab>('editor')
   const [showExtensions, setShowExtensions] = useState(false)
+  const [showCollaboration, setShowCollaboration] = useState(false)
 
   // Handle Minimize Animation
   const [isMinimizing, setIsMinimizing] = useState(false)
@@ -163,11 +163,19 @@ function App() {
           activeTab={activeTab} 
           onTabChange={setActiveTab}
           onShowExtensions={() => setShowExtensions(true)}
+          onShowCollaboration={() => setShowCollaboration(true)}
         />
         <div className="app-body">
           <Sidebar />
           <main className="main">
-            {showWorkspace ? <MainContent activeTab={activeTab} /> : <WelcomeScreen />}
+            {showWorkspace ? (
+              <MainContent 
+                activeTab={activeTab} 
+                onShowCollaboration={() => setShowCollaboration(true)} 
+              />
+            ) : (
+              <WelcomeScreen onShowCollaboration={() => setShowCollaboration(true)} />
+            )}
           </main>
         </div>
         <style>{`
@@ -198,6 +206,12 @@ function App() {
         )}
         {showSettings && (
           <UnifiedSettingsPanel onClose={() => setShowSettings(false)} />
+        )}
+        {showCollaboration && (
+          <CollaborationPanel 
+            onClose={() => setShowCollaboration(false)} 
+            spaceId={currentSpace?.id} 
+          />
         )}
       </div>
     </EncryptionProvider>

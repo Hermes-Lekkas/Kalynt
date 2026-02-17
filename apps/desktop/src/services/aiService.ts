@@ -43,6 +43,7 @@ export interface StreamCallbacks {
 const PROVIDER_CONFIG = {
     openai: {
         baseUrl: 'https://api.openai.com/v1',
+        contextWindow: 128000,
         models: {
             chat: 'gpt-4o-mini',
             chatPro: 'gpt-4o',
@@ -55,6 +56,7 @@ const PROVIDER_CONFIG = {
     },
     anthropic: {
         baseUrl: 'https://api.anthropic.com/v1',
+        contextWindow: 200000,
         models: {
             chat: 'claude-3-5-haiku-latest',
             chatPro: 'claude-4-5-sonnet-20260215',
@@ -64,6 +66,7 @@ const PROVIDER_CONFIG = {
     },
     google: {
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        contextWindow: 1000000,
         models: {
             chat: 'gemini-1.5-flash',
             chatPro: 'gemini-3-flash',
@@ -75,6 +78,18 @@ const PROVIDER_CONFIG = {
 class AIService {
     private apiKeys: Record<string, string> = {}
     private readonly abortControllers: Map<string, AbortController> = new Map()
+
+    getContextWindow(provider: AIProvider): number {
+        // Return default context window for the provider
+        // Ideally we map this by model, but provider-level default is a good start
+        // as most modern models within a provider share similar large context windows
+        switch (provider) {
+            case 'openai': return PROVIDER_CONFIG.openai.contextWindow
+            case 'anthropic': return PROVIDER_CONFIG.anthropic.contextWindow
+            case 'google': return PROVIDER_CONFIG.google.contextWindow
+            default: return 8192 // Safe fallback
+        }
+    }
 
     setAPIKey(provider: AIProvider, key: string) {
         this.apiKeys[provider] = key

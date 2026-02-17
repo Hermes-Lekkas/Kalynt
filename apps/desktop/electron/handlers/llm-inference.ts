@@ -5,6 +5,7 @@
 import path from 'path'
 import fs from 'fs'
 import type { Llama, LlamaModel, LlamaContext } from 'node-llama-cpp'
+import { nativeHelperService } from '../services/native-helper-service'
 
 function validatePath(base: string, target: string): string {
     const resolvedTarget = path.resolve(base, target)
@@ -64,6 +65,8 @@ async function dynamicImportESM(modulePath: string): Promise<any> {
     return importFn(modulePath)
 }
 
+let useNativeInference = false
+
 export function registerLLMInferenceHandlers(
     ipcMain: Electron.IpcMain,
     getModelsDir: () => string
@@ -83,15 +86,25 @@ export function registerLLMInferenceHandlers(
         }
     }) => {
         console.log('[Main] Loading model:', options.modelId)
-        console.log('[Main] Model path:', options.path)
-        console.log('[Main] Context length:', options.contextLength)
-        console.log('[Main] AIME Config:', options.aimeConfig || 'None (using defaults)')
-
+        
         try {
             const MODELS_DIR = getModelsDir()
-
             const safePath = validatePath(MODELS_DIR, path.basename(options.path))
-            console.log('[Main] Safe path resolved:', safePath)
+            
+            // Check if it's a CoreML model on macOS
+            const isCoreML = safePath.endsWith('.mlmodel') || safePath.endsWith('.mlmodelc')
+            if (isCoreML && process.platform === 'darwin' && nativeHelperService.isAvailable()) {
+                console.log('[Main] Loading CoreML model via Swift Helper:', safePath)
+                const result = await nativeHelperService.request('llm-load', { path: safePath })
+                if (result.success) {
+                    useNativeInference = true
+                    loadedModelId = options.modelId
+                    return { success: true, native: true }
+                }
+            }
+
+            useNativeInference = false
+            // Existing node-llama-cpp loading logic...
 
             if (!fs.existsSync(safePath)) {
                 const errorMsg = `Model file not found at: ${safePath}`
@@ -428,6 +441,19 @@ export function registerLLMInferenceHandlers(
         stopSequences: string[]
         jsonSchema?: object
     }) => {
+        if (useNativeInference && nativeHelperService.isAvailable()) {
+            try {
+                const result = await nativeHelperService.request('llm-predict', {
+                    prompt: options.prompt,
+                    maxTokens: options.maxTokens
+                })
+                return { success: true, text: result.text }
+            } catch (e) {
+                console.error('[Main] Native inference failed:', e)
+                return { success: false, error: String(e) }
+            }
+        }
+
         if (!llamaContext || !llamaModel) {
             return { success: false, error: 'No model loaded' }
         }

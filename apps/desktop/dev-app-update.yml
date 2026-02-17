@@ -1,0 +1,6 @@
+owner: Hermes-Lekkas
+repo: Kalynt
+provider: github
+private: false
+releaseType: release
+updaterCacheDirName: kalynt-updater-dev

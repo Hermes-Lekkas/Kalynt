@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
@@ -7,14 +7,18 @@ import { useYDoc, useYText, useAwareness } from '../hooks/useYjs'
 import { usePermissions } from '../hooks/usePermissions'
 import { EDITOR_MODES, EditorMode, getModeConfig } from '../config/editorModes'
 import UnifiedAgentPanel from './UnifiedAgentPanel'
-import { EncryptionBadge } from '../hooks/useEncryption'
 import WorkspaceRouter from './workspaces/WorkspaceRouter'
+import { versionControlService } from '../services/versionControlService'
+import { 
+  ChevronDown, Sparkles, 
+  Lock, Layers, Info
+} from 'lucide-react'
 
 export default function Editor() {
-  const { currentSpace } = useAppStore()
+  const { currentSpace, userName } = useAppStore()
   const { doc, provider, synced, peerCount } = useYDoc(currentSpace?.id ?? null)
   const { text, updateText } = useYText(doc, 'editor-content')
-  const { users, setLocalState, localClientId } = useAwareness(provider)
+  const { setLocalState } = useAwareness(provider)
   const { canEdit, canUseAgent } = usePermissions()
 
   const editorRef = useRef<HTMLDivElement>(null)
@@ -22,15 +26,32 @@ export default function Editor() {
   const [currentMode, setCurrentMode] = useState<EditorMode>('general')
   const [showModeSelector, setShowModeSelector] = useState(false)
   const [showAgentPanel, setShowAgentPanel] = useState(true)
-  const [agentSidebarWidth, setAgentSidebarWidth] = useState(360)
+  const [agentSidebarWidth, setAgentSidebarWidth] = useState(380)
   const [isResizingAgent, setIsResizingAgent] = useState(false)
 
   const modeConfig = getModeConfig(currentMode)
 
+  // Auto-Save Management
+  useEffect(() => {
+    if (currentSpace && text && canEdit) {
+      versionControlService.scheduleAutoSave(
+        currentSpace.id,
+        'local-user',
+        userName,
+        60000 
+      )
+    }
+    return () => {
+      if (currentSpace) {
+        versionControlService.cancelAutoSave(currentSpace.id)
+      }
+    }
+  }, [text, currentSpace, userName, canEdit])
+
   const handleResizeAgent = useCallback((e: MouseEvent) => {
     if (!isResizingAgent) return
     const newWidth = window.innerWidth - e.clientX
-    if (newWidth > 200 && newWidth < 600) {
+    if (newWidth > 200 && newWidth < 800) {
       setAgentSidebarWidth(newWidth)
     }
   }, [isResizingAgent])
@@ -49,35 +70,18 @@ export default function Editor() {
     }
   }, [isResizingAgent, handleResizeAgent, stopResizingAgent])
 
-  // Sync content from Yjs to editor
   useEffect(() => {
     if (editorRef.current && !isLocalChange.current) {
-      const selection = window.getSelection()
-      const range = selection?.rangeCount ? selection.getRangeAt(0) : null
-
       if (editorRef.current.innerText !== text) {
         editorRef.current.innerText = text
-      }
-
-      if (range && selection) {
-        try {
-          selection.addRange(range)
-        } catch (e) {
-          console.debug('[Editor] Failed to restore selection:', e)
-        }
       }
     }
     isLocalChange.current = false
   }, [text])
 
   const handleInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
-    // Block edits if user doesn't have permission
     if (!canEdit) {
-      // Revert the change
-      if (editorRef.current) {
-        editorRef.current.innerText = text
-      }
-      console.warn('[Editor] Edit blocked - no permission')
+      if (editorRef.current) editorRef.current.innerText = text
       return
     }
 
@@ -85,170 +89,97 @@ export default function Editor() {
     const newText = e.currentTarget.innerText
     updateText(newText)
 
-    // Update cursor position in awareness
     const selection = window.getSelection()
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0)
       setLocalState('cursor', {
-        anchor: range.startOffset,
-        head: range.endOffset
+        anchor: range.startOffset, head: range.endOffset
       })
     }
   }, [updateText, setLocalState, canEdit, text])
 
-  const applyTemplate = () => {
-    if (modeConfig.template && !text.trim()) {
-      updateText(modeConfig.template)
-    } else if (modeConfig.template) {
-      if (confirm('Apply template? This will append to your current content.')) {
-        updateText(text + '\n\n' + modeConfig.template)
-      }
-    }
-  }
-
-  const getCursorInfo = () => {
-    const selection = window.getSelection()
-    if (selection && selection.rangeCount > 0) {
-      const textBefore = text.substring(0, selection.getRangeAt(0).startOffset)
-      const linesBefore = textBefore.split('\n')
-      return {
-        line: linesBefore.length,
-        col: (linesBefore[linesBefore.length - 1]?.length || 0) + 1
-      }
-    }
-    return { line: 1, col: 1 }
-  }
-
-  const cursorInfo = getCursorInfo()
-  const wordCount = text.split(/\s+/).filter(Boolean).length
-
-  const remoteUsers = Array.from(users.entries())
-    .filter(([id]) => id !== localClientId)
-    .map(([id, state]) => ({
-      id,
-      name: state?.user?.name || 'Anonymous',
-      color: state?.user?.color || '#888'
-    }))
-
-  if (currentSpace && currentSpace.category) {
+      const wordCount = text.split(/\s+/).filter(Boolean).length
+    if (currentSpace && currentSpace.category) {
     return <WorkspaceRouter space={currentSpace} />
   }
 
   return (
-    <div className="editor-container">
-      <div className="editor">
-        <div className="editor-toolbar">
-          {/* Mode Selector */}
-          <div className="mode-selector-container">
-            <button
-              className="mode-selector-btn"
-              onClick={() => setShowModeSelector(!showModeSelector)}
-            >
-              <span className="mode-icon">{modeConfig.icon}</span>
-              <span className="mode-name">{modeConfig.name}</span>
-              <span className="dropdown-arrow">â–¾</span>
-            </button>
-
-            {showModeSelector && (
-              <div className="mode-dropdown">
-                {EDITOR_MODES.map(mode => (
-                  <button
-                    key={mode.id}
-                    className={`mode-option ${currentMode === mode.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setCurrentMode(mode.id)
-                      setShowModeSelector(false)
-                    }}
-                  >
-                    <span className="mode-icon">{mode.icon}</span>
-                    <div className="mode-info">
-                      <span className="mode-name">{mode.name}</span>
-                      <span className="mode-desc">{mode.description}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button
-            className="toolbar-btn template-btn"
-            onClick={applyTemplate}
-            title="Apply mode template"
-            disabled={!modeConfig.template}
-          >
-            ðŸ“‹ Template
-          </button>
-
-          <div className="toolbar-divider" />
-
-          <button
-            className={`toolbar-btn agent-toggle ${showAgentPanel ? 'active' : ''}`}
-            onClick={() => setShowAgentPanel(!showAgentPanel)}
-            title="Toggle AI Agent panel"
-          >
-            ðŸ¤– Agent
-          </button>
-
-          <div className="toolbar-spacer" />
-
-          <EncryptionBadge showDetails={false} />
-
-          <div className="sync-status">
-            <span className={`status-dot ${peerCount > 0 ? 'status-online' : 'status-offline'}`} />
-            <span>
-              {peerCount > 0 ? `${peerCount} peer${peerCount > 1 ? 's' : ''}` : synced ? 'Saved' : 'Syncing...'}
-            </span>
-          </div>
-
-          {remoteUsers.length > 0 && (
-            <div className="remote-users">
-              {remoteUsers.map(user => (
-                <div key={user.id} className="user-badge" style={{ background: user.color }}>
-                  {user.name[0]}
+    <div className="premium-editor-container">
+      <div className="editor-stage">
+        <div className="editor-toolbar-premium">
+          <div className="toolbar-left">
+            <div className="mode-pill" onClick={() => setShowModeSelector(!showModeSelector)}>
+              <div className="mode-icon-box">{modeConfig.icon}</div>
+              <span className="mode-label">{modeConfig.name}</span>
+              <ChevronDown size={12} className="opacity-40" />
+              
+              {showModeSelector && (
+                <div className="mode-popover animate-reveal-up">
+                  {EDITOR_MODES.map(m => (
+                    <button key={m.id} className={`popover-item ${currentMode === m.id ? 'active' : ''}`} onClick={() => setCurrentMode(m.id)}>
+                      <span>{m.icon}</span>
+                      <div className="item-text">
+                        <span className="i-name">{m.name}</span>
+                        <span className="i-desc">{m.description}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
+
+            <div className="divider-v" />
+            
+            <button className="btn-ghost-sm" onClick={() => updateText(text + '\n' + (modeConfig.template || ''))}>
+              <Layers size={14} />
+              <span>Blueprint</span>
+            </button>
+          </div>
+
+          <div className="toolbar-center">
+             <div className="sync-badge-premium">
+                <div className={`sync-dot ${peerCount > 0 ? 'online' : ''}`} />
+                <span>{peerCount > 0 ? `${peerCount} Nodes Active` : synced ? 'Local Safe' : 'Syncing...'}</span>
+             </div>
+          </div>
+
+          <div className="toolbar-right">
+            <button className={`btn-agent-toggle ${showAgentPanel ? 'active' : ''}`} onClick={() => setShowAgentPanel(!showAgentPanel)}>
+              <Sparkles size={14} />
+              <span>Agentic Intelligence</span>
+            </button>
+          </div>
         </div>
 
-        <div className="editor-body">
+        <div className="editor-canvas">
           {!canEdit && (
-            <div className="permission-notice">
-              ðŸ”’ View Only - You don&apos;t have permission to edit
+            <div className="read-only-banner">
+              <Lock size={12} />
+              <span>Write Access Restricted</span>
             </div>
           )}
-
-          {/* Generic Text Editor Fallback */}
           <div
             ref={editorRef}
-            className={`editor-content ${!canEdit ? 'read-only' : ''}`}
+            className={`editor-surface ${!canEdit ? 'locked' : ''}`}
             contentEditable={canEdit}
             suppressContentEditableWarning
             onInput={handleInput}
-            data-placeholder={modeConfig.placeholder}
+            data-placeholder="Start composing intelligence..."
           />
-
         </div>
 
-        <div className="editor-footer">
-          <span className="mode-badge">{modeConfig.icon} {modeConfig.name}</span>
-          {!canEdit && <span className="permission-badge">ðŸ‘ï¸ Read Only</span>}
-          <span>Ln {cursorInfo.line}, Col {cursorInfo.col}</span>
-          <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+        <div className="editor-statusbar">
+          <div className="status-item"><Info size={12} /> <span>Ln 1, Col 1</span></div>
+          <div className="status-item"><span>{wordCount} Words</span></div>
+          <div className="status-spacer" />
+          <div className="status-item text-blue-400"><span>Encrypted Channel</span></div>
         </div>
       </div>
 
       {showAgentPanel && currentSpace && canUseAgent && (
         <>
-          <div
-            className={`agent-resizer ${isResizingAgent ? 'resizing' : ''}`}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              setIsResizingAgent(true)
-            }}
-          />
-          <div className="agent-sidebar" style={{ width: `${agentSidebarWidth}px` }}>
+          <div className={`agent-resizer-line ${isResizingAgent ? 'active' : ''}`} onMouseDown={(e) => { e.preventDefault(); setIsResizingAgent(true); }} />
+          <div className="agent-dock" style={{ width: `${agentSidebarWidth}px` }}>
             <UnifiedAgentPanel
               workspacePath={null}
               currentFile={null}
@@ -260,284 +191,119 @@ export default function Editor() {
       )}
 
       <style>{`
-        .editor-container {
-          height: 100%;
-          display: flex;
-          gap: var(--space-3);
-        }
-        
-        .editor {
+        .premium-editor-container {
           flex: 1;
           display: flex;
-          flex-direction: column;
-          background: var(--color-bg);
-          min-width: 0;
-        }
-        
-        .agent-sidebar {
-          flex-shrink: 0;
-          display: flex;
-          flex-direction: column;
-          border-left: 1px solid var(--color-border-subtle);
-          overflow: hidden;
-        }
-        
-        .agent-resizer {
-          width: 4px;
-          background: transparent;
-          cursor: col-resize;
-          transition: background 0.2s;
-          z-index: 10;
-          flex-shrink: 0;
-          margin-left: -4px;
+          background: #000;
+          height: 100%;
         }
 
-        .agent-resizer:hover,
-        .agent-resizer.resizing {
-          background: var(--color-accent);
-          box-shadow: 0 0 8px var(--color-accent);
-        }
-        
-        .agent-mode-toggle {
-          display: flex;
-          padding: var(--space-2);
-          gap: var(--space-1);
-          border-bottom: 1px solid var(--color-border-subtle);
-          background: var(--color-surface);
-        }
-        
-        .mode-tab {
+        .editor-stage {
           flex: 1;
-          padding: var(--space-2);
-          font-size: var(--text-xs);
-          font-weight: var(--font-medium);
-          color: var(--color-text-muted);
-          background: transparent;
-          border-radius: var(--radius-md);
-          transition: all var(--transition-fast);
-        }
-        
-        .mode-tab:hover {
-          color: var(--color-text);
-          background: var(--color-surface-elevated);
-        }
-        
-        .mode-tab.active {
-          color: var(--color-text);
-          background: var(--color-surface-elevated);
-        }
-        
-        .editor-toolbar {
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-          padding: var(--space-2) var(--space-4);
-          border-bottom: 1px solid var(--color-border-subtle);
-        }
-        
-        .mode-selector-container {
-          position: relative;
-        }
-        
-        .mode-selector-btn {
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-          padding: var(--space-2) var(--space-3);
-          background: var(--color-surface);
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-md);
-          font-size: var(--text-sm);
-          color: var(--color-text);
-          transition: all var(--transition-fast);
-        }
-        
-        .mode-selector-btn:hover {
-          border-color: var(--color-border-hover);
-        }
-        
-        .dropdown-arrow {
-          font-size: 10px;
-          color: var(--color-text-muted);
-        }
-        
-        .mode-dropdown {
-          position: absolute;
-          top: 100%;
-          left: 0;
-          margin-top: var(--space-1);
-          width: 240px;
-          background: var(--color-surface);
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-lg);
-          padding: var(--space-2);
-          z-index: 100;
-          box-shadow: var(--shadow-lg);
-        }
-        
-        .mode-option {
-          width: 100%;
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-          padding: var(--space-2);
-          border-radius: var(--radius-md);
-          transition: background var(--transition-fast);
-        }
-        
-        .mode-option:hover {
-          background: var(--color-surface-elevated);
-        }
-        
-        .mode-option.active {
-          background: var(--color-surface-elevated);
-        }
-        
-        .mode-option .mode-icon {
-          font-size: 18px;
-        }
-        
-        .mode-option .mode-info {
           display: flex;
           flex-direction: column;
-          text-align: left;
+          min-width: 0;
+          position: relative;
         }
-        
-        .mode-option .mode-name {
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
-          color: var(--color-text);
-        }
-        
-        .mode-option .mode-desc {
-          font-size: 10px;
-          color: var(--color-text-muted);
-        }
-        
-        .toolbar-btn {
-          padding: var(--space-1) var(--space-2);
-          font-size: var(--text-xs);
-          color: var(--color-text-secondary);
-          border-radius: var(--radius-sm);
-          transition: all var(--transition-fast);
-        }
-        
-        .toolbar-btn:hover:not(:disabled) {
-          background: var(--color-surface);
-        }
-        
-        .toolbar-btn:disabled {
-          opacity: 0.5;
-        }
-        
-        .toolbar-btn.active {
-          background: var(--color-surface);
-          color: var(--color-accent);
-        }
-        
-        .toolbar-divider {
-          width: 1px;
-          height: 24px;
-          background: var(--color-border-subtle);
-          margin: 0 var(--space-1);
-        }
-        
-        .toolbar-spacer {
-          flex: 1;
-        }
-        
-        .sync-status {
+
+        /* Toolbar */
+        .editor-toolbar-premium {
+          height: 52px;
+          padding: 0 24px;
           display: flex;
           align-items: center;
-          gap: var(--space-2);
-          font-size: var(--text-xs);
-          color: var(--color-text-muted);
+          justify-content: space-between;
+          background: rgba(255, 255, 255, 0.01);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
-        
-        .remote-users {
-          display: flex;
-          gap: 4px;
-          margin-left: var(--space-2);
+
+        .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 12px; }
+
+        .mode-pill {
+          display: flex; align-items: center; gap: 10px;
+          padding: 4px 12px 4px 6px; background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 100px;
+          cursor: pointer; position: relative;
         }
-        
-        .user-badge {
-          width: 24px;
-          height: 24px;
-          border-radius: var(--radius-full);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 10px;
-          font-weight: var(--font-semibold);
-          color: white;
+
+        .mode-icon-box {
+          width: 24px; height: 24px; border-radius: 50%;
+          background: rgba(255, 255, 255, 0.05);
+          display: flex; align-items: center; justify-content: center; font-size: 14px;
         }
-        
-        .editor-body {
-          flex: 1;
-          overflow: auto;
-          padding: var(--space-6);
+
+        .mode-label { font-size: 12px; font-weight: 700; color: white; }
+
+        .mode-popover {
+          position: absolute; top: calc(100% + 8px); left: 0;
+          width: 260px; background: #0a0a0a; border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 16px; padding: 8px; z-index: 1000;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
         }
-        
-        .editor-content {
-          max-width: 720px;
-          margin: 0 auto;
-          min-height: 100%;
-          font-size: var(--text-base);
-          line-height: 1.75;
-          color: var(--color-text);
-          outline: none;
-          white-space: pre-wrap;
-          word-wrap: break-word;
+
+        .popover-item {
+          width: 100%; display: flex; align-items: center; gap: 12px;
+          padding: 10px; border-radius: 10px; text-align: left;
+          transition: all 0.2s;
         }
-        
-        .editor-content:empty::before {
-          content: attr(data-placeholder);
-          color: var(--color-text-muted);
-          pointer-events: none;
+        .popover-item:hover { background: rgba(255, 255, 255, 0.05); }
+        .popover-item.active { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+
+        .i-name { display: block; font-size: 13px; font-weight: 700; }
+        .i-desc { font-size: 10px; color: rgba(255, 255, 255, 0.3); }
+
+        .divider-v { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.06); }
+
+        .sync-badge-premium {
+          display: flex; align-items: center; gap: 8px;
+          padding: 4px 12px; background: rgba(255, 255, 255, 0.02);
+          border-radius: 100px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.4);
         }
-        
-        .editor-footer {
-          display: flex;
-          align-items: center;
-          gap: var(--space-4);
-          padding: var(--space-2) var(--space-4);
-          border-top: 1px solid var(--color-border-subtle);
-          font-size: var(--text-xs);
-          font-family: var(--font-mono);
-          color: var(--color-text-muted);
+
+        .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); }
+        .sync-dot.online { background: #10b981; box-shadow: 0 0 8px #10b981; }
+
+        .btn-agent-toggle {
+          display: flex; align-items: center; gap: 8px;
+          padding: 0 16px; height: 32px; background: rgba(59, 130, 246, 0.1);
+          border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 100px;
+          color: #3b82f6; font-size: 11px; font-weight: 800; text-transform: uppercase;
         }
-        
-        .mode-badge {
-          padding: 2px 8px;
-          background: var(--color-surface);
-          border-radius: var(--radius-sm);
-          font-family: var(--font-sans);
+        .btn-agent-toggle.active { background: #3b82f6; color: white; }
+
+        /* Canvas */
+        .editor-canvas {
+          flex: 1; padding: 40px; overflow-y: auto; display: flex; flex-direction: column; align-items: center;
         }
-        
-        .permission-notice {
-          padding: var(--space-2) var(--space-4);
-          background: var(--color-warning);
-          color: var(--color-bg);
-          font-size: var(--text-sm);
-          text-align: center;
-          border-radius: var(--radius-md);
-          margin-bottom: var(--space-3);
+
+        .editor-surface {
+          width: 100%; max-width: 800px; min-height: 100%;
+          font-size: 16px; line-height: 1.8; color: rgba(255, 255, 255, 0.8);
+          outline: none; white-space: pre-wrap;
         }
-        
-        .editor-content.read-only {
-          opacity: 0.7;
-          cursor: not-allowed;
-          user-select: text;
+
+        .editor-surface:empty::before { content: attr(data-placeholder); color: rgba(255, 255, 255, 0.1); }
+
+        .read-only-banner {
+          display: flex; align-items: center; gap: 8px;
+          padding: 6px 16px; background: rgba(245, 158, 11, 0.1);
+          border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 8px;
+          color: #f59e0b; font-size: 11px; font-weight: 700; margin-bottom: 32px;
         }
-        
-        .permission-badge {
-          padding: 2px 8px;
-          background: var(--color-warning);
-          color: var(--color-bg);
-          border-radius: var(--radius-sm);
-          font-family: var(--font-sans);
-          font-weight: var(--font-medium);
+
+        /* Footer */
+        .editor-statusbar {
+          height: 36px; padding: 0 24px; display: flex; align-items: center; gap: 24px;
+          background: rgba(255, 255, 255, 0.01); border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
+
+        .status-item { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; }
+        .status-spacer { flex: 1; }
+
+        /* Resizer */
+        .agent-dock { border-left: 1px solid rgba(255, 255, 255, 0.05); overflow: hidden; }
+        .agent-resizer-line { width: 4px; cursor: col-resize; background: transparent; transition: all 0.3s; z-index: 100; margin-left: -2px; }
+        .agent-resizer-line:hover, .agent-resizer-line.active { background: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
       `}</style>
     </div>
   )

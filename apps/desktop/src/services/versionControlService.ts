@@ -1,9 +1,11 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 // Version Control Service - Document history and conflict resolution
 import * as Y from 'yjs'
 import { collabEngine } from './collabEngine'
+
+export type VersionType = 'manual' | 'auto' | 'merge' | 'checkpoint'
 
 export interface Version {
     id: string
@@ -18,6 +20,8 @@ export interface Version {
     parentId?: string
     isBranch: boolean
     branchName?: string
+    type: VersionType
+    tags: string[]
 }
 
 export interface Diff {
@@ -46,10 +50,74 @@ export interface MergeResult {
 }
 
 class VersionControlService {
-    private readonly versions: Map<string, Version[]> = new Map()
-    private readonly branches: Map<string, Map<string, string | undefined>> = new Map() // docId -> branchName -> headVersionId
-    private readonly conflicts: Map<string, Conflict[]> = new Map()
-    private readonly currentBranch: Map<string, string> = new Map() // docId -> branchName
+    private versions: Map<string, Version[]> = new Map()
+    private branches: Map<string, Map<string, string | undefined>> = new Map() // docId -> branchName -> headVersionId
+    private conflicts: Map<string, Conflict[]> = new Map()
+    private currentBranch: Map<string, string> = new Map() // docId -> branchName
+
+    constructor() {
+        this.loadFromStorage()
+    }
+
+    private persist(): void {
+        try {
+            const data = {
+                versions: Array.from(this.versions.entries()),
+                branches: Array.from(this.branches.entries()).map(([docId, branchMap]) => [
+                    docId,
+                    Array.from(branchMap.entries())
+                ]),
+                currentBranch: Array.from(this.currentBranch.entries())
+            }
+            
+            const serializableData = JSON.parse(JSON.stringify(data, (_, value) => {
+                if (value instanceof Uint8Array) {
+                    return btoa(String.fromCharCode(...value))
+                }
+                return value
+            }))
+            
+            localStorage.setItem('kalynt_versions', JSON.stringify(serializableData))
+        } catch (e) {
+            console.error('[VersionControl] Failed to persist:', e)
+        }
+    }
+
+    private loadFromStorage(): void {
+        try {
+            const raw = localStorage.getItem('kalynt_versions')
+            if (!raw) return
+
+            const parsed = JSON.parse(raw, (key, value) => {
+                if ((key === 'state' || key === 'localState' || key === 'remoteState') && typeof value === 'string') {
+                    const binary = atob(value)
+                    const bytes = new Uint8Array(binary.length)
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i)
+                    }
+                    return bytes
+                }
+                return value
+            })
+
+            if (parsed.versions) {
+                this.versions = new Map(parsed.versions)
+            }
+            
+            if (parsed.branches) {
+                this.branches = new Map(parsed.branches.map(([docId, branchEntries]: [string, any]) => [
+                    docId,
+                    new Map(branchEntries)
+                ]))
+            }
+
+            if (parsed.currentBranch) {
+                this.currentBranch = new Map(parsed.currentBranch)
+            }
+        } catch (e) {
+            console.warn('[VersionControl] Failed to load from storage:', e)
+        }
+    }
 
     // Create a new version (commit)
     createVersion(
@@ -57,7 +125,9 @@ class VersionControlService {
         label: string,
         description: string,
         author: string,
-        authorName: string
+        authorName: string,
+        type: VersionType = 'manual',
+        tags: string[] = []
     ): Version {
         const doc = collabEngine.getDocument(docId)
         if (!doc) throw new Error('Document not found')
@@ -72,7 +142,7 @@ class VersionControlService {
         const version: Version = {
             id: crypto.randomUUID(),
             docId,
-            number: versions.filter(v => v.branchName === branchName).length + 1,
+            number: versions.length + 1,
             label,
             description,
             author,
@@ -81,7 +151,9 @@ class VersionControlService {
             state: Y.encodeStateAsUpdate(doc),
             parentId,
             isBranch: false,
-            branchName
+            branchName,
+            type,
+            tags
         }
 
         versions.push(version)
@@ -91,7 +163,22 @@ class VersionControlService {
         branchHeads.set(branchName, version.id)
         this.branches.set(docId, branchHeads)
 
+        this.persist()
         return version
+    }
+
+    // Add tag to version
+    addTag(docId: string, versionId: string, tag: string): boolean {
+        const versions = this.versions.get(docId)
+        if (!versions) return false
+        const version = versions.find(v => v.id === versionId)
+        if (!version) return false
+        if (!version.tags.includes(tag)) {
+            version.tags.push(tag)
+            this.persist()
+            return true
+        }
+        return false
     }
 
     // Get all versions for a document
@@ -145,6 +232,7 @@ class VersionControlService {
         }
 
         this.branches.set(docId, branchHeads)
+        this.persist()
         return true
     }
 
@@ -179,6 +267,7 @@ class VersionControlService {
             }
         }
 
+        this.persist()
         return true
     }
 
@@ -195,6 +284,7 @@ class VersionControlService {
             this.restoreVersion(docId, headVersionId)
         }
 
+        this.persist()
         return true
     }
 
@@ -259,7 +349,8 @@ class VersionControlService {
                 `Merge ${sourceBranch} into ${targetBranch}`,
                 `Merged branch ${sourceBranch} into ${targetBranch}`,
                 'system',
-                'System'
+                'System',
+                'merge'
             )
 
             return { success: true, conflicts: [], mergedState }
@@ -321,6 +412,7 @@ class VersionControlService {
         conflict.resolvedState = resolvedState
         conflict.status = 'resolved'
 
+        this.persist()
         return true
     }
 
@@ -332,6 +424,7 @@ class VersionControlService {
         if (!conflict) return false
 
         conflict.status = 'dismissed'
+        this.persist()
         return true
     }
 
@@ -375,6 +468,8 @@ class VersionControlService {
         author: string
         timestamp: number
         branch: string
+        type: VersionType
+        tags: string[]
     }> {
         const versions = this.versions.get(docId) || []
         return [...versions]
@@ -385,7 +480,9 @@ class VersionControlService {
                 description: v.description,
                 author: v.authorName,
                 timestamp: v.timestamp,
-                branch: v.branchName || 'main'
+                branch: v.branchName || 'main',
+                type: v.type,
+                tags: v.tags
             }))
     }
 
@@ -399,7 +496,7 @@ class VersionControlService {
 
         // Set new timer
         const timer = setTimeout(() => {
-            this.createVersion(docId, 'Auto-save', 'Automatic save', author, authorName)
+            this.createVersion(docId, 'Auto-save', 'Automatic save point', author, authorName, 'auto')
             this.autoSaveTimers.delete(docId)
         }, delay)
 

@@ -1,9 +1,12 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 // main-process/shellIntegration.ts
 import { IPty } from 'node-pty'
 import { EventEmitter } from 'events'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
 
 export interface ShellIntegrationData {
     type: 'command_start' | 'command_end' | 'cwd_change' | 'prompt' | 'continuation'
@@ -163,51 +166,7 @@ export class ShellIntegrationService extends EventEmitter {
     }
 
     getShellIntegrationScript(shell: string): string {
-        const scripts = {
-            bash: `
-        __kalynt_prompt_command() {
-          local exit_code=$?
-          printf "\\033]633;E;$exit_code\\007"
-          printf "\\033]633;D\\007"
-        }
-        PS1="\\[\\033]633;A\\007\\]\\[\\033]633;C;$PWD\\007\\]\\[\\033]633;B\\007\\]$PS1\\[\\033]633;D\\007\\]"
-        trap '__kalynt_prompt_command' DEBUG
-      `,
-            zsh: `
-        precmd() {
-          printf "\\033]633;A\\007"
-          printf "\\033]633;C;$PWD\\007"
-          printf "\\033]633;B\\007"
-        }
-        preexec() {
-          printf "\\033]633;D\\007"
-        }
-      `,
-            fish: `
-        function __kalynt_prompt --on-event fish_prompt
-          printf "\\033]633;A\\007"
-          printf "\\033]633;C;$PWD\\007"
-          printf "\\033]633;B\\007"
-        end
-        function __kalynt_preexec --on-event fish_preexec
-          printf "\\033]633;D\\007"
-        end
-      `,
-            pwsh: `
-        function prompt {
-          Write-Host -NoNewLine "\`e]633; A\`a"
-          Write-Host -NoNewLine "\`e]633; C; $($executionContext.SessionState.Path.CurrentLocation)\`a"
-          Write-Host -NoNewLine "\`e]633; B\`a"
-          "> "
-        }
-        function __kalynt_preexec {
-          Write-Host -NoNewLine "\`e]633; D\`a"
-        }
-        Set-PSBreakpoint -Command '*' -Action { __kalynt_preexec }
-      `
-        }
-
-        return scripts[shell as keyof typeof scripts] || ''
+        return ''
     }
 
     dispose(): void {
@@ -233,11 +192,22 @@ class ShellIntegration extends EventEmitter {
 
     initialize(): void {
         const script = this.getIntegrationScript()
-        if (script) {
-            // Send initialization script
+        if (!script) return
+
+        const tempDir = os.tmpdir()
+        const scriptPath = path.join(tempDir, `kalynt-shell-${this.terminalId}.sh`)
+
+        try {
+            fs.writeFileSync(scriptPath, script)
+            
+            // Wait for shell to be ready
             setTimeout(() => {
-                this.ptyProcess.write(script + '\r\n')
-            }, 100)
+                // Source the script and remove it silently
+                // Use a leading space to keep it out of bash history
+                this.ptyProcess.write(` . ${scriptPath} && rm ${scriptPath}; clear\n`)
+            }, 500)
+        } catch (error) {
+            console.error('[ShellIntegration] Failed to write init script:', error)
         }
     }
 
@@ -343,83 +313,44 @@ class ShellIntegration extends EventEmitter {
     }
 
     private getIntegrationScript(): string {
-        // Don't wrap PowerShell/CMD in bash syntax!
         const shellName = this.shell.toLowerCase()
 
-        // PowerShell variants - disable integration for now
-        // Multiline scripts cause parsing issues when sent through PTY
-        if (shellName.includes('pwsh') || shellName.includes('powershell')) {
-            console.log('[ShellIntegration] Skipping integration for PowerShell')
-            return '' // Disable until we can send single-line scripts
+        if (shellName.includes('pwsh') || shellName.includes('powershell') || shellName.includes('cmd')) {
+            return ''
         }
 
-        // CMD - no integration (limited shell)
-        if (shellName.includes('cmd')) {
-            return '' // CMD doesn't support advanced prompt customization
+        if (shellName.includes('bash')) {
+            return `
+__kalynt_cmd_start() {
+  printf "\\033]633;A\\007"
+  printf "\\033]633;C;$PWD\\007"
+}
+__kalynt_cmd_end() {
+  printf "\\033]633;D\\007"
+}
+__kalynt_update_cmd() {
+  printf "\\033]633;B;%s\\007" "$1"
+}
+trap '__kalynt_cmd_start' DEBUG
+PS1="\\[\\$(__kalynt_update_cmd "\\\\W")\\]$PS1"
+`
+        }
+        
+        if (shellName.includes('zsh')) {
+            return `
+__kalynt_preexec() {
+  printf "\\033]633;A\\007"
+  printf "\\033]633;C;$PWD\\007"
+}
+__kalynt_precmd() {
+  printf "\\033]633;D\\007"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook preexec __kalynt_preexec
+add-zsh-hook precmd __kalynt_precmd
+`
         }
 
-        // Unix shells (bash, zsh, fish)
-        const baseScript = `
-      # Kalynt Terminal Shell Integration
-      if [ -n "$KALYNT_TERMINAL" ]; then
-        ${this.getShellSpecificScript()}
-      fi
-    `
-
-        return baseScript
-    }
-
-    private getShellSpecificScript(): string {
-        const scripts: Record<string, string> = {
-            bash: `
-        __kalynt_cmd_start() {
-          printf "\\033]633;A\\007"
-          printf "\\033]633;C;$PWD\\007"
-        }
-        __kalynt_cmd_end() {
-          printf "\\033]633;D\\007"
-        }
-        __kalynt_update_cmd() {
-          printf "\\033]633;B;%s\\007" "$1"
-        }
-        trap '__kalynt_cmd_start' DEBUG
-        PS1="\\[\\$(__kalynt_update_cmd "\\W")\\]$PS1"
-      `,
-            zsh: `
-        __kalynt_preexec() {
-          printf "\\033]633;A\\007"
-          printf "\\033]633;C;$PWD\\007"
-        }
-        __kalynt_precmd() {
-          printf "\\033]633;D\\007"
-        }
-        autoload -Uz add-zsh-hook
-        add-zsh-hook preexec __kalynt_preexec
-        add-zsh-hook precmd __kalynt_precmd
-      `,
-            fish: `
-        function __kalynt_fish_preexec --on-event fish_preexec
-          printf "\\033]633;A\\007"
-          printf "\\033]633;C;$PWD\\007"
-        end
-        function __kalynt_fish_postexec --on-event fish_postexec
-          printf "\\033]633;D\\007"
-        end
-      `,
-            pwsh: `
-        function __kalynt_prompt {
-          Write-Host -NoNewLine "\`e]633; A\`a"
-          Write-Host -NoNewLine "\`e]633; C; $PWD\`a"
-          "> "
-        }
-        function __kalynt_preexec {
-          param($Command)
-          Write-Host -NoNewLine "\`e]633; B; $Command\`a"
-        }
-        Set-PSBreakpoint -Command '*' -Action { __kalynt_preexec $args[0] }
-      `
-        }
-
-        return scripts[this.shell] || ''
+        return ''
     }
 }

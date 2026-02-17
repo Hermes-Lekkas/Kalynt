@@ -317,17 +317,21 @@ class P2PService {
         return this.roomCallbacks.get(roomId) || this.roomCallbacks.get('__default__') || {}
     }
 
-    connect(roomId: string, doc: Y.Doc): WebrtcProvider | null {
+    connect(roomId: string, doc: Y.Doc, password?: string): WebrtcProvider | null {
         // Check if already connected
         if (this.providers.has(roomId)) {
             return this.providers.get(roomId)!
         }
 
         try {
+            // Use kalynt- prefix for consistency with other parts of the app
+            const roomName = `kalynt-${roomId}`
+            const connectionPassword = password || this.config.password
+
             // Create WebRTC provider with error handling
-            const provider = new WebrtcProvider(roomId, doc, {
+            const provider = new WebrtcProvider(roomName, doc, {
                 signaling: this.config.signalingServers,
-                password: this.config.password,
+                password: connectionPassword,
                 maxConns: this.config.maxPeers,
                 // filterBcConns: true filters broadcast connections to only allow
                 // connections established via signaling, providing better control

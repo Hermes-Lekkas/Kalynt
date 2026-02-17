@@ -49,6 +49,8 @@ interface TerminalAPI {
 
     getCurrentCommand: (terminalId: string) => Promise<{ success: boolean; command?: any; error?: string }>
 
+    getDefaultShell: () => Promise<{ success: boolean; shell: string; error?: string }>
+
     // Events
     onData: (callback: (data: { id: string; data: string; type: string }) => void) => void
 
@@ -241,6 +243,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         broadcast: (data: string, filter?: string) => ipcRenderer.invoke('terminal:broadcast', { data, filter }),
         getCommandHistory: (terminalId: string) => ipcRenderer.invoke('terminal:getCommandHistory', terminalId),
         getCurrentCommand: (terminalId: string) => ipcRenderer.invoke('terminal:getCurrentCommand', terminalId),
+        getDefaultShell: () => ipcRenderer.invoke('terminal:getDefaultShell'),
 
         // Events
         onData: (callback: (data: { id: string; data: string; type: string }) => void) => {

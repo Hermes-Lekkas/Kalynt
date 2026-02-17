@@ -517,38 +517,84 @@ class BuildTaskManager {
     workspacePath: string
   ): Problem[] {
     const problems: Problem[] = [];
-    const pattern = matcher.pattern;
+    const patterns = Array.isArray(matcher.pattern) 
+        ? matcher.pattern 
+        : (matcher.pattern ? [matcher.pattern] : []);
 
-    if (!pattern || Array.isArray(pattern)) {
-      // Multi-line patterns not implemented yet
+    if (patterns.length === 0) {
       return problems;
     }
 
     const lines = output.split('\n');
-    const regex = new RegExp(pattern.regexp);
+    
+    // State for multi-line matching
+    let currentPatternIndex = 0;
+    let captured: any = {};
 
     for (const line of lines) {
-      const match = regex.exec(line);
-      if (!match) continue;
+        const pattern = patterns[currentPatternIndex];
+        // Handle potential undefined pattern safety
+        if (!pattern) {
+            currentPatternIndex = 0;
+            captured = {};
+            continue;
+        }
 
-      const problem: Problem = {
-        file: pattern.file ? match[pattern.file] : 'unknown',
-        line: pattern.line ? parseInt(match[pattern.line], 10) : 1,
-        column: pattern.column ? parseInt(match[pattern.column], 10) : 1,
-        severity: this.parseSeverity(
-          pattern.severity ? match[pattern.severity] : 'error'
-        ),
-        message: pattern.message ? match[pattern.message] : line,
-        code: pattern.code ? match[pattern.code] : undefined,
-        source: matcher.owner,
-      };
+        try {
+            const regex = new RegExp(pattern.regexp);
+            const match = regex.exec(line);
 
-      // Resolve relative file paths
-      if (problem.file && !path.isAbsolute(problem.file)) {
-        problem.file = path.join(workspacePath, problem.file);
-      }
-
-      problems.push(problem);
+            if (match) {
+                // Capture groups based on pattern configuration
+                if (pattern.file) captured.file = match[pattern.file];
+                if (pattern.line) captured.line = parseInt(match[pattern.line], 10);
+                if (pattern.column) captured.column = parseInt(match[pattern.column], 10);
+                if (pattern.message) captured.message = match[pattern.message];
+                if (pattern.severity) captured.severity = this.parseSeverity(match[pattern.severity]);
+                if (pattern.code) captured.code = match[pattern.code];
+                
+                // Advance state
+                currentPatternIndex++;
+                
+                // Check if sequence is complete
+                if (currentPatternIndex >= patterns.length) {
+                    // Validate and create problem
+                    if (captured.file && captured.message) {
+                         const problem: Problem = {
+                            file: captured.file,
+                            line: captured.line || 1,
+                            column: captured.column || 1,
+                            severity: captured.severity || 'error',
+                            message: captured.message,
+                            code: captured.code,
+                            source: matcher.owner
+                         };
+                         
+                         // Resolve path
+                         if (!path.isAbsolute(problem.file)) {
+                            problem.file = path.join(workspacePath, problem.file);
+                         }
+                         
+                         problems.push(problem);
+                    }
+                    
+                    // Reset state
+                    currentPatternIndex = 0;
+                    captured = {};
+                }
+            } else {
+                // Mismatch: Reset state
+                if (currentPatternIndex > 0) {
+                    currentPatternIndex = 0;
+                    captured = {};
+                    // Optional: Re-try this line against first pattern (omitted for stability)
+                }
+            }
+        } catch (err) {
+            console.error('Regex parsing error:', err);
+            currentPatternIndex = 0;
+            captured = {};
+        }
     }
 
     return problems;

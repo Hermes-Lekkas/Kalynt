@@ -392,6 +392,32 @@ class OfflineLLMService {
         return this.currentRequestId !== null
     }
 
+    /**
+     * Get the context window for the currently loaded model.
+     * Takes into account user-defined overrides.
+     */
+    getContextWindow(): number {
+        if (!this.currentModelId) return 4096
+
+        const model = getModelById(this.currentModelId)
+        if (!model) return 4096
+
+        let contextLength = model.contextLength
+        try {
+            const storedContexts = localStorage.getItem('model-context-settings')
+            if (storedContexts) {
+                const contexts = JSON.parse(storedContexts)
+                if (contexts[this.currentModelId]) {
+                    contextLength = contexts[this.currentModelId]
+                }
+            }
+        } catch (e) {
+            console.warn('[OfflineLLM] Failed to read custom context settings:', e)
+        }
+
+        return contextLength
+    }
+
     // --- Speculative Decoding: Draft Model ---
 
     async loadDraftModel(modelId: string): Promise<boolean> {

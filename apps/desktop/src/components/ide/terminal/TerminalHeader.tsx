@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import React from 'react'
+import React, { useState } from 'react'
 import { TerminalTab } from './types'
 import {
     Plus,
@@ -23,6 +23,7 @@ interface TerminalHeaderProps {
     onAddTab: () => void
     onToggleSearch: () => void
     onClearTerminal: () => void
+    onRenameTab?: (id: string, title: string) => void
     searchVisible: boolean
     onSplitHorizontal?: () => void
     onSplitVertical?: () => void
@@ -37,11 +38,27 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
     onAddTab,
     onToggleSearch,
     onClearTerminal,
+    onRenameTab,
     searchVisible,
     onSplitHorizontal,
     onSplitVertical,
     onOpenPalette
 }) => {
+    const [editingTabId, setEditingTabId] = useState<string | null>(null)
+    const [editValue, setEditValue] = useState('')
+
+    const handleStartRename = (id: string, currentTitle: string) => {
+        setEditingTabId(id)
+        setEditValue(currentTitle)
+    }
+
+    const handleFinishRename = (id: string) => {
+        if (editValue.trim() && onRenameTab) {
+            onRenameTab(id, editValue.trim())
+        }
+        setEditingTabId(null)
+    }
+
     return (
         <div style={{
             display: 'flex',
@@ -67,6 +84,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                     <div
                         key={tab.id}
                         onClick={() => onSwitchTab(tab.id)}
+                        onDoubleClick={() => handleStartRename(tab.id, tab.title)}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -92,14 +110,35 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         }}
                     >
                         <TerminalIcon size={12} style={{ opacity: 0.7, flexShrink: 0 }} />
-                        <span style={{
-                            flex: 1,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                        }}>
-                            {tab.title}
-                        </span>
+                        {editingTabId === tab.id ? (
+                            <input
+                                autoFocus
+                                value={editValue}
+                                onChange={e => setEditValue(e.target.value)}
+                                onBlur={() => handleFinishRename(tab.id)}
+                                onKeyDown={e => e.key === 'Enter' && handleFinishRename(tab.id)}
+                                onClick={e => e.stopPropagation()}
+                                style={{
+                                    background: 'rgba(0, 0, 0, 0.3)',
+                                    border: '1px solid #3b82f6',
+                                    borderRadius: '4px',
+                                    color: 'white',
+                                    fontSize: '12px',
+                                    padding: '0 4px',
+                                    width: '100%',
+                                    outline: 'none'
+                                }}
+                            />
+                        ) : (
+                            <span style={{
+                                flex: 1,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                            }}>
+                                {tab.title}
+                            </span>
+                        )}
                         <X
                             size={12}
                             style={{

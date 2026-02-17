@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { autoUpdater } from 'electron-updater'
@@ -6,13 +6,6 @@ import type { IpcMain, BrowserWindow } from 'electron'
 
 /**
  * Secure Auto-Update Handler for Kalynt
- *
- * Security Features:
- * - Uses HTTPS for all GitHub communications
- * - Supports code signature verification (when configured)
- * - GitHub token stored securely via safeStorage
- * - No sensitive data exposed to renderer process
- * - All update operations happen in main process
  */
 
 // Simple logger for electron-updater
@@ -48,7 +41,8 @@ function configureAutoUpdater(githubToken?: string) {
     autoUpdater.logger = updateLogger as any
 
     // Security: Only allow HTTPS
-    autoUpdater.forceDevUpdateConfig = false
+    // Allow update checks in development mode for testing
+    autoUpdater.forceDevUpdateConfig = process.env.NODE_ENV !== 'production'
 
     // Auto-download is disabled - user must explicitly approve
     autoUpdater.autoDownload = false
@@ -56,23 +50,34 @@ function configureAutoUpdater(githubToken?: string) {
     // Auto-install is disabled - user must explicitly approve
     autoUpdater.autoInstallOnAppQuit = false
 
+    // Get current version string
+    const version = autoUpdater.currentVersion.version
+    const isPrerelease = version.includes('-alpha') || version.includes('-beta') || version.includes('-rc')
+    
     // Set update channel (latest, beta, alpha, etc.)
-    autoUpdater.channel = process.env.UPDATE_CHANNEL || 'latest'
+    const channel = process.env.UPDATE_CHANNEL || (isPrerelease ? 'beta' : 'latest')
+    autoUpdater.channel = channel
 
-    // Allow prerelease if channel is not 'latest'
-    autoUpdater.allowPrerelease = autoUpdater.channel !== 'latest'
+    // Allow prerelease if channel is not 'latest' OR if current version is a prerelease
+    autoUpdater.allowPrerelease = channel !== 'latest' || isPrerelease
 
-    // Configure GitHub token if provided
-    if (githubToken) {
-        autoUpdater.setFeedURL({
-            provider: 'github',
-            owner: process.env.GITHUB_REPO_OWNER || 'Hermes-Lekkas',
-            repo: process.env.GITHUB_REPO_NAME || 'Kalynt',
-            private: false,
-            token: githubToken
-        })
-        console.log('[Update] GitHub token configured for update checks')
-    }
+    // Configure GitHub repository
+    const owner = process.env.GITHUB_REPO_OWNER || 'Hermes-Lekkas'
+    const repo = process.env.GITHUB_REPO_NAME || 'Kalynt'
+
+    autoUpdater.setFeedURL({
+        provider: 'github',
+        owner,
+        repo,
+        private: false,
+        token: githubToken || undefined
+    })
+    
+    // Explicitly set the channel again on the updater instance
+    autoUpdater.channel = channel
+    
+    console.log(`[Update] Configured for ${owner}/${repo}`)
+    console.log(`[Update] Channel: ${autoUpdater.channel}, AllowPrerelease: ${autoUpdater.allowPrerelease}, Current Version: ${version}`)
 }
 
 /**
@@ -92,8 +97,6 @@ export function registerUpdateHandlers(
 
     /**
      * Configure GitHub token for updates
-     * Token is passed from renderer after being retrieved from safeStorage
-     * SEC-008: Enhanced security - validate token format, never log token value
      */
     ipcMain.handle('update:configure-token', async (_event, token: string) => {
         try {
@@ -103,20 +106,18 @@ export function registerUpdateHandlers(
                 return { success: true, message: 'Using public access for updates' }
             }
 
-            // SEC-008: Validate token format (GitHub tokens have specific patterns)
             const trimmedToken = token.trim()
             const validTokenPatterns = [
-                /^ghp_[a-zA-Z0-9]{36}$/,           // Personal access token (fine-grained)
-                /^github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}$/, // Personal access token (new format)
-                /^gho_[a-zA-Z0-9]{36}$/,           // OAuth token
-                /^ghu_[a-zA-Z0-9]{36}$/,           // User-to-server token
-                /^ghs_[a-zA-Z0-9]{36}$/,           // Server-to-server token
-                /^[a-f0-9]{40}$/,                  // Legacy token
+                /^ghp_[a-zA-Z0-9]{36}$/,
+                /^github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}$/,
+                /^gho_[a-zA-Z0-9]{36}$/,
+                /^ghu_[a-zA-Z0-9]{36}$/,
+                /^ghs_[a-zA-Z0-9]{36}$/,
+                /^[a-f0-9]{40}$/,
             ]
 
             const isValidFormat = validTokenPatterns.some(pattern => pattern.test(trimmedToken))
             if (!isValidFormat) {
-                // SEC-008: Never log the invalid token value
                 console.warn('[Update] Invalid token format provided')
                 return {
                     success: false,
@@ -125,10 +126,8 @@ export function registerUpdateHandlers(
             }
 
             configureAutoUpdater(trimmedToken)
-            // SEC-008: Clear token from local scope immediately after use
             return { success: true, message: 'GitHub token configured successfully' }
         } catch (err) {
-            // SEC-008: Never include token in error messages - only log generic failure
             const errorType = err instanceof Error ? err.name : 'Unknown'
             console.error('[Update] Token configuration failed:', errorType)
             return {
@@ -152,6 +151,9 @@ export function registerUpdateHandlers(
 
             updateCheckInProgress = true
             console.log('[Update] Checking for updates...')
+            
+            // Re-configure right before check to ensure settings are fresh
+            configureAutoUpdater()
 
             const result = await autoUpdater.checkForUpdates()
             updateCheckInProgress = false
@@ -184,19 +186,20 @@ export function registerUpdateHandlers(
             updateCheckInProgress = false
             const errorMessage = error instanceof Error ? error.message : String(error)
             console.error('[Update] Check error:', errorMessage)
+            console.error('[Update] Current state:', {
+                channel: autoUpdater.channel,
+                allowPrerelease: autoUpdater.allowPrerelease,
+                currentVersion: autoUpdater.currentVersion.version
+            })
 
             // Provide helpful error messages for common issues
             let userFriendlyError = errorMessage
             if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
-                userFriendlyError = 'GitHub repository or releases not found. Make sure the repository exists and has published releases.'
+                userFriendlyError = 'Update information not found on GitHub. This usually means the release is still being processed or the YAML configuration is missing.'
             } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
-                userFriendlyError = 'GitHub token is invalid or expired. Please update your token in Settings > Security.'
-            } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
-                userFriendlyError = 'Access denied. Check that your GitHub token has the required permissions.'
+                userFriendlyError = 'GitHub token is invalid or expired.'
             } else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('network')) {
                 userFriendlyError = 'Network error. Please check your internet connection.'
-            } else if (errorMessage.includes('no published releases')) {
-                userFriendlyError = 'No releases found. Publish a release on GitHub first.'
             }
 
             return {
@@ -242,7 +245,6 @@ export function registerUpdateHandlers(
         try {
             console.log('[Update] Installing update and restarting...')
 
-            // This will quit the app and install the update
             setImmediate(() => {
                 autoUpdater.quitAndInstall(false, true)
             })
@@ -368,26 +370,26 @@ function setupAutoUpdaterEvents(getMainWindow: () => BrowserWindow | null) {
 
 /**
  * Initialize auto-update on app startup
- * Call this from main.ts after the app is ready
  */
 export async function initializeAutoUpdater(_mainWindow: BrowserWindow) {
     try {
-        // Wait a bit after app launch to check for updates
         setTimeout(async () => {
             try {
                 console.log('[Update] Performing automatic update check...')
+                // Re-configure before automatic check
+                configureAutoUpdater()
                 await autoUpdater.checkForUpdates()
             } catch (error) {
                 console.error('[Update] Automatic check failed:', error)
             }
-        }, 5000) // Check 5 seconds after app starts
+        }, 5000)
 
-        // Set up periodic checks (every hour by default)
         const checkInterval = Number.parseInt(process.env.UPDATE_CHECK_INTERVAL_MS || '3600000', 10)
         setInterval(async () => {
             try {
                 if (!updateCheckInProgress && !downloadInProgress) {
                     console.log('[Update] Performing periodic update check...')
+                    configureAutoUpdater()
                     await autoUpdater.checkForUpdates()
                 }
             } catch (error) {

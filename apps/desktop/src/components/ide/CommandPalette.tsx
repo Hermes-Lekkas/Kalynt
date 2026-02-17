@@ -1,44 +1,16 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Command } from 'cmdk'
 import Fuse from 'fuse.js'
 import {
-    Folder,
-    FileText,
-    FileCode,
-    FileJson,
-    FileEdit,
-    Palette,
-    Globe,
-    Lock,
-    Shield,
-    Terminal,
-    GitBranch,
-    Bot,
-    Pencil,
-    Eye,
-    Zap,
-    Save,
-    Play,
-    Bug,
-    Hammer,
-    Sparkles,
-    MoveVertical,
-    Search,
-    CheckCircle2,
-    ArrowUp,
-    ArrowDown,
-    X,
-    MessageSquare,
-    Lightbulb,
-    Wrench,
-    FilePlus
+    Folder, FileText, FileCode, FileJson, FileEdit, Palette, Globe, 
+    Sparkles, Search, Command as CommandIcon, Zap, Bot, Save, GitBranch, Settings
 } from 'lucide-react'
 
 // Command types
-interface IDECommand {
+export interface IDECommand {
     id: string
     title: string
     shortcut?: string
@@ -47,7 +19,7 @@ interface IDECommand {
     icon?: string | React.ReactNode
 }
 
-interface FileItem {
+export interface FileItem {
     path: string
     name: string
     type: 'file' | 'directory'
@@ -69,24 +41,16 @@ export default function CommandPalette({
     mode: propMode,
     files,
     onFileSelect,
-    commands = [],
-    workspacePath
+    commands = []
 }: CommandPaletteProps) {
-    // BUG-074: Mode validation
     const mode = (propMode === 'files' || propMode === 'commands') ? propMode : 'commands'
-
     const [search, setSearch] = useState('')
 
-    // Reset search when modal opens
     useEffect(() => {
         if (open) setSearch('')
     }, [open])
 
-    // File search with Fuse.js
-    // File search with Fuse.js
     const [fileFuse, setFileFuse] = useState<Fuse<FileItem> | null>(null)
-
-    // BUG-077: Add useEffect cleanup that destroys Fuse instances
     useEffect(() => {
         const fuseInstance = new Fuse(files, {
             keys: ['name', 'path'],
@@ -94,346 +58,230 @@ export default function CommandPalette({
             distance: 100
         })
         setFileFuse(fuseInstance)
-
-        return () => {
-            setFileFuse(null) // Explicit cleanup
-        }
+        return () => setFileFuse(null)
     }, [files])
 
-    // Command search with Fuse.js
-    // Command search with Fuse.js
     const [commandFuse, setCommandFuse] = useState<Fuse<IDECommand> | null>(null)
-
-    // BUG-077: Add useEffect cleanup that destroys Fuse instances
     useEffect(() => {
         const fuseInstance = new Fuse(commands, {
             keys: ['title', 'category'],
             threshold: 0.3
         })
         setCommandFuse(fuseInstance)
-
-        return () => {
-            setCommandFuse(null) // Explicit cleanup
-        }
+        return () => setCommandFuse(null)
     }, [commands])
 
-    // Get filtered results
     const filteredFiles = useMemo(() => {
-        try {
-            if (!search) return files.slice(0, 20)
-            if (!fileFuse) return []
-            return fileFuse.search(search).slice(0, 20).map(r => r.item)
-        } catch (error) {
-            console.error('File search error:', error)
-            return []
-        }
+        if (!search) return files.slice(0, 10)
+        if (!fileFuse) return []
+        return fileFuse.search(search).slice(0, 10).map(r => r.item)
     }, [search, files, fileFuse])
 
     const filteredCommands = useMemo(() => {
-        try {
-            if (!search) return commands
-            if (!commandFuse) return []
-            return commandFuse.search(search).map(r => r.item)
-        } catch (error) {
-            console.error('Command search error:', error)
-            return []
-        }
+        if (!search) return commands
+        if (!commandFuse) return []
+        return commandFuse.search(search).map(r => r.item)
     }, [search, commands, commandFuse])
 
-    // Group commands by category
     const groupedCommands = useMemo(() => {
         const groups: Record<string, IDECommand[]> = {}
-        // Initialize known categories to ensure order
-        const categories = ['file', 'edit', 'view', 'terminal', 'git', 'ai']
-        categories.forEach(c => groups[c] = [])
-
         filteredCommands.forEach(cmd => {
-            // Validate category
             const category = cmd.category || 'other'
             if (!groups[category]) groups[category] = []
             groups[category].push(cmd)
         })
-
-        // Remove empty groups
-        Object.keys(groups).forEach(key => {
-            if (groups[key].length === 0) delete groups[key]
-        })
-
         return groups
     }, [filteredCommands])
 
     const handleSelect = useCallback((value: string) => {
-        if (mode === 'files' && onFileSelect) {
-            onFileSelect(value)
-        }
+        if (mode === 'files' && onFileSelect) onFileSelect(value)
         onOpenChange(false)
     }, [mode, onFileSelect, onOpenChange])
 
-    // Get file icon based on extension
     const getFileIcon = (name: string, type: 'file' | 'directory') => {
         if (type === 'directory') return <Folder size={16} />
-        if (!name) return <FileText size={16} />
-
         const ext = name.split('.').pop()?.toLowerCase()
-        const icons: Record<string, React.ReactNode> = {
-            ts: <FileCode size={16} color="#60a5fa" />,
-            tsx: <FileCode size={16} color="#818cf8" />,
-            js: <FileCode size={16} color="#facc15" />,
-            jsx: <FileCode size={16} color="#818cf8" />,
-            json: <FileJson size={16} color="#f87171" />,
-            md: <FileEdit size={16} color="#94a3b8" />,
-            css: <Palette size={16} color="#38bdf8" />,
-            html: <Globe size={16} color="#fb923c" />,
-            py: <FileCode size={16} color="#3776ab" />,
-            rs: <FileCode size={16} color="#dea584" />,
-            go: <FileCode size={16} color="#00add8" />,
-            java: <FileCode size={16} color="#b07219" />,
-            gitignore: <Lock size={16} color="#94a3b8" />,
-            env: <Shield size={16} color="#fbbf24" />
+        const icons: Record<string, any> = {
+            ts: <FileCode size={16} className="text-blue-400" />,
+            tsx: <FileCode size={16} className="text-blue-300" />,
+            js: <FileCode size={16} className="text-yellow-400" />,
+            json: <FileJson size={16} className="text-red-400" />,
+            md: <FileEdit size={16} className="text-gray-400" />,
+            css: <Palette size={16} className="text-blue-400" />,
+            html: <Globe size={16} className="text-orange-400" />,
         }
-
-        if (!ext || ext === name.toLowerCase()) return <FileText size={16} />
-        return icons[ext] || <FileText size={16} />
+        return icons[ext || ''] || <FileText size={16} className="opacity-40" />
     }
 
-    const getCategoryIcon = (category: string) => {
-        const icons: Record<string, React.ReactNode> = {
-            file: <Folder size={16} />,
-            edit: <Pencil size={16} />,
-            view: <Eye size={16} />,
-            terminal: <Terminal size={16} />,
-            git: <GitBranch size={16} />,
-            ai: <Bot size={16} />
-        }
-        return icons[category] || <Zap size={16} />
-    }
-
-    // Helper to render command icon which could be an emoji string from old code or a name
-    const renderIcon = (icon: string | React.ReactNode, category: string) => {
-        if (!icon) return getCategoryIcon(category)
-        if (typeof icon !== 'string') return icon
-
-        // Map names to Lucide components
-        const iconMap: Record<string, React.ReactNode> = {
-            'FilePlus': <FilePlus size={16} />,
-            'Save': <Save size={16} />,
-            'X': <X size={16} />,
-            'Folder': <Folder size={16} />,
-            'Terminal': <Terminal size={16} />,
-            'FolderOpen': <Folder size={16} />,
-            'GitBranch': <GitBranch size={16} />,
-            'Bot': <Bot size={16} />,
-            'Play': <Play size={16} />,
-            'Bug': <Bug size={16} />,
-            'Hammer': <Hammer size={16} />,
-            'Sparkles': <Sparkles size={16} />,
-            'MoveVertical': <MoveVertical size={16} />,
+    const renderIcon = (icon: string | React.ReactNode) => {
+        if (icon && typeof icon !== 'string') return icon
+        const iconMap: Record<string, any> = {
+            'Zap': <Zap size={16} />,
             'Search': <Search size={16} />,
-            'CheckCircle2': <CheckCircle2 size={16} />,
-            'ArrowUp': <ArrowUp size={16} />,
-            'ArrowDown': <ArrowDown size={16} />,
-            'MessageSquare': <MessageSquare size={16} />,
-            'Lightbulb': <Lightbulb size={16} />,
-            'Wrench': <Wrench size={16} />
+            'Bot': <Bot size={16} />,
+            'Save': <Save size={16} />,
+            'GitBranch': <GitBranch size={16} />,
+            'Settings': <Settings size={16} />
         }
-
-        return iconMap[icon] || <span>{icon}</span>
+        return iconMap[icon as string] || <Zap size={16} className="opacity-40" />
     }
 
     return (
         <Command.Dialog
             open={open}
             onOpenChange={onOpenChange}
-            label={mode === 'commands' ? 'Command Palette' : 'Quick Open'}
-            className="command-palette"
+            label="Omnibar"
+            className="premium-omnibar-overlay"
         >
-            <Command.Input
-                value={search}
-                onValueChange={setSearch}
-                placeholder={mode === 'commands' ? 'Type a command...' : 'Search files...'}
-                className="command-input"
-            />
+            <div className="omnibar-container animate-reveal-up">
+                <div className="omnibar-input-wrapper">
+                    <Search size={18} className="search-icon-main" />
+                    <Command.Input
+                        value={search}
+                        onValueChange={setSearch}
+                        placeholder={mode === 'commands' ? 'Search commands...' : 'Quick open file...'}
+                        className="omnibar-input"
+                    />
+                    <div className="mode-indicator">{mode.toUpperCase()}</div>
+                </div>
 
-            <Command.List className="command-list">
-                <Command.Empty className="command-empty">
-                    {mode === 'commands' ? 'No commands found.' : 'No files found.'}
-                </Command.Empty>
+                <Command.List className="omnibar-list">
+                    <Command.Empty className="omnibar-empty">
+                        <div className="empty-content">
+                            <Sparkles size={24} className="opacity-10 mb-2" />
+                            <p>No results found for "{search}"</p>
+                        </div>
+                    </Command.Empty>
 
-                {mode === 'files' ? (
-                    <Command.Group heading="Files" className="command-group">
-                        {filteredFiles.map(file => (
-                            <Command.Item
-                                key={file.path}
-                                value={file.path}
-                                onSelect={handleSelect}
-                                className="command-item"
-                            >
-                                <span className="item-icon">{getFileIcon(file.name, file.type)}</span>
-                                <span className="item-name">{file.name}</span>
-                                <span className="item-path">
-                                    {file.path.replace(workspacePath || '', '').replace(/^[/\\]/, '')}
-                                </span>
-                            </Command.Item>
-                        ))}
-                    </Command.Group>
-                ) : (
-                    Object.entries(groupedCommands).map(([category, cmds]) => (
-                        <Command.Group
-                            key={category}
-                            heading={category.charAt(0).toUpperCase() + category.slice(1)}
-                            className="command-group"
-                        >
-                            {cmds.map(cmd => (
-                                <Command.Item
-                                    key={cmd.id}
-                                    value={cmd.title}
-                                    onSelect={() => {
-                                        cmd.action()
-                                        onOpenChange(false)
-                                    }}
-                                    className="command-item"
-                                >
-                                    <span className="item-icon">{renderIcon(cmd.icon, cmd.category)}</span>
-                                    <span className="item-name">{cmd.title}</span>
-                                    {cmd.shortcut && (
-                                        <span className="item-shortcut">{cmd.shortcut}</span>
-                                    )}
+                    {mode === 'files' ? (
+                        <Command.Group heading="Authorized Files">
+                            {filteredFiles.map(file => (
+                                <Command.Item key={file.path} value={file.path} onSelect={handleSelect} className="omnibar-item">
+                                    <div className="item-left">
+                                        <div className="item-icon-box">{getFileIcon(file.name, file.type)}</div>
+                                        <div className="item-text">
+                                            <span className="item-title">{file.name}</span>
+                                            <span className="item-subtitle">{file.path}</span>
+                                        </div>
+                                    </div>
                                 </Command.Item>
                             ))}
                         </Command.Group>
-                    ))
-                )}
-            </Command.List>
+                    ) : (
+                        Object.entries(groupedCommands).map(([category, cmds]) => (
+                            <Command.Group key={category} heading={category.toUpperCase()}>
+                                {cmds.map(cmd => (
+                                    <Command.Item key={cmd.id} value={cmd.title} onSelect={() => { cmd.action(); onOpenChange(false); }} className="omnibar-item">
+                                        <div className="item-left">
+                                            <div className="item-icon-box">{renderIcon(cmd.icon)}</div>
+                                            <span className="item-title">{cmd.title}</span>
+                                        </div>
+                                        {cmd.shortcut && <div className="item-kbd">{cmd.shortcut}</div>}
+                                    </Command.Item>
+                                ))}
+                            </Command.Group>
+                        ))
+                    )}
+                </Command.List>
+                
+                <div className="omnibar-footer">
+                    <div className="footer-tip">
+                        <CommandIcon size={10} /> <span><b>Navigate</b> with arrow keys</span>
+                    </div>
+                    <div className="footer-tip">
+                        <span><b>Enter</b> to execute</span>
+                    </div>
+                </div>
+            </div>
 
             <style>{`
-        .command-palette {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          z-index: 1000;
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          padding-top: 20vh;
-          background: rgba(0, 0, 0, 0.5);
-          backdrop-filter: blur(4px);
-        }
+                .premium-omnibar-overlay {
+                    position: fixed; inset: 0; z-index: 100000;
+                    background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(12px);
+                    display: flex; align-items: flex-start; justify-content: center;
+                    padding-top: 15vh;
+                }
 
-        .command-palette [cmdk-root] {
-          width: 560px;
-          max-width: 90vw;
-          background: var(--color-surface, #1e1e1e);
-          border: 1px solid var(--color-border, #3c3c3c);
-          border-radius: 12px;
-          box-shadow: 0 16px 70px rgba(0, 0, 0, 0.6);
-          overflow: hidden;
-        }
+                .omnibar-container {
+                    width: 640px; max-width: 90vw;
+                    background: #0a0a0a; border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 20px; overflow: hidden;
+                    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8);
+                }
 
-        .command-input {
-          width: 100%;
-          padding: 16px 20px;
-          font-size: 16px;
-          background: transparent;
-          border: none;
-          border-bottom: 1px solid var(--color-border, #3c3c3c);
-          color: var(--color-text, #e0e0e0);
-          outline: none;
-        }
+                .omnibar-input-wrapper {
+                    display: flex; align-items: center; gap: 16px;
+                    padding: 20px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                }
 
-        .command-input::placeholder {
-          color: var(--color-text-muted, #666);
-        }
+                .search-icon-main { color: #3b82f6; }
 
-        .command-list {
-          max-height: 400px;
-          overflow-y: auto;
-          padding: 8px;
-        }
+                .omnibar-input {
+                    flex: 1; background: none; border: none; outline: none;
+                    color: white; font-size: 18px; font-weight: 500;
+                }
 
-        .command-empty {
-          padding: 32px;
-          text-align: center;
-          color: var(--color-text-muted, #666);
-          font-size: 14px;
-        }
+                .mode-indicator {
+                    font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.2);
+                    padding: 4px 10px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;
+                }
 
-        .command-group {
-          margin-bottom: 8px;
-        }
+                .omnibar-list {
+                    max-height: 440px; overflow-y: auto; padding: 12px;
+                }
 
-        .command-group [cmdk-group-heading] {
-          padding: 8px 12px 4px;
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: var(--color-text-muted, #666);
-        }
+                [cmdk-group-heading] {
+                    padding: 12px 12px 8px; font-size: 10px; font-weight: 800;
+                    color: rgba(255, 255, 255, 0.2); letter-spacing: 0.1em;
+                }
 
-        .command-item {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 10px 12px;
-          border-radius: 6px;
-          cursor: pointer;
-          color: var(--color-text, #e0e0e0);
-          font-size: 14px;
-        }
+                .omnibar-item {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 12px; border-radius: 12px; cursor: pointer;
+                    transition: all 0.2s;
+                }
 
-        .command-item[data-selected="true"],
-        .command-item:hover {
-          background: var(--color-accent, #0066cc);
-          color: white;
-        }
+                .omnibar-item[data-selected="true"] {
+                    background: rgba(255, 255, 255, 0.05);
+                }
 
-        .command-item[data-selected="true"] .item-path,
-        .command-item:hover .item-path {
-          color: rgba(255, 255, 255, 0.7);
-        }
+                .item-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
 
-        .item-icon {
-          font-size: 16px;
-          width: 20px;
-          text-align: center;
-          flex-shrink: 0;
-        }
+                .item-icon-box {
+                    width: 32px; height: 32px; border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.03);
+                    display: flex; align-items: center; justify-content: center;
+                }
 
-        .item-name {
-          flex: 1;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
+                .item-text { display: flex; flex-direction: column; min-width: 0; }
+                .item-title { font-size: 14px; font-weight: 600; color: white; }
+                .item-subtitle { font-size: 11px; color: rgba(255, 255, 255, 0.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        .item-path {
-          font-size: 12px;
-          color: var(--color-text-muted, #666);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          max-width: 200px;
-        }
+                .item-kbd {
+                    font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3);
+                    padding: 2px 6px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;
+                }
 
-        .item-shortcut {
-          font-size: 11px;
-          padding: 2px 6px;
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
-          font-family: var(--font-mono, monospace);
-          color: var(--color-text-muted, #999);
-        }
+                .omnibar-empty { padding: 40px; text-align: center; color: rgba(255, 255, 255, 0.2); }
 
-        .command-item[data-selected="true"] .item-shortcut {
-          background: rgba(255, 255, 255, 0.2);
-          color: white;
-        }
-      `}</style>
+                .omnibar-footer {
+                    padding: 12px 24px; background: rgba(255, 255, 255, 0.02);
+                    border-top: 1px solid rgba(255, 255, 255, 0.05);
+                    display: flex; gap: 24px;
+                }
+
+                .footer-tip { display: flex; align-items: center; gap: 8px; font-size: 10px; color: rgba(255, 255, 255, 0.2); }
+                .footer-tip b { color: rgba(255, 255, 255, 0.4); }
+
+                .animate-reveal-up {
+                    animation: reveal-up 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+                }
+
+                @keyframes reveal-up {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            `}</style>
         </Command.Dialog>
     )
 }
-
-// Export command type for use in other components
-export type { IDECommand, FileItem }

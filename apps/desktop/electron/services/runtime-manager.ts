@@ -253,17 +253,28 @@ export class RuntimeManager {
                 return { success: false, error }
             }
 
-            // Store installation info
-            this.installedRuntimes.set(runtimeId, {
-                version: '20.11.0', // TODO: Extract from runtime
-                path: installPath
-            })
-
             // Add to PATH
             onLog?.(`Adding to system PATH...`)
             await this.addToPath(runtimeId, installPath, onLog)
 
-            onLog?.(`Successfully installed ${runtimeId} to ${installPath}`)
+            // Extract version dynamically
+            let detectedVersion = 'installed'
+            try {
+                const { version } = await this.checkInstallation(runtimeId)
+                if (version && version !== 'installed') {
+                    detectedVersion = version
+                }
+            } catch (vErr) {
+                console.warn(`[RuntimeManager] Failed to detect version for ${runtimeId}`, vErr)
+            }
+
+            // Store installation info
+            this.installedRuntimes.set(runtimeId, {
+                version: detectedVersion,
+                path: installPath
+            })
+
+            onLog?.(`Successfully installed ${runtimeId} (${detectedVersion}) to ${installPath}`)
             console.log(`[RuntimeManager] Installed ${runtimeId} to ${installPath}`)
             return { success: true, installPath }
         } catch (error) {

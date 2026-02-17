@@ -1,16 +1,16 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React from 'react'
 import {
     Code2, Terminal, FolderTree, GitBranch,
-    Palette, Network, StickyNote, Library,
-    Monitor, Microscope
+    StickyNote, Library,
+    Monitor
 } from 'lucide-react'
 
-// Workspace Categories - Define category templates, tools, and layouts
+// Workspace Categories - Consolidated into a single professional IDE experience
 
-export type WorkspaceCategoryId = 'programming' | 'research'
+export type WorkspaceCategoryId = 'programming'
 
 export interface WorkspaceTool {
     id: string
@@ -27,7 +27,7 @@ export interface WorkspaceCategory {
     description: string
     color: string
     tools: WorkspaceTool[]
-    defaultLayout: 'split' | 'tabs' | 'canvas' | 'focus'
+    defaultLayout: 'split' | 'tabs' | 'focus'
     aiContext: string
 }
 
@@ -61,20 +61,6 @@ export const WORKSPACE_TOOLS: Record<string, WorkspaceTool> = {
         component: 'GitPanel',
         defaultVisible: false
     },
-    canvas: {
-        id: 'canvas',
-        name: 'Canvas',
-        icon: <Palette size={16} />,
-        component: 'Canvas',
-        defaultVisible: true
-    },
-    diagram: {
-        id: 'diagram',
-        name: 'Diagrams',
-        icon: <Network size={16} />,
-        component: 'DiagramEditor',
-        defaultVisible: true
-    },
     notes: {
         id: 'notes',
         name: 'Notes',
@@ -91,7 +77,6 @@ export const WORKSPACE_TOOLS: Record<string, WorkspaceTool> = {
     }
 }
 
-// Only two workspace categories: IDE (Programming) and Research
 export const WORKSPACE_CATEGORIES: WorkspaceCategory[] = [
     {
         id: 'programming',
@@ -107,21 +92,6 @@ export const WORKSPACE_CATEGORIES: WorkspaceCategory[] = [
         ],
         defaultLayout: 'split',
         aiContext: 'You are assisting with software development in an IDE. Help with code completion, debugging, refactoring, and best practices. You can read and modify files, run terminal commands, and manage git operations.'
-    },
-    {
-        id: 'research',
-        name: 'Research',
-        icon: <Microscope />,
-        description: 'Canvas for diagrams, notes, drawing, and research collaboration',
-        color: '#8b5cf6',
-        tools: [
-            WORKSPACE_TOOLS.canvas,
-            WORKSPACE_TOOLS.diagram,
-            WORKSPACE_TOOLS.notes,
-            WORKSPACE_TOOLS.references
-        ],
-        defaultLayout: 'canvas',
-        aiContext: 'You are assisting with research. Help with literature review, data visualization, diagrams, organizing research, and synthesizing findings.'
     }
 ]
 

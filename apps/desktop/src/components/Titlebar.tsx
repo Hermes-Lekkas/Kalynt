@@ -1,10 +1,14 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { EncryptionBadge } from '../hooks/useEncryption'
-import { Package, Minimize, Square, X, Puzzle, Home, Activity, Code2, FolderTree, History } from 'lucide-react'
+import { 
+  Search, Puzzle, Home, Activity, Code2, 
+  FolderTree, History, Settings, Command,
+  Minimize, Square, X, Sparkles, Globe, Users
+} from 'lucide-react'
 import PluginsPanel from './PluginsPanel'
 import UpdateButton from './UpdateButton'
 
@@ -14,22 +18,14 @@ interface TitlebarProps {
   activeTab: Tab
   onTabChange: (tab: Tab) => void
   onShowExtensions?: () => void
+  onShowCollaboration?: () => void
 }
 
-export default function Titlebar({ activeTab, onTabChange, onShowExtensions }: TitlebarProps) {
-  const { version, connectedPeers, apiKeys, currentSpace } = useAppStore()
+export default function Titlebar({ activeTab, onTabChange, onShowCollaboration }: TitlebarProps) {
+  const { connectedPeers, apiKeys, currentSpace, setShowSettings } = useAppStore()
   const [showPlugins, setShowPlugins] = useState(false)
 
-  const configuredProviders = Object.keys(apiKeys).filter(k => apiKeys[k as keyof typeof apiKeys])
-
-  // Parse version info
-  const versionDisplay = useMemo(() => {
-    const parts = version.split(' ')
-    return {
-      num: parts[0] || 'v1.0',
-      label: parts[1] || 'beta'
-    }
-  }, [version])
+  const configuredProviders = Object.keys(apiKeys).filter(k => (apiKeys as any)[k])
 
   const handleMinimize = () => {
     window.dispatchEvent(new Event('kalynt-minimize'))
@@ -49,79 +45,121 @@ export default function Titlebar({ activeTab, onTabChange, onShowExtensions }: T
 
   return (
     <header className="titlebar drag-region">
+      {/* Left Section: Branding & Navigation */}
       <div className="titlebar-left no-drag">
-        <div className="app-branding">
-           <span className="app-name">Kalynt</span>
-           <div className="version-pill">
-              <span className="v-num">{versionDisplay.num}</span>
-              <span className="v-label">{versionDisplay.label}</span>
-           </div>
+        <div className="app-identity">
+          <img src="/Kalynt.png" alt="Kalynt" className="app-icon-top" />
+          <span className="app-name">Kalynt</span>
         </div>
-        
-        <div className="tabs-divider" />
-        
-        <nav className="tabs">
+
+        <nav className="tab-nav">
           {!currentSpace ? (
-            <TabButton active={true} onClick={() => {}} icon={<Home size={14} />}>
-              Get Started
-            </TabButton>
+            <button className="tab-item active">
+              <Home size={14} />
+              <span>Welcome</span>
+            </button>
           ) : (
-            <>
-              <TabButton active={activeTab === 'editor'} onClick={() => onTabChange('editor')} icon={<Code2 size={14} />}>
-                Editor
-              </TabButton>
-              <TabButton active={activeTab === 'tasks'} onClick={() => onTabChange('tasks')} icon={<Activity size={14} />}>
-                Tasks
-              </TabButton>
-              <TabButton active={activeTab === 'history'} onClick={() => onTabChange('history')} icon={<History size={14} />}>
-                History
-              </TabButton>
-              <TabButton active={activeTab === 'files'} onClick={() => onTabChange('files')} icon={<FolderTree size={14} />}>
-                Files
-              </TabButton>
-            </>
+            <div className="nav-group-container">
+              <div 
+                className="active-highlight" 
+                style={{
+                  width: 'calc((100% - 6px) / 4)',
+                  transform: `translateX(calc(100% * ${
+                    activeTab === 'editor' ? 0 : 
+                    activeTab === 'tasks' ? 1 : 
+                    activeTab === 'history' ? 2 : 3
+                  }))`
+                }}
+              />
+              <TabItem 
+                active={activeTab === 'editor'} 
+                onClick={() => onTabChange('editor')} 
+                icon={<Code2 size={14} />} 
+                label="Editor" 
+              />
+              <TabItem 
+                active={activeTab === 'tasks'} 
+                onClick={() => onTabChange('tasks')} 
+                icon={<Activity size={14} />} 
+                label="Tasks" 
+              />
+              <TabItem 
+                active={activeTab === 'history'} 
+                onClick={() => onTabChange('history')} 
+                icon={<History size={14} />} 
+                label="History" 
+              />
+              <TabItem 
+                active={activeTab === 'files'} 
+                onClick={() => onTabChange('files')} 
+                icon={<FolderTree size={14} />} 
+                label="Files" 
+              />
+            </div>
           )}
         </nav>
       </div>
 
-      <div className="titlebar-center" />
+      {/* Center Section: Search/Command Palette trigger */}
+      <div className="titlebar-center no-drag">
+        <button className="omnibar-trigger" onClick={() => window.dispatchEvent(new Event('kalynt-command-palette'))}>
+          <Search size={14} className="opacity-40" />
+          <span>Quick search...</span>
+          <div className="kbt-shortcut">
+            <Command size={10} /> K
+          </div>
+        </button>
+      </div>
 
+      {/* Right Section: Status & Controls */}
       <div className="titlebar-right no-drag">
-        <div className="utility-actions">
-          <button className="plugins-btn" onClick={() => setShowPlugins(true)} title="Language Plugins">
-            <Package size={16} />
+        <div className="status-badges">
+          {currentSpace && <EncryptionBadge showDetails={false} />}
+          
+          <div className="status-pill" title={`${configuredProviders.length} AI Providers`}>
+            <Sparkles size={12} className="text-white" />
+            <span>{configuredProviders.length}</span>
+          </div>
+
+          <div className="status-pill" title={`${connectedPeers.length + 1} Total Peers`}>
+            <Globe size={12} className="text-white" />
+            <span>{connectedPeers.length + 1}</span>
+          </div>
+        </div>
+
+        <div className="action-buttons">
+          <button 
+            className="header-icon-action" 
+            onClick={() => {
+              console.log('[Titlebar] Triggering collaboration');
+              onShowCollaboration?.();
+            }} 
+            title="Team & Collaboration"
+          >
+            <Users size={16} />
           </button>
-          <button className="extensions-btn" onClick={onShowExtensions} title="Extensions (Ctrl+Shift+X)">
+          <button 
+            className="header-icon-action" 
+            onClick={() => setShowSettings(true)} 
+            title="System Settings"
+          >
+            <Settings size={16} />
+          </button>
+          <button 
+            className="header-icon-action" 
+            onClick={() => setShowPlugins(true)} 
+            title="Plugins & Extensions"
+          >
             <Puzzle size={16} />
           </button>
-        </div>
-        
-        {currentSpace && <EncryptionBadge showDetails={false} />}
-        
-        <div className="status-group">
-           <div className="status-item api-status" title={`${configuredProviders.length} AI Providers`}>
-             <span className={`status-dot ${configuredProviders.length > 0 ? 'status-online' : 'status-away'}`} />
-             <span>{configuredProviders.length} AI</span>
-           </div>
-           
-           <div className="status-item connection-status" title={`${connectedPeers.length + 1} Total Peers`}>
-             <span className={`status-dot ${connectedPeers.length > 0 ? 'status-online' : 'status-offline'}`} />
-             <span>{connectedPeers.length + 1} P2P</span>
-           </div>
+          <div className="v-divider" />
+          <UpdateButton />
         </div>
 
-        <UpdateButton />
-
-        <div className="window-controls">
-          <button className="window-control-btn close-btn" onClick={handleClose} title="Close">
-            <X size={14} />
-          </button>
-          <button className="window-control-btn minimize-btn" onClick={handleMinimize} title="Minimize">
-            <Minimize size={14} />
-          </button>
-          <button className="window-control-btn maximize-btn" onClick={handleMaximize} title="Maximize">
-            <Square size={14} />
-          </button>
+        <div className="window-controls-mac">
+          <button className="mac-btn close" onClick={handleClose} title="Close"><X size={8} /></button>
+          <button className="mac-btn minimize" onClick={handleMinimize} title="Minimize"><Minimize size={8} /></button>
+          <button className="mac-btn maximize" onClick={handleMaximize} title="Maximize"><Square size={8} /></button>
         </div>
       </div>
 
@@ -129,232 +167,245 @@ export default function Titlebar({ activeTab, onTabChange, onShowExtensions }: T
 
       <style>{`
         .titlebar {
-          height: var(--header-height);
+          height: 48px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 16px;
-          background: rgba(10, 10, 12, 0.85);
-          backdrop-filter: blur(32px) saturate(180%);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(0, 0, 0, 0.4);
+          backdrop-filter: blur(40px) saturate(150%);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
           z-index: 10000;
           position: relative;
         }
-        
+
+        /* Branding */
         .titlebar-left {
           display: flex;
           align-items: center;
-          height: 100%;
-          min-width: 0;
+          gap: 32px;
+          flex: 1;
         }
 
-        .app-branding {
+        .app-identity {
           display: flex;
           align-items: center;
           gap: 12px;
-          margin-right: 8px;
-          flex-shrink: 0;
+        }
+
+        .app-icon-top {
+          width: 22px;
+          height: 22px;
+          object-fit: contain;
+          filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));
         }
 
         .app-name {
-          font-size: 15px;
-          font-weight: 950;
-          color: white;
-          letter-spacing: -0.03em;
-        }
-
-        .version-pill {
-          display: flex;
-          align-items: center;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 6px;
-          overflow: hidden;
-          font-size: 10px;
+          font-size: 14px;
           font-weight: 800;
-          height: 20px;
-        }
-
-        .v-num {
-          padding: 0 6px;
-          color: rgba(255, 255, 255, 0.6);
-        }
-
-        .v-label {
-          padding: 0 6px;
-          background: var(--color-accent);
+          letter-spacing: -0.02em;
           color: white;
-          text-transform: uppercase;
-          height: 100%;
-          display: flex;
-          align-items: center;
         }
 
-        .tabs-divider {
-          width: 1px;
-          height: 24px;
-          background: rgba(255, 255, 255, 0.1);
-          margin: 0 16px;
-          flex-shrink: 0;
-        }
-
-        .tabs {
+        /* Navigation */
+        .nav-group-container {
           display: flex;
-          gap: 6px;
-          padding: 3px;
           background: rgba(255, 255, 255, 0.03);
-          border-radius: 12px;
-          border: 1px solid rgba(255, 255, 255, 0.05);
-          min-width: 0;
-        }
-        
-        .titlebar-center {
-          flex: 1;
-          height: 100%;
-          min-width: 20px;
-        }
-
-        .titlebar-right {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          flex-shrink: 0;
-        }
-
-        .utility-actions {
-          display: flex;
-          gap: 4px;
-        }
-
-        .status-group {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
           padding: 3px;
-          border-radius: 10px;
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 100px;
+          position: relative;
         }
 
-        .status-item {
+        .active-highlight {
+          position: absolute;
+          top: 3px;
+          bottom: 3px;
+          left: 3px;
+          background: white;
+          border-radius: 100px;
+          transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+          z-index: 0;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .tab-item {
           display: flex;
           align-items: center;
           gap: 8px;
-          font-size: 10px;
-          font-weight: 800;
+          padding: 6px 16px;
+          font-size: 12px;
+          font-weight: 700;
           color: rgba(255, 255, 255, 0.4);
-          padding: 4px 10px;
-          border-radius: 8px;
-          transition: all 0.2s;
-          cursor: default;
-          white-space: nowrap;
+          border-radius: 100px;
+          transition: color 0.3s ease;
+          position: relative;
+          z-index: 1;
+          flex: 1;
+          justify-content: center;
         }
 
-        .status-item:hover {
-          background: rgba(255, 255, 255, 0.05);
+        .tab-item:hover {
           color: white;
         }
 
-        .plugins-btn, .extensions-btn {
-          width: 34px;
-          height: 34px;
+        .tab-item.active {
+          color: black;
+        }
+
+        /* Omnibar */
+        .titlebar-center {
+          flex: 1.5;
+          display: flex;
+          justify-content: center;
+        }
+
+        .omnibar-trigger {
+          width: 100%;
+          max-width: 320px;
+          height: 32px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          padding: 0 12px;
+          gap: 10px;
+          color: rgba(255, 255, 255, 0.3);
+          font-size: 13px;
+          font-weight: 500;
+          transition: all 0.2s;
+        }
+
+        .omnibar-trigger:hover {
+          background: rgba(255, 255, 255, 0.05);
+          border-color: rgba(255, 255, 255, 0.1);
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .kbt-shortcut {
+          margin-left: auto;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          background: rgba(255, 255, 255, 0.05);
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        /* Right Side */
+        .titlebar-right {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 16px;
+        }
+
+        .status-badges {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .status-pill {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 8px;
+          font-size: 11px;
+          font-weight: 700;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .action-buttons {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .header-icon-action {
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: transparent;
           color: rgba(255, 255, 255, 0.4);
-          border-radius: 10px;
           transition: all 0.2s;
+          background: transparent;
           border: none;
           cursor: pointer;
         }
 
-        .plugins-btn:hover, .extensions-btn:hover {
-          background: rgba(255, 255, 255, 0.08);
-          color: white;
+        .header-icon-action:hover {
+          background: rgba(255, 255, 255, 0.05);
+          color: #fff;
         }
 
-        .window-controls {
+        .header-icon-action svg {
+          stroke: currentColor;
+        }
+
+        .v-divider {
+          width: 1px;
+          height: 16px;
+          background: rgba(255, 255, 255, 0.06);
+          margin: 0 8px;
+        }
+
+        .window-controls-mac {
           display: flex;
           align-items: center;
           gap: 8px;
           margin-left: 8px;
         }
 
-        .window-control-btn {
+        .mac-btn {
           width: 12px;
           height: 12px;
           border-radius: 50%;
           border: none;
-          padding: 0;
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: all 0.2s;
           position: relative;
           cursor: default;
+          transition: all 0.2s;
         }
 
-        .window-control-btn svg {
+        .mac-btn svg {
           opacity: 0;
-          width: 8px;
-          height: 8px;
           color: rgba(0, 0, 0, 0.5);
+          transition: opacity 0.2s;
         }
 
-        .window-controls:hover .window-control-btn svg {
+        .window-controls-mac:hover .mac-btn svg {
           opacity: 1;
         }
 
-        .close-btn { background: #FF5F56; box-shadow: inset 0 0 2px rgba(0,0,0,0.2); }
-        .minimize-btn { background: #FFBD2E; box-shadow: inset 0 0 2px rgba(0,0,0,0.2); }
-        .maximize-btn { background: #27C93F; box-shadow: inset 0 0 2px rgba(0,0,0,0.2); }
+        .mac-btn.close { background: #FF5F56; border: 0.5px solid rgba(0, 0, 0, 0.1); }
+        .mac-btn.minimize { background: #FFBD2E; border: 0.5px solid rgba(0, 0, 0, 0.1); }
+        .mac-btn.maximize { background: #27C93F; border: 0.5px solid rgba(0, 0, 0, 0.1); }
+
+        .mac-btn.close:active { background: #bf4942; }
+        .mac-btn.minimize:active { background: #bf8e22; }
+        .mac-btn.maximize:active { background: #1d9730; }
       `}</style>
     </header>
   )
 }
 
-interface TabButtonProps {
-  children: React.ReactNode
-  active: boolean
-  onClick: () => void
-  icon?: React.ReactNode
-}
-
-function TabButton({ children, active, onClick, icon }: TabButtonProps) {
+function TabItem({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: any, label: string }) {
   return (
-    <button className={`tab-btn ${active ? 'active' : ''}`} onClick={onClick}>
+    <button className={`tab-item ${active ? 'active' : ''}`} onClick={onClick}>
       {icon}
-      <span>{children}</span>
-      <style>{`
-        .tab-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 6px 16px;
-          font-size: 12px;
-          font-weight: 800;
-          color: rgba(255, 255, 255, 0.4);
-          background: transparent;
-          border-radius: 9px;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-          white-space: nowrap;
-          border: none;
-          cursor: pointer;
-          line-height: 1;
-        }
-        
-        .tab-btn:hover {
-          color: rgba(255, 255, 255, 0.8);
-          background: rgba(255, 255, 255, 0.05);
-        }
-        
-        .tab-btn.active {
-          color: white;
-          background: rgba(255, 255, 255, 0.1);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-      `}</style>
+      <span>{label}</span>
     </button>
   )
 }

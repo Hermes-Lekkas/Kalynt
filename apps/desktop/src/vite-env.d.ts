@@ -67,6 +67,7 @@ export interface TerminalAPI {
   broadcast: (data: string, filter?: string) => Promise<{ success: boolean; count?: number; error?: string }>
   getCommandHistory: (terminalId: string) => Promise<{ success: boolean; history?: any[]; error?: string }>
   getCurrentCommand: (terminalId: string) => Promise<{ success: boolean; command?: any; error?: string }>
+  getDefaultShell: () => Promise<{ success: boolean; shell: string; error?: string }>
   onData: (callback: (data: { id: string; data: string; type: string }) => void) => void
   onExit: (callback: (data: { id: string; exitCode: number; signal?: number; title: string }) => void) => void
   onSpawned: (callback: (data: { id: string; pid: number; title: string; cwd: string; shell: string }) => void) => void

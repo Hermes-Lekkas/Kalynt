@@ -240,6 +240,25 @@ export class TerminalService extends EventEmitter {
                     }
                 }
                 console.log(`[Terminal] Final enhanced PATH length: ${enhancedPath.length} chars`)
+            } else if (process.platform === 'darwin') {
+                // macOS: Ensure Homebrew and common dev paths are included
+                const homeDir = process.env.HOME || `/Users/${process.env.USER}`
+                const macPaths = [
+                    '/opt/homebrew/bin',
+                    '/opt/homebrew/sbin',
+                    '/usr/local/bin',
+                    '/usr/local/sbin',
+                    `${homeDir}/.cargo/bin`,
+                    `${homeDir}/.local/bin`,
+                    `${homeDir}/go/bin`,
+                    '/Library/Apple/usr/bin'
+                ]
+
+                for (const p of macPaths) {
+                    if (fs.existsSync(p) && !enhancedPath.includes(p)) {
+                        enhancedPath = `${p}:${enhancedPath}`
+                    }
+                }
             }
 
             const env = {
@@ -608,7 +627,7 @@ export class TerminalService extends EventEmitter {
         }
     }
 
-    private getDefaultShell(): string {
+    public getDefaultShell(): string {
         const platform = process.platform
 
         // Windows shell detection

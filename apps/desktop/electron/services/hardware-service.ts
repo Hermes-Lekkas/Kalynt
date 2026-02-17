@@ -3,6 +3,7 @@
  */
 import os from 'os'
 import { exec } from 'child_process'
+import { nativeHelperService } from './native-helper-service'
 
 export interface HardwareInfo {
     cpuCores: number
@@ -110,8 +111,46 @@ class CachedGPUDetector {
                     }
                 }
             } else if (process.platform === 'darwin') {
-                this.gpuName = 'Apple Metal GPU'
-                this.totalVRAM = Math.round(os.totalmem() / 1024 / 1024 / 2)
+                // macOS GPU Detection
+                const output = await this.execCommand('system_profiler SPDisplaysDataType')
+                if (output) {
+                    // Extract Chipset Model
+                    const chipMatch = output.match(/Chipset Model: (.*)/)
+                    if (chipMatch && chipMatch[1]) {
+                        this.gpuName = chipMatch[1].trim()
+                    }
+
+                    // Extract VRAM
+                    const vramMatch = output.match(/VRAM \(Total\): (.*)/)
+                    if (vramMatch && vramMatch[1]) {
+                        const vramStr = vramMatch[1].trim()
+                        if (vramStr.includes('GB')) {
+                            this.totalVRAM = parseInt(vramStr) * 1024
+                        } else if (vramStr.includes('MB')) {
+                            this.totalVRAM = parseInt(vramStr)
+                        }
+                    }
+
+                    // For Apple Silicon (Unified Memory), VRAM is often not reported traditionally
+                    // or reported as "VRAM (Dynamic, Max)". We'll use a heuristic if traditional VRAM is missing.
+                    if (this.totalVRAM === 0 || this.gpuName.includes('Apple')) {
+                        const dynamicMatch = output.match(/VRAM \(Dynamic, Max\): (.*)/)
+                        if (dynamicMatch && dynamicMatch[1]) {
+                            const dynVramStr = dynamicMatch[1].trim()
+                            if (dynVramStr.includes('GB')) {
+                                this.totalVRAM = parseInt(dynVramStr) * 1024
+                            }
+                        } else {
+                            // Heuristic: 2/3 of total RAM for Unified Memory systems
+                            this.totalVRAM = Math.round((os.totalmem() / 1024 / 1024) * 0.66)
+                        }
+                    }
+                } else {
+                    // Fallback
+                    this.gpuName = 'Apple Metal GPU'
+                    this.totalVRAM = Math.round(os.totalmem() / 1024 / 1024 / 2)
+                }
+                this.igpuName = this.gpuName
                 this.totalIVRAM = this.totalVRAM
             }
         } catch (e) {
@@ -168,6 +207,15 @@ class CachedGPUDetector {
                 } else {
                     this.lastIUsage = Math.min(Math.round((os.loadavg()[0] || 0) * 5), 100)
                 }
+            } else if (process.platform === 'darwin') {
+                // macOS heuristic: usage correlates with load average when no specific counters available
+                this.lastUsage = Math.min(Math.round((os.loadavg()[0] || 0) * 8), 100)
+                this.lastIUsage = this.lastUsage
+
+                // VRAM: 1/4 of used system RAM for Unified/Integrated
+                const usedRAM = (os.totalmem() - os.freemem()) / 1024 / 1024
+                this.lastVramUsed = Math.round(usedRAM * 0.25)
+                this.lastIvramUsed = this.lastVramUsed
             }
             
         } catch (e) {
@@ -223,8 +271,30 @@ let previousCpuInfo: os.CpuInfo[] | null = null
  */
 export async function detectHardwareInfo(): Promise<HardwareInfo> {
     await CachedGPUDetector.init()
-    const gpuInfo = CachedGPUDetector.getStaticInfo()
+    let gpuInfo = CachedGPUDetector.getStaticInfo()
     
+    // macOS: Attempt deep stats from Swift Helper
+    if (process.platform === 'darwin' && nativeHelperService.isAvailable()) {
+        try {
+            const nativeStats = await Promise.race([
+                nativeHelperService.request('hardware-stats'),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+            ])
+            
+            if (nativeStats?.gpu?.SPDisplaysDataType?.[0]) {
+                const nativeGpu = nativeStats.gpu.SPDisplaysDataType[0]
+                gpuInfo = {
+                    ...gpuInfo,
+                    gpuName: nativeGpu.sppci_model || gpuInfo.gpuName,
+                    totalVRAM: parseInt(nativeGpu.spdisplays_vram) || gpuInfo.totalVRAM,
+                    hasGPU: true
+                }
+            }
+        } catch (e) {
+            console.warn('[HardwareService] Failed to get native macOS stats:', e)
+        }
+    }
+
     const cpus = os.cpus()
     const cpuModel = cpus[0]?.model || 'Unknown CPU'
     const cpuCores = cpus.length

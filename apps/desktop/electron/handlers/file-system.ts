@@ -6,9 +6,26 @@ import path from 'node:path'
 import fs from 'node:fs'
 import * as chokidar from 'chokidar'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
+import { nativeHelperService } from '../services/native-helper-service'
 
 // Stateful maps for file watchers
 const watchers = new Map<string, chokidar.FSWatcher>()
+const nativeWatchers = new Set<string>() // Track IDs using native watcher
+
+// Set up native event forwarding
+nativeHelperService.on('file-changed', (params: { path: string, flags: number }) => {
+    // Note: We don't have the watcher ID here from the native side easily 
+    // without more state tracking. For now, we broadcast to all native-managed watchers
+    // or just send a general refresh. For AIME compatibility, we map it to fs:change.
+    // In a real implementation, we'd map FSEvent flags to Chokidar events (add/unlink/change).
+    // FSEvent kFSEventStreamEventFlagItemModified = 0x00001000
+    
+    // Simple mapping: 
+    const event = 'change' // Default to change for now
+    
+    // We broadcast to the first available window as a general change
+    // This is a simplified implementation for the sidecar
+})
 
 // Path validation helper - prevents path traversal attacks
 // SECURITY FIX: Use fs.realpathSync to resolve symlinks and prevent symlink-based escapes
@@ -299,6 +316,31 @@ export function registerFileSystemHandlers(
         }
     })
 
+    // NEW: Native file change forwarding
+    nativeHelperService.on('file-changed', (params: { path: string, flags: number }) => {
+        const mainWindow = getMainWindow()
+        if (!mainWindow) return
+
+        // Broadcast to all active native watchers
+        // FSEvents flags mapping (simplified)
+        // kFSEventStreamEventFlagItemCreated = 0x00000100
+        // kFSEventStreamEventFlagItemRemoved = 0x00000200
+        // kFSEventStreamEventFlagItemModified = 0x00001000
+        // kFSEventStreamEventFlagItemRenamed = 0x00000800
+
+        let event: 'add' | 'unlink' | 'change' | 'unlinkDir' = 'change'
+        if (params.flags & 0x00000100) event = 'add'
+        if (params.flags & 0x00000200) event = 'unlink'
+
+        nativeWatchers.forEach(id => {
+            mainWindow.webContents.send('fs:change', {
+                id: id,
+                event,
+                path: params.path
+            })
+        })
+    })
+
     // Watch directory for changes
     ipcMain.handle('fs:watchDir', async (_event, options: { id: string, dirPath: string }) => {
         try {
@@ -308,10 +350,33 @@ export function registerFileSystemHandlers(
                 return { success: false, error: 'No workspace open' }
             }
             const safePath = validatePath(currentWorkspacePath, options.dirPath)
+
+            // Close existing
             const existingWatcher = watchers.get(options.id)
             if (existingWatcher) {
                 await existingWatcher.close()
+                watchers.delete(options.id)
             }
+            if (nativeWatchers.has(options.id)) {
+                if (nativeHelperService.isAvailable()) {
+                    await nativeHelperService.request('watch-stop')
+                }
+                nativeWatchers.delete(options.id)
+            }
+
+            // Prefer Native FSEvents on macOS
+            if (process.platform === 'darwin' && nativeHelperService.isAvailable()) {
+                try {
+                    await nativeHelperService.request('watch-start', { path: safePath })
+                    nativeWatchers.add(options.id)
+                    console.log(`[FS] Using native FSEvents for ${options.id}`)
+                    return { success: true, native: true }
+                } catch (e) {
+                    console.warn('[FS] Native watch failed, falling back to Chokidar:', e)
+                }
+            }
+
+            // Fallback to Chokidar
             const watcher = chokidar.watch(safePath, {
                 ignored: /(^|[\\/])\../,
                 persistent: true,
@@ -325,7 +390,7 @@ export function registerFileSystemHandlers(
                 })
             })
             watchers.set(options.id, watcher)
-            return { success: true }
+            return { success: true, native: false }
         } catch (error) {
             return { success: false, error: String(error) }
         }
@@ -337,6 +402,13 @@ export function registerFileSystemHandlers(
         if (watcher) {
             await watcher.close()
             watchers.delete(id)
+        }
+
+        if (nativeWatchers.has(id)) {
+            if (nativeHelperService.isAvailable()) {
+                await nativeHelperService.request('watch-stop').catch(() => {})
+            }
+            nativeWatchers.delete(id)
         }
         return { success: true }
     })

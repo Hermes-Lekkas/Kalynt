@@ -8,73 +8,13 @@ import { WebrtcProvider } from 'y-webrtc'
 import { memberSyncService } from '../services/memberSyncService'
 import { useMemberStore } from '../stores/memberStore'
 
+import { p2pService } from '../services/p2pService'
+
 // Store for Yjs documents per space
 const documents = new Map<string, Y.Doc>()
-const providers = new Map<string, WebrtcProvider>()
 const persistences = new Map<string, IndexeddbPersistence>()
 // Reference counting for cleanup
 const refCounts = new Map<string, number>()
-
-// Signaling servers for WebRTC
-const SIGNALING_SERVERS = [
-    'wss://signaling.yjs.dev',
-    'wss://y-webrtc-signaling-eu.herokuapp.com',
-    'wss://y-webrtc-signaling-us.herokuapp.com'
-]
-
-// SECURITY FIX V-001: Load TURN credentials from environment variables
-// ICE servers for NAT traversal (STUN discovers public IP, TURN relays traffic)
-// TURN servers are essential for users behind symmetric NAT, firewalls, or corporate networks
-const getIceServers = (): RTCIceServer[] => {
-    const servers: RTCIceServer[] = [
-        // STUN servers
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        // OpenRelay TURN servers (public, no credentials required)
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
-    ]
-
-    // SECURITY: Add custom TURN server from environment if configured
-    const customTurnUrl = import.meta.env?.VITE_TURN_URL
-    const customTurnUsername = import.meta.env?.VITE_TURN_USERNAME
-    const customTurnCredential = import.meta.env?.VITE_TURN_CREDENTIAL
-
-    if (customTurnUrl && customTurnUsername && customTurnCredential) {
-        servers.push({
-            urls: customTurnUrl,
-            username: customTurnUsername,
-            credential: customTurnCredential
-        })
-        if (!customTurnUrl.includes('transport=tcp')) {
-            servers.push({
-                urls: `${customTurnUrl}?transport=tcp`,
-                username: customTurnUsername,
-                credential: customTurnCredential
-            })
-        }
-    }
-
-    return servers
-}
-
-const ICE_SERVERS: RTCIceServer[] = getIceServers()
 
 // Helper interface for objects with cleanup method
 interface CleanupCapable {
@@ -127,78 +67,23 @@ export function getSpaceDocument(spaceId: string): Y.Doc {
  * Connect a space to P2P network with optional encryption
  */
 export function connectSpace(spaceId: string, password?: string): WebrtcProvider {
-    let provider = providers.get(spaceId)
+    let provider = p2pService.getProvider(spaceId)
 
     if (!provider) {
         const doc = getSpaceDocument(spaceId)
+        provider = p2pService.connect(spaceId, doc, password) as WebrtcProvider
 
-        // y-webrtc: Append password to room name for built-in AES-GCM encryption
-        // The signaling server only sees the part before #
-        const roomName = password ? `kalynt-${spaceId}#${password}` : `kalynt-${spaceId}`
-
-        provider = new WebrtcProvider(roomName, doc, {
-            signaling: SIGNALING_SERVERS,
-            maxConns: 20,
-            filterBcConns: true,
-            peerOpts: {
-                config: {
-                    iceServers: ICE_SERVERS
-                }
-            }
-        })
-        providers.set(spaceId, provider)
-
-        // Set local awareness state
-        provider.awareness.setLocalStateField('user', {
-            name: 'Local User',
-            color: generateColor()
-        })
-
-        // Optional: Add encryption logging for updates
-        const updateHandler = (_update: Uint8Array, _origin: unknown) => {
-            // Future encryption tracing logic can be added here
-        }
-
-        const syncedHandler = (synced: { synced: boolean }) => {
-            console.log(`[P2P] Sync state: ${synced.synced ? 'synced' : 'syncing'}`)
-        }
-
-        doc.on('update', updateHandler)
-        provider.on('synced', syncedHandler)
-
-            // Store cleanup functions
-            ; (provider as unknown as CleanupCapable)._cleanup = () => {
-                try {
-                    doc.off('update', updateHandler)
-                    provider?.off('synced', syncedHandler)
-                } catch (e) {
-                    // Ignore errors during cleanup of destroyed objects
-                    console.warn('[P2P] Cleanup error:', e)
-                }
-            }
-
-        console.log(`[P2P] Connected to space ${spaceId}`)
+        console.log(`[P2P] Connected to space ${spaceId} via p2pService`)
     }
 
     return provider
 }
 
-// ... (lines 129-142 omitted)
-
 /**
  * Disconnect from a space (provider only, keeps doc for potential reconnection)
  */
 export function disconnectSpace(spaceId: string): void {
-    const provider = providers.get(spaceId)
-    if (provider) {
-        try {
-            (provider as unknown as CleanupCapable)._cleanup?.()
-            provider.destroy()
-        } catch (err) {
-            console.warn(`[P2P] Error during disconnect for ${spaceId}:`, err)
-        }
-        providers.delete(spaceId)
-    }
+    p2pService.disconnect(spaceId)
 }
 
 /**
@@ -456,7 +341,7 @@ export function useYDoc(spaceId: string | null) {
             const instanceSaltListener = instance?.saltListener
 
             // Fallback to refs/state only if setup instance doesn't match
-            const currentProvider = instanceProvider || provider || providers.get(spaceId)
+            const currentProvider = instanceProvider || provider || p2pService.getProvider(spaceId)
             const currentCallback = instancePeerListener || updatePeersRef.current
             const currentSaltListener = instanceSaltListener || saltListenerRef.current
 
@@ -668,10 +553,4 @@ export function useAwareness(provider: WebrtcProvider | null) {
     }, [provider])
 
     return { users, setLocalState, localClientId: provider?.awareness.clientID }
-}
-
-// Helper function
-function generateColor(): string {
-    const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
-    return colors[Math.floor(Math.random() * colors.length)]
 }

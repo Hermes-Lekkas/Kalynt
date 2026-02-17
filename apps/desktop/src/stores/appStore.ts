@@ -88,6 +88,7 @@ interface AppState {
     setStartupStatus: (status: string) => void // [NEW]
     setShowSettings: (show: boolean) => void // [NEW]
     setSettingsTab: (tab: string | null) => void // [NEW]
+    reorderSpaces: (fromIndex: number, toIndex: number) => void // [NEW]
 
     // API Key actions (now async for safeStorage)
     setAPIKey: (provider: string, key: string) => Promise<void>
@@ -124,6 +125,14 @@ export const useAppStore = create<AppState>()(
             setShowSettings: (show) => set({ showSettings: show }),
             setSettingsTab: (tab) => set({ settingsTab: tab }),
 
+            reorderSpaces: (fromIndex, toIndex) => {
+                const { spaces } = get()
+                const newSpaces = [...spaces]
+                const [moved] = newSpaces.splice(fromIndex, 1)
+                newSpaces.splice(toIndex, 0, moved)
+                set({ spaces: newSpaces })
+            },
+
             initialize: async () => {
                 set({ startupStatus: 'Connecting to Secure Local Interface...' })
 
@@ -151,7 +160,7 @@ export const useAppStore = create<AppState>()(
 
             setCurrentSpace: (space) => set({ currentSpace: space }),
 
-            createSpace: (name, spaceId, category = 'programming') => {
+            createSpace: (name, spaceId) => {
                 const { spaces, connectedPeers } = get()
 
                 // Free beta - check collaborator limit only
@@ -169,7 +178,7 @@ export const useAppStore = create<AppState>()(
                     id: spaceId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2)),
                     name,
                     createdAt: Date.now(),
-                    category
+                    category: 'programming'
                 }
 
                 set({ spaces: [...spaces, newSpace] })

@@ -1,378 +1,426 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useMemo } from 'react'
-import { useAppStore } from '../stores/appStore'
+import { useMemo, useState, useEffect } from 'react'
+import { useAppStore, Space } from '../stores/appStore'
 import { 
-  ArrowRight, Sparkles, 
-  Code2, Terminal, FolderTree, Key, Activity, ChevronRight
+  ArrowRight,
+  Shield, 
+  MoreVertical,
+  Plus, Search, Loader2,
+  Activity, Globe, FolderTree, HardDrive,
+  FileCode, Clock, Users
 } from 'lucide-react'
 
-export default function WelcomeScreen() {
-  const { version, spaces, setCurrentSpace, setShowSettings } = useAppStore()
+import { useNotificationStore } from '../stores/notificationStore'
+import { hardwareService, RealTimeStats } from '../services/hardwareService'
 
-  // Parse version string (e.g., "v1.0 beta")
-  const versionInfo = useMemo(() => {
-    const parts = version.split(' ')
-    return {
-      number: parts[0] || 'v1.0',
-      label: parts[1] ? parts[1].toUpperCase() : 'BETA'
-    }
-  }, [version])
+interface WelcomeScreenProps {
+  onShowCollaboration: () => void
+}
+
+export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenProps) {
+  const { version, spaces, setCurrentSpace, setShowSettings, createSpace, userName } = useAppStore()
+  const { addNotification } = useNotificationStore()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+  const [newSpaceName, setNewSpaceName] = useState('')
+  
+  // Real-time Stats State
+  const [stats, setStats] = useState<RealTimeStats | null>(null)
+
+  useEffect(() => {
+    const cleanup = hardwareService.startResourceMonitoring((newStats) => {
+      setStats(newStats)
+    })
+    return cleanup
+  }, [])
+
+  const filteredSpaces = useMemo(() => {
+    if (!searchQuery.trim()) return spaces
+    return spaces.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  }, [spaces, searchQuery])
+
+  const handleCreate = () => {
+    if (!newSpaceName.trim()) return
+    const space = createSpace(newSpaceName.trim())
+    setCurrentSpace(space)
+    setNewSpaceName('')
+    setIsCreating(false)
+    addNotification('Workspace Initialized', 'success')
+  }
+
+  const handleJoinSession = () => {
+    onShowCollaboration()
+  }
 
   return (
-    <div className="welcome-container">
-      {/* Background Decorative Elements */}
-      <div className="bg-glow bg-glow-1"></div>
-      <div className="bg-glow bg-glow-2"></div>
+    <div className="manager-viewport">
+      <div className="manager-mesh" />
+      <div className="grain-overlay" />
       
-      <div className="welcome-content">
-        <div className="welcome-hero animate-reveal-up">
-          <div className="hero-badge">
-             <span className="pulse-dot"></span>
-             {versionInfo.number} {versionInfo.label} ACTIVE
+      <div className="manager-container animate-reveal-up">
+        {/* Top Navigation / Search Bar */}
+        <header className="manager-header">
+          <div className="search-hub">
+            <Search size={16} className="search-icon" />
+            <input 
+              placeholder="Search authorized workspaces..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            <div className="search-shortcut">âŒ˜ F</div>
           </div>
-          <h1 className="hero-title">
-            The Future of <span className="gradient-text">Private Intelligence</span>
-          </h1>
-          <p className="hero-subtitle">
-            Experience the world's first P2P-powered, end-to-end encrypted AI development environment. 
-            No cloud accounts. No data harvesting. Just pure speed.
-          </p>
-        </div>
 
-        <div className="welcome-layout">
-          <div className="layout-main animate-reveal-up delay-100">
-            <div className="features-grid">
-              <div className="feature-card glass-panel">
-                <div className="feature-icon-box bg-blue-500/10"><Code2 size={24} className="text-blue-400" /></div>
-                <div className="feature-text">
-                  <h3>Intelligent Coding</h3>
-                  <p>State-of-the-art agentic workflows for refactoring and debugging.</p>
-                </div>
-              </div>
-              <div className="feature-card glass-panel">
-                  <div className="feature-icon-box bg-purple-500/10"><Terminal size={24} className="text-purple-400" /></div>
-                  <div className="feature-text">
-                  <h3>Local Runtime</h3>
-                  <p>Execute code in secure sandboxes without leaving your machine.</p>
-                </div>
-              </div>
-              <div className="feature-card glass-panel">
-                  <div className="feature-icon-box bg-emerald-500/10"><Activity size={24} className="text-emerald-400" /></div>
-                  <div className="feature-text">
-                  <h3>Live Collaboration</h3>
-                  <p>Peer-to-peer sync with zero latency and full encryption.</p>
-                </div>
+          <div className="header-actions">
+            <button className="btn-glass" onClick={() => {
+              useAppStore.getState().setSettingsTab('security')
+              setShowSettings(true)
+            }}>
+              <Shield size={14} />
+              <span>Security</span>
+            </button>
+            <button className="btn-premium" onClick={() => setIsCreating(true)}>
+              <Plus size={16} />
+              <span>Initialize</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Creation Overlay */}
+        {isCreating && (
+          <div className="inline-creation-box animate-reveal-up">
+            <div className="creation-content">
+              <Loader2 size={20} className="text-blue-400 animate-spin" />
+              <input 
+                autoFocus
+                placeholder="Name your new workspace..." 
+                value={newSpaceName}
+                onChange={e => setNewSpaceName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              />
+              <div className="creation-actions">
+                <button className="btn-cancel" onClick={() => setIsCreating(false)}>Cancel</button>
+                <button className="btn-confirm" onClick={handleCreate}>Build</button>
               </div>
             </div>
           </div>
+        )}
 
-          <div className="layout-sidebar animate-reveal-up delay-100">
-             <div className="action-card glass-panel highlight">
-                <div className="card-bg-effect"></div>
-                <div className="action-header">
-                   <Sparkles size={16} className="text-yellow-400" />
-                   <span>Quick Actions</span>
-                </div>
-                <h3>Get Started Now</h3>
-                <p>Create a new workspace or continue where you left off.</p>
-                
-                <div className="action-buttons">
-                   <button className="btn-hero-primary" onClick={() => {
-                      const sidebar = document.querySelector('.add-btn') as HTMLButtonElement;
-                      if (sidebar) sidebar.click();
-                   }}>
-                      <FolderTree size={18} />
-                      <span>New Workspace</span>
-                      <ArrowRight size={16} className="ml-auto" />
-                   </button>
-                   
-                   <button className="btn-hero-secondary" onClick={() => setShowSettings(true)}>
-                      <Key size={16} />
-                      <span>Setup AI Keys</span>
-                   </button>
-                </div>
+        <main className="manager-content">
+          {/* Dashboard Stats / Bento Header */}
+          <div className="bento-grid">
+            <div className="bento-card welcome-hero">
+              <div className="card-bg-glow" />
+              <div className="hero-content">
+                <div className="version-tag">Kalynt Core {version.split(' ')[0]}</div>
+                <h1>Welcome Back, <span className="gradient-text">{userName.split(' ')[0]}.</span></h1>
+                <p>Authorized access verified. All local nodes are operational and synchronized.</p>
+              </div>
+            </div>
 
-                {spaces.length > 0 && (
-                   <div className="recent-spaces">
-                      <div className="recent-title">Recent Workspaces</div>
-                      {spaces.slice(0, 3).map(space => (
-                         <div key={space.id} className="recent-item" onClick={() => setCurrentSpace(space)}>
-                            <ChevronRight size={14} />
-                            <span>{space.name}</span>
-                         </div>
-                      ))}
-                   </div>
-                )}
-             </div>
+            <div className="bento-card system-status">
+              <div className="status-header">
+                <Activity size={14} className="text-green-400" />
+                <span>Engine Performance</span>
+              </div>
+              <div className="stat-rows">
+                <div className="stat-line">
+                  <span>Neural Latency</span> 
+                  <span className="val">{stats?.networkLatency ? `${stats.networkLatency}ms` : '0.4ms'}</span>
+                </div>
+                <div className="stat-line">
+                  <span>RAM Load</span> 
+                  <span className="val">{stats ? `${Math.round((stats.ramUsage / stats.ramTotal) * 100)}%` : '---'}</span>
+                </div>
+                <div className="stat-line">
+                  <span>P2P Cluster</span> 
+                  <span className="val">{stats?.networkConnected ? 'Active' : 'Offline'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bento-card quick-join">
+              <div className="status-header">
+                <Globe size={14} className="text-blue-400" />
+                <span>P2P Networking</span>
+              </div>
+              <p>Join an active collaboration session via link or secure room ID.</p>
+              <button className="btn-outline-sm" onClick={handleJoinSession}>
+                Join Session <ArrowRight size={14} />
+              </button>
+            </div>
           </div>
-        </div>
+
+          {/* Workspaces Section */}
+          <section className="workspaces-section">
+            <div className="section-title">
+              <FolderTree size={14} />
+              <span>Project Catalog</span>
+              <div className="title-line" />
+            </div>
+
+            {filteredSpaces.length === 0 ? (
+              <div className="empty-catalog">
+                <HardDrive size={48} className="opacity-10 mb-4" />
+                <p>No workspaces found. Initialize your first project to begin.</p>
+              </div>
+            ) : (
+              <div className="workspace-grid">
+                {filteredSpaces.map(space => (
+                  <WorkspaceCard 
+                    key={space.id} 
+                    space={space} 
+                    onClick={() => setCurrentSpace(space)} 
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </main>
       </div>
 
       <style>{`
-        .welcome-container {
+        .manager-viewport {
           flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 60px 40px 40px;
-          height: 100%;
-          position: relative;
-          overflow-x: hidden;
           background: #000;
+          position: relative;
+          overflow-y: auto;
+          display: flex;
+          justify-content: center;
         }
 
-        .bg-glow {
+        .manager-mesh {
           position: absolute;
-          width: 600px;
-          height: 600px;
-          border-radius: 50%;
-          filter: blur(140px);
-          opacity: 0.12;
-          z-index: 0;
+          inset: 0;
+          background: 
+            radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
+          filter: blur(80px);
           pointer-events: none;
         }
-        .bg-glow-1 { top: -150px; right: -150px; background: #3b82f6; }
-        .bg-glow-2 { bottom: -150px; left: -150px; background: #8b5cf6; }
 
-        .welcome-content {
+        .grain-overlay {
+          position: absolute;
+          inset: 0;
+          opacity: 0.02;
+          background-image: url('https://grainy-gradients.vercel.app/noise.svg');
+          pointer-events: none;
+        }
+
+        .manager-container {
           width: 100%;
-          max-width: 1140px;
+          max-width: 1100px;
+          padding: 40px;
           z-index: 10;
           display: flex;
           flex-direction: column;
-          gap: 40px;
-          margin: 0 auto;
+          gap: 48px;
         }
 
-        .welcome-hero {
-          text-align: center;
-          max-width: 800px;
-          margin: 0 auto;
-        }
-
-        .hero-badge {
-          display: inline-flex;
+        /* Header */
+        .manager-header {
+          display: flex;
+          justify-content: space-between;
           align-items: center;
-          gap: 8px;
-          padding: 6px 14px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 99px;
-          font-size: 11px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.12em;
-          color: rgba(255, 255, 255, 0.7);
-          margin-bottom: 24px;
-        }
-
-        .pulse-dot {
-          width: 6px;
-          height: 6px;
-          background: #4ade80;
-          border-radius: 50%;
-          box-shadow: 0 0 10px #4ade80;
-          animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-          0% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.5); opacity: 0.5; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-
-        .hero-title {
-          font-size: clamp(32px, 5vw, 56px);
-          font-weight: 900;
-          line-height: 1.1;
-          letter-spacing: -0.04em;
-          margin-bottom: 20px;
-          color: white;
-        }
-
-        .gradient-text {
-          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-
-        .hero-subtitle {
-          font-size: 18px;
-          color: rgba(255, 255, 255, 0.4);
-          line-height: 1.6;
-          max-width: 620px;
-          margin: 0 auto;
-        }
-
-        .welcome-layout {
-          display: grid;
-          grid-template-columns: 1fr 360px;
           gap: 24px;
-          align-items: stretch; 
         }
 
-        .glass-panel {
-          background: rgba(15, 15, 18, 0.6);
-          backdrop-filter: blur(32px) saturate(180%);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+        .search-hub {
+          flex: 1;
+          max-width: 480px;
+          height: 44px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          padding: 0 16px;
+          gap: 12px;
+          transition: all 0.3s;
+        }
+
+        .search-hub:focus-within {
+          background: rgba(255, 255, 255, 0.05);
+          border-color: rgba(59, 130, 246, 0.4);
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .search-hub input {
+          flex: 1; background: none; border: none; outline: none;
+          color: white; font-size: 14px; font-weight: 500;
+        }
+
+        .search-shortcut {
+          font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 4px;
+        }
+
+        .header-actions { display: flex; gap: 12px; }
+
+        .btn-glass {
+          display: flex; align-items: center; gap: 8px;
+          padding: 0 16px; height: 40px; background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px;
+          color: rgba(255, 255, 255, 0.6); font-size: 13px; font-weight: 700;
+          transition: all 0.2s;
+        }
+        .btn-glass:hover { background: rgba(255, 255, 255, 0.06); color: white; }
+
+        .btn-premium {
+          display: flex; align-items: center; gap: 8px;
+          padding: 0 20px; height: 40px; background: white;
+          color: black; border-radius: 12px;
+          font-size: 13px; font-weight: 800;
+          transition: all 0.2s;
+        }
+        .btn-premium:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255, 255, 255, 0.2); }
+
+        /* Creation Box */
+        .inline-creation-box {
+          background: rgba(59, 130, 246, 0.05);
+          border: 1px solid rgba(59, 130, 246, 0.2);
+          border-radius: 20px;
+          padding: 24px;
+        }
+
+        .creation-content { display: flex; align-items: center; gap: 20px; }
+        .creation-content input {
+          flex: 1; background: none; border: none; outline: none;
+          color: white; font-size: 20px; font-weight: 700;
+        }
+        .creation-actions { display: flex; gap: 12px; }
+        .btn-cancel { font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.4); padding: 8px 16px; border: none; background: none; cursor: pointer; }
+        .btn-confirm { background: #3b82f6; color: white; font-weight: 800; font-size: 13px; padding: 8px 24px; border-radius: 10px; border: none; cursor: pointer; }
+
+        /* Bento Grid */
+        .bento-grid {
+          display: grid;
+          grid-template-columns: 1.5fr 1fr 1fr;
+          gap: 20px;
+        }
+
+        .bento-card {
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.05);
           border-radius: 24px;
+          padding: 28px;
           position: relative;
           overflow: hidden;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }
 
-        .layout-main {
+        .welcome-hero { grid-column: span 1; display: flex; flex-direction: column; justify-content: center; }
+        .card-bg-glow { position: absolute; top: -20%; right: -20%; width: 100px; height: 100px; background: #3b82f6; filter: blur(60px); opacity: 0.2; }
+        .version-tag { font-size: 10px; font-weight: 800; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
+        .welcome-hero h1 { font-size: 28px; font-weight: 800; color: white; margin-bottom: 8px; letter-spacing: -0.02em; }
+        .welcome-hero p { font-size: 13px; color: rgba(255, 255, 255, 0.4); line-height: 1.5; }
+
+        .gradient-text { background: linear-gradient(135deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+        .status-header { display: flex; align-items: center; gap: 10px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: rgba(255, 255, 255, 0.3); margin-bottom: 20px; }
+        .stat-rows { display: flex; flex-direction: column; gap: 12px; }
+        .stat-line { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, 0.5); }
+        .stat-line .val { color: white; font-family: monospace; font-size: 11px; }
+
+        .quick-join p { font-size: 13px; color: rgba(255, 255, 255, 0.4); margin-bottom: 20px; line-height: 1.5; }
+        .btn-outline-sm { padding: 8px 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; transition: all 0.2s; background: none; cursor: pointer; }
+        .btn-outline-sm:hover { background: rgba(255, 255, 255, 0.05); border-color: white; }
+
+        /* Workspaces Grid */
+        .workspaces-section { display: flex; flex-direction: column; gap: 24px; }
+        .section-title { display: flex; align-items: center; gap: 16px; color: rgba(255, 255, 255, 0.3); }
+        .section-title span { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
+        .title-line { flex: 1; height: 1px; background: linear-gradient(to right, rgba(255, 255, 255, 0.05), transparent); }
+
+        .workspace-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 20px;
+        }
+
+        .empty-catalog { padding: 60px; text-align: center; color: rgba(255, 255, 255, 0.2); }
+
+        .animate-reveal-up { animation: reveal-up 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+        @keyframes reveal-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 900px) {
+          .bento-grid { grid-template-columns: 1fr; }
+          .manager-container { padding: 24px; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function WorkspaceCard({ space, onClick }: { space: Space, onClick: () => void }) {
+  return (
+    <div className="workspace-premium-card" onClick={onClick}>
+      <div className="card-top">
+        <div className="project-icon">
+          <FileCode size={20} className="text-blue-400" />
+        </div>
+        <div className="card-actions-subtle">
+          <button className="btn-dot"><MoreVertical size={14} /></button>
+        </div>
+      </div>
+
+      <div className="card-main">
+        <h3>{space.name}</h3>
+        <div className="meta-info">
+          <div className="meta-item"><Clock size={12} /> <span>{new Date(space.createdAt).toLocaleDateString()}</span></div>
+          <div className="meta-item"><Users size={12} /> <span>1 Authorized Node</span></div>
+        </div>
+      </div>
+
+      <div className="card-footer">
+        <div className="tag-cloud">
+          <span className="type-tag">TypeScript</span>
+          <span className="type-tag">Git Locked</span>
+        </div>
+        <button className="launch-btn">
+          <span>Launch</span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
+
+      <style>{`
+        .workspace-premium-card {
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 20px;
+          padding: 24px;
           display: flex;
           flex-direction: column;
-        }
-
-        .features-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          height: 100%;
-        }
-
-        .feature-card {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          gap: 24px;
-          padding: 24px 32px;
-          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .feature-card:hover {
-          transform: translateX(8px);
-          border-color: rgba(59, 130, 246, 0.4);
-          background: rgba(59, 130, 246, 0.08);
-        }
-
-        .feature-icon-box {
-          width: 52px;
-          height: 52px;
-          border-radius: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-        }
-
-        .feature-text {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          text-align: left;
-        }
-
-        .feature-card h3 {
-          font-size: 18px;
-          font-weight: 800;
-          color: white;
-          margin: 0;
-        }
-
-        .feature-card p {
-          font-size: 14px;
-          color: rgba(255, 255, 255, 0.4);
-          line-height: 1.5;
-          margin: 0;
-        }
-
-        /* Sidebar Cards */
-        .action-card {
-          padding: 32px;
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .action-card.highlight {
-          border-color: rgba(59, 130, 246, 0.4);
-          box-shadow: 0 10px 40px rgba(59, 130, 246, 0.15);
-        }
-
-        .card-bg-effect {
-          position: absolute;
-          top: -50px; right: -50px; width: 150px; height: 150px;
-          background: #3b82f6; filter: blur(60px); opacity: 0.15;
-        }
-
-        .action-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 11px;
-          font-weight: 900;
-          color: #f59e0b;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-bottom: 16px;
-        }
-
-        .action-card h3 { font-size: 24px; font-weight: 900; margin-bottom: 12px; color: white; }
-        .action-card p { font-size: 14px; color: rgba(255, 255, 255, 0.4); line-height: 1.5; margin-bottom: 24px; }
-
-        .action-buttons {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          margin-bottom: auto;
-        }
-
-        .btn-hero-primary {
-          width: 100%;
-          padding: 16px 20px;
-          background: #fff;
-          color: #000;
-          border-radius: 16px;
-          font-weight: 800;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .btn-hero-primary:hover { transform: scale(1.02); box-shadow: 0 12px 32px rgba(255, 255, 255, 0.2); }
-
-        .btn-hero-secondary {
-          width: 100%;
-          padding: 16px 20px;
-          background: rgba(255, 255, 255, 0.05);
-          color: #fff;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 16px;
-          font-weight: 700;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
+          gap: 20px;
+          transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
           cursor: pointer;
         }
 
-        .btn-hero-secondary:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); }
-
-        .recent-spaces {
-          margin-top: 32px;
-          padding-top: 24px;
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
+        .workspace-premium-card:hover {
+          background: rgba(255, 255, 255, 0.04);
+          border-color: rgba(59, 130, 246, 0.3);
+          transform: translateY(-4px) scale(1.01);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
         }
 
-        .recent-title { font-size: 11px; font-weight: 800; color: rgba(255, 255, 255, 0.2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
-        .recent-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 -8px; font-size: 13px; color: rgba(255, 255, 255, 0.5); cursor: pointer; border-radius: 10px; transition: all 0.2s; }
-        .recent-item:hover { color: #3b82f6; background: rgba(59, 130, 246, 0.1); transform: translateX(4px); }
+        .card-top { display: flex; justify-content: space-between; align-items: center; }
+        .project-icon { width: 44px; height: 44px; background: rgba(59, 130, 246, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
 
-        @media (max-width: 1040px) {
-          .welcome-layout { grid-template-columns: 1fr; }
-          .welcome-content { gap: 32px; padding: 20px; }
-          .layout-sidebar { order: -1; }
+        .card-main h3 { font-size: 18px; font-weight: 700; color: white; margin-bottom: 8px; }
+        .meta-info { display: flex; gap: 16px; }
+        .meta-item { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; }
+
+        .card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.03); }
+        .tag-cloud { display: flex; gap: 6px; }
+        .type-tag { font-size: 9px; font-weight: 800; color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.05); padding: 2px 8px; border-radius: 6px; text-transform: uppercase; }
+
+        .launch-btn {
+          display: flex; align-items: center; gap: 8px; color: #3b82f6; font-size: 12px; font-weight: 800; text-transform: uppercase;
+          opacity: 0; transform: translateX(-10px); transition: all 0.3s;
         }
+        .workspace-premium-card:hover .launch-btn { opacity: 1; transform: translateX(0); }
+        
+        .btn-dot { background: none; border: none; color: rgba(255, 255, 255, 0.2); cursor: pointer; }
       `}</style>
     </div>
   )

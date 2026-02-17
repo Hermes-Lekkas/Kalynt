@@ -25,6 +25,7 @@ import { executeTool, getToolCallJsonSchema, getSimplifiedToolSchema, getModelSi
 import { aimeService } from './aimeService'
 import { shadowWorkspaceService } from './shadowWorkspaceService'
 import { useModelStore } from '../stores/modelStore'
+import { estimateTokens, truncateToTokens } from '../utils/tokenCounter'
 import {
     AgentStep,
     AgentPlan,
@@ -346,7 +347,11 @@ class AgentLoopService {
             const systemPrompt = this.buildSystemPrompt(ragContext, runConfig)
 
             // 3. Build conversation history
-            const messages = this.buildMessages(systemPrompt, chatHistory, userMessage)
+            const contextWindow = this.useOfflineAI 
+                ? offlineLLMService.getContextWindow() 
+                : aiService.getContextWindow(this.cloudProvider)
+                
+            const messages = this.buildMessages(systemPrompt, chatHistory, userMessage, contextWindow)
 
             // 4. Enter the ReAct loop
             let finalResponse = ''
@@ -698,23 +703,57 @@ ${ragContext.slice(0, config.maxRAGContext)}`
     private buildMessages(
         systemPrompt: string,
         chatHistory: Array<{ role: string; content: string }>,
-        userMessage: string
+        userMessage: string,
+        contextWindow: number
     ): Array<{ role: string; content: string }> {
-        const messages: Array<{ role: string; content: string }> = [
-            { role: 'system', content: systemPrompt }
-        ]
+        const responseBuffer = 4096
+        const systemTokens = estimateTokens(systemPrompt)
+        const userTokens = estimateTokens(userMessage)
+        
+        let availableTokens = contextWindow - responseBuffer - systemTokens - userTokens
+        
+        // Safety buffer
+        availableTokens -= 1000 
 
-        // Add relevant chat history (keep it concise for context efficiency)
-        const recentHistory = chatHistory.slice(-10)
-        for (const msg of recentHistory) {
-            messages.push({
-                role: msg.role === 'tool' ? 'assistant' : msg.role,
-                content: msg.content.slice(0, 2000)
-            })
+        if (availableTokens < 0) {
+            // Context is extremely tight, just send system + truncated user message
+            return [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: truncateToTokens(userMessage, contextWindow - systemTokens - 500) }
+            ]
         }
 
-        messages.push({ role: 'user', content: userMessage })
-        return messages
+        const selectedHistory: Array<{ role: string; content: string }> = []
+        
+        // Iterate backwards
+        for (let i = chatHistory.length - 1; i >= 0; i--) {
+            const msg = chatHistory[i]
+            const msgTokens = estimateTokens(msg.content)
+            
+            if (availableTokens >= msgTokens) {
+                selectedHistory.unshift({
+                    role: msg.role === 'tool' ? 'assistant' : msg.role,
+                    content: msg.content
+                })
+                availableTokens -= msgTokens
+            } else if (availableTokens > 100) {
+                // Partial fit (keep at least 100 tokens)
+                selectedHistory.unshift({
+                    role: msg.role === 'tool' ? 'assistant' : msg.role,
+                    content: '...(older content truncated)...\n' + truncateToTokens(msg.content, availableTokens) // We want the END of the message ideally, but truncateToTokens keeps START. For now keeping start is safer for context.
+                })
+                availableTokens = 0
+                break
+            } else {
+                break
+            }
+        }
+
+        return [
+            { role: 'system', content: systemPrompt },
+            ...selectedHistory,
+            { role: 'user', content: userMessage }
+        ]
     }
 
     private makeAssistantMessage(content: string): { role: string; content: string } {

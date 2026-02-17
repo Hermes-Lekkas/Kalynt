@@ -100,6 +100,10 @@ export function registerTerminalHandlers(
         return { success: true, command }
     })
 
+    ipcMain.handle('terminal:getDefaultShell', async () => {
+        return { success: true, shell: (terminalService as any).getDefaultShell() }
+    })
+
     // ==========================================
     // Language Runtime APIs
     // ==========================================

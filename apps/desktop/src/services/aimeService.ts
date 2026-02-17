@@ -39,6 +39,64 @@ class AIMEService {
     private useWorker = true // Feature flag
 
     /**
+     * Open IndexedDB for AIME persistence
+     */
+    private openDB(): Promise<IDBDatabase> {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('kalynt-aime-db', 1)
+            request.onupgradeneeded = () => {
+                const db = request.result
+                if (!db.objectStoreNames.contains('aime-index')) {
+                    db.createObjectStore('aime-index', { keyPath: 'workspacePath' })
+                }
+            }
+            request.onsuccess = () => resolve(request.result)
+            request.onerror = () => reject(new Error(request.error?.message || 'AIME IndexedDB failed'))
+        })
+    }
+
+    /**
+     * Save the current index to persistent storage
+     */
+    private async saveIndex() {
+        if (!this.workspacePath) return
+        try {
+            const db = await this.openDB()
+            const transaction = db.transaction(['aime-index'], 'readwrite')
+            const store = transaction.objectStore('aime-index')
+            store.put({
+                workspacePath: this.workspacePath,
+                index: this.index,
+                timestamp: Date.now()
+            })
+            logger.agent.debug('AIME: Index saved to persistent storage')
+        } catch (error) {
+            logger.agent.warn('AIME: Failed to save index', error)
+        }
+    }
+
+    /**
+     * Load an existing index from persistent storage
+     */
+    private async loadIndex(path: string): Promise<IndexedFile[] | null> {
+        try {
+            const db = await this.openDB()
+            const transaction = db.transaction(['aime-index'], 'readonly')
+            const store = transaction.objectStore('aime-index')
+            const request = store.get(path)
+            
+            return new Promise((resolve) => {
+                request.onsuccess = () => {
+                    resolve(request.result?.index || null)
+                }
+                request.onerror = () => resolve(null)
+            })
+        } catch {
+            return null
+        }
+    }
+
+    /**
      * Initialize the Web Worker
      */
     private initWorker(): Worker | null {
@@ -132,11 +190,32 @@ class AIMEService {
         if (this.isIndexing) return
         this.isIndexing = true
         this.workspacePath = path
-        this.index = []
 
-        logger.agent.info('AIME: Starting codebase indexing', { path, useWorker: this.useWorker })
+        logger.agent.info('AIME: Initializing codebase indexing', { path, useWorker: this.useWorker })
 
         try {
+            // 1. Try to load from persistent storage first
+            const cachedIndex = await this.loadIndex(path)
+            if (cachedIndex && cachedIndex.length > 0) {
+                this.index = cachedIndex
+                this.buildSearchIndex()
+                logger.agent.info('AIME: Loaded index from cache', { files: this.index.length })
+                
+                // Trigger fast incremental re-index for changed files
+                this.isIndexing = false // Temporarily unlock
+                await this.reindexChanged()
+                this.isIndexing = true // Re-lock for potential full index logic below if needed
+                
+                // If we have enough files, we consider it "done" for now
+                if (this.index.length > 0) {
+                    this.isIndexing = false
+                    return
+                }
+            }
+
+            this.index = []
+            
+            // 2. Full index logic follows...
             // Try Web Worker first
             if (this.useWorker) {
                 const files = await this.collectFiles(path)
@@ -154,6 +233,7 @@ class AIMEService {
             await treeSitterService.init()
             await this.scanDirectory(path)
             this.buildSearchIndex()
+            await this.saveIndex()
             logger.agent.info('AIME: Indexing complete (main thread)', {
                 files: this.index.length,
                 symbols: this.getTotalSymbolCount()
@@ -246,6 +326,7 @@ class AIMEService {
                 })
             }
             this.buildSearchIndex()
+            await this.saveIndex()
         }
         
         logger.agent.info('AIME: Worker indexing completed and synced to main thread', {

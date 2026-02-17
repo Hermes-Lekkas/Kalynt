@@ -1,11 +1,11 @@
-﻿/*
+/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-    GitBranch, RefreshCw, Check, X, FileText, AlertCircle, Folder,
-    ChevronDown, Plus, ArrowUp, ArrowDown, RotateCcw, History,
-    GitCommit
+    GitBranch, RefreshCw, Check, X, Folder,
+    ChevronDown, Plus, ArrowUp, ArrowDown, RotateCcw,
+    AlertCircle, FileText, Layers, Clock
 } from 'lucide-react'
 import { useNotificationStore } from '../../stores/notificationStore'
 
@@ -373,11 +373,11 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
     // Get status icon and color
     const getStatusBadge = (status: GitFile['status']) => {
         const badges: Record<string, { icon: string; color: string }> = {
-            modified: { icon: 'M', color: '#d29922' },
-            added: { icon: 'A', color: '#3fb950' },
-            deleted: { icon: 'D', color: '#f85149' },
-            renamed: { icon: 'R', color: '#a371f7' },
-            untracked: { icon: 'U', color: '#8b949e' }
+            modified: { icon: 'M', color: '#3b82f6' },
+            added: { icon: 'A', color: '#10b981' },
+            deleted: { icon: 'D', color: '#ef4444' },
+            renamed: { icon: 'R', color: '#8b5cf6' },
+            untracked: { icon: 'U', color: '#6b7280' }
         }
         return badges[status] || badges.modified
     }
@@ -411,9 +411,9 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
 
     if (!workspacePath) {
         return (
-            <div className="git-panel empty">
-                <Folder size={32} className="empty-icon" />
-                <p>Open a folder to view Git status</p>
+            <div className="git-panel empty-state">
+                <Folder size={40} className="pulse-icon opacity-20" />
+                <p>Select a workspace to activate source control.</p>
                 <style>{gitPanelStyles}</style>
             </div>
         )
@@ -421,15 +421,18 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
 
     if (!isRepo) {
         return (
-            <div className="git-panel empty">
-                <GitBranch size={32} className="empty-icon" />
-                <p>Not a Git repository</p>
+            <div className="git-panel empty-state">
+                <div className="empty-icon-wrapper">
+                    <GitBranch size={48} className="text-blue-500" />
+                </div>
+                <h3>Repository Inactive</h3>
+                <p>This workspace is not currently tracked by Git.</p>
                 <button
-                    className="init-btn"
+                    className="btn-premium mt-6"
                     onClick={initRepository}
                     disabled={initializing}
                 >
-                    {initializing ? 'Initializing...' : 'Initialize Repository'}
+                    {initializing ? 'Initializing...' : 'Initialize Source Control'}
                 </button>
                 <style>{gitPanelStyles}</style>
             </div>
@@ -438,23 +441,23 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
 
     return (
         <div className="git-panel">
-            {/* Header with branch selector */}
+            {/* Premium Header */}
             <div className="git-header">
                 <div className="branch-selector" ref={dropdownRef}>
                     <button
                         className="branch-btn"
                         onClick={() => setShowBranchDropdown(!showBranchDropdown)}
                     >
-                        <GitBranch size={14} />
-                        <span>{branch}</span>
-                        <ChevronDown size={12} />
+                        <GitBranch size={14} className="text-blue-400" />
+                        <span className="branch-name">{branch}</span>
+                        <ChevronDown size={12} className="opacity-40" />
                     </button>
 
                     {showBranchDropdown && (
-                        <div className="branch-dropdown">
+                        <div className="branch-dropdown animate-reveal-up">
                             <div className="dropdown-header">
-                                <span>Switch branch</span>
-                                <button onClick={() => { setShowNewBranchInput(true); setShowBranchDropdown(false) }}>
+                                <span>Switch Branch</span>
+                                <button className="new-btn" onClick={() => { setShowNewBranchInput(true); setShowBranchDropdown(false) }}>
                                     <Plus size={14} /> New
                                 </button>
                             </div>
@@ -475,199 +478,195 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
                 </div>
 
                 <div className="header-actions">
-                    {ahead > 0 && (
-                        <button
-                            className="action-btn push"
-                            onClick={push}
-                            disabled={pushing}
-                            title={`Push ${ahead} commit${ahead > 1 ? 's' : ''}`}
-                        >
-                            <ArrowUp size={14} />
-                            <span>{ahead}</span>
-                        </button>
-                    )}
-                    {behind > 0 && (
-                        <button
-                            className="action-btn pull"
-                            onClick={pull}
-                            disabled={pulling}
-                            title={`Pull ${behind} commit${behind > 1 ? 's' : ''}`}
-                        >
-                            <ArrowDown size={14} />
-                            <span>{behind}</span>
-                        </button>
-                    )}
-                    {ahead === 0 && behind === 0 && (
-                        <>
-                            <button className="action-btn" onClick={push} disabled={pushing} title="Push">
-                                <ArrowUp size={14} />
-                            </button>
-                            <button className="action-btn" onClick={pull} disabled={pulling} title="Pull">
-                                <ArrowDown size={14} />
-                            </button>
-                        </>
-                    )}
-                    <button className="action-btn" onClick={fetchStatus} title="Refresh">
-                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                    <div className="sync-badges">
+                        {ahead > 0 && (
+                            <div className="sync-badge ahead" title={`${ahead} commits to push`}>
+                                <ArrowUp size={12} />
+                                <span>{ahead}</span>
+                            </div>
+                        )}
+                        {behind > 0 && (
+                            <div className="sync-badge behind" title={`${behind} commits to pull`}>
+                                <ArrowDown size={12} />
+                                <span>{behind}</span>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <button className="action-btn" onClick={pull} disabled={pulling} title="Pull Changes">
+                        <ArrowDown size={16} />
+                    </button>
+                    <button className="action-btn" onClick={push} disabled={pushing} title="Push Changes">
+                        <ArrowUp size={16} />
+                    </button>
+                    <button className="action-btn" onClick={fetchStatus} title="Refresh Status">
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
 
             {/* New branch input */}
             {showNewBranchInput && (
-                <div className="new-branch-input">
+                <div className="new-branch-input-row animate-reveal-up">
                     <input
                         type="text"
-                        placeholder="New branch name..."
+                        placeholder="Feature name..."
                         value={newBranchName}
                         onChange={(e) => setNewBranchName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && createBranch()}
                         autoFocus
                     />
-                    <button onClick={createBranch}><Check size={14} /></button>
-                    <button onClick={() => { setShowNewBranchInput(false); setNewBranchName('') }}><X size={14} /></button>
+                    <div className="input-actions">
+                        <button className="confirm" onClick={createBranch}><Check size={14} /></button>
+                        <button className="cancel" onClick={() => { setShowNewBranchInput(false); setNewBranchName('') }}><X size={14} /></button>
+                    </div>
                 </div>
             )}
 
-            {error && <div className="git-error">{error}</div>}
+            {error && <div className="git-error-banner">{error}</div>}
 
-            {/* Tabs */}
-            <div className="git-tabs">
+            {/* Premium Tabs */}
+            <div className="git-tabs-strip">
                 <button
-                    className={`tab ${activeTab === 'changes' ? 'active' : ''}`}
+                    className={`git-tab ${activeTab === 'changes' ? 'active' : ''}`}
                     onClick={() => setActiveTab('changes')}
                 >
-                    Changes {files.length > 0 && <span className="badge">{files.length}</span>}
+                    Changes {files.length > 0 && <span className="tab-badge">{files.length}</span>}
                 </button>
                 <button
-                    className={`tab ${activeTab === 'history' ? 'active' : ''}`}
+                    className={`git-tab ${activeTab === 'history' ? 'active' : ''}`}
                     onClick={() => setActiveTab('history')}
                 >
-                    <History size={12} /> History
+                    Log
                 </button>
             </div>
 
-            {activeTab === 'changes' ? (
-                <>
-                    {/* Staged Changes */}
-                    <div className="git-section">
-                        <div className="section-header">
-                            <span>Staged Changes ({stagedFiles.length})</span>
-                        </div>
-                        {stagedFiles.length === 0 ? (
-                            <div className="empty-section">No staged changes</div>
-                        ) : (
+            <div className="git-content-area">
+                {activeTab === 'changes' ? (
+                    <div className="changes-view">
+                        {/* Staged Changes */}
+                        <div className="change-section">
+                            <div className="section-title">
+                                <Layers size={12} />
+                                <span>Staged Area ({stagedFiles.length})</span>
+                            </div>
                             <div className="file-list">
-                                {stagedFiles.map(file => {
-                                    const badge = getStatusBadge(file.status)
-                                    return (
-                                        <button key={file.path} className="file-item" onClick={() => viewDiff(file.path)}>
-                                            <span className="status-badge" style={{ color: badge.color }}>{badge.icon}</span>
-                                            <span className="file-path">{file.path}</span>
-                                            <button className="file-action" onClick={(e) => { e.stopPropagation(); unstageFile(file.path) }} title="Unstage">−</button>
+                                {stagedFiles.map(file => (
+                                    <div key={file.path} className="file-row staged" onClick={() => viewDiff(file.path)}>
+                                        <div className="file-info">
+                                            <span className="file-badge" style={{ backgroundColor: getStatusBadge(file.status).color }}>{getStatusBadge(file.status).icon}</span>
+                                            <span className="file-name">{file.path}</span>
+                                        </div>
+                                        <button className="file-control unstage" onClick={(e) => { e.stopPropagation(); unstageFile(file.path) }}>
+                                            <X size={14} />
                                         </button>
-                                    )
-                                })}
+                                    </div>
+                                ))}
+                                {stagedFiles.length === 0 && <div className="empty-hint">No files staged for commit.</div>}
+                            </div>
+                        </div>
+
+                        {/* Working Directory */}
+                        <div className="change-section">
+                            <div className="section-title">
+                                <Clock size={12} />
+                                <span>Working Directory ({unstagedFiles.length})</span>
+                                {unstagedFiles.length > 0 && (
+                                    <button className="stage-all-btn" onClick={stageAll}>Stage All</button>
+                                )}
+                            </div>
+                            <div className="file-list">
+                                {unstagedFiles.map(file => (
+                                    <div key={file.path} className="file-row" onClick={() => viewDiff(file.path)}>
+                                        <div className="file-info">
+                                            <span className="file-badge" style={{ color: getStatusBadge(file.status).color }}>{getStatusBadge(file.status).icon}</span>
+                                            <span className="file-name">{file.path}</span>
+                                        </div>
+                                        <div className="file-row-actions">
+                                            {file.status !== 'untracked' && (
+                                                <button className="file-control discard" onClick={(e) => { e.stopPropagation(); discardChanges(file.path) }}>
+                                                    <RotateCcw size={14} />
+                                                </button>
+                                            )}
+                                            <button className="file-control stage" onClick={(e) => { e.stopPropagation(); stageFile(file.path) }}>
+                                                <Plus size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {unstagedFiles.length === 0 && <div className="empty-hint">Working directory clean.</div>}
+                            </div>
+                        </div>
+
+                        {/* Commit Section */}
+                        {stagedFiles.length > 0 && (
+                            <div className="commit-footer animate-reveal-up">
+                                <div className="commit-input-wrapper">
+                                    <textarea
+                                        placeholder="Summarize changes..."
+                                        value={commitMessage}
+                                        onChange={(e) => setCommitMessage(e.target.value)}
+                                        rows={3}
+                                    />
+                                    <button
+                                        className="btn-premium w-full mt-3"
+                                        onClick={commit}
+                                        disabled={!commitMessage.trim()}
+                                    >
+                                        <Check size={16} />
+                                        <span>Commit {stagedFiles.length} File{stagedFiles.length > 1 ? 's' : ''}</span>
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
-
-                    {/* Unstaged Changes */}
-                    <div className="git-section">
-                        <div className="section-header">
-                            <span>Changes ({unstagedFiles.length})</span>
-                            {unstagedFiles.length > 0 && (
-                                <button className="section-action" onClick={stageAll} title="Stage all">+</button>
-                            )}
-                        </div>
-                        {unstagedFiles.length === 0 ? (
-                            <div className="empty-section">No changes</div>
-                        ) : (
-                            <div className="file-list">
-                                {unstagedFiles.map(file => {
-                                    const badge = getStatusBadge(file.status)
-                                    return (
-                                        <button key={file.path} className="file-item" onClick={() => viewDiff(file.path)}>
-                                            <span className="status-badge" style={{ color: badge.color }}>{badge.icon}</span>
-                                            <span className="file-path">{file.path}</span>
-                                            <div className="file-actions">
-                                                {file.status !== 'untracked' && (
-                                                    <button className="file-action discard" onClick={(e) => { e.stopPropagation(); discardChanges(file.path) }} title="Discard">
-                                                        <RotateCcw size={12} />
-                                                    </button>
-                                                )}
-                                                <button className="file-action" onClick={(e) => { e.stopPropagation(); stageFile(file.path) }} title="Stage">+</button>
-                                            </div>
-                                        </button>
-                                    )
-                                })}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Commit Box */}
-                    {stagedFiles.length > 0 && (
-                        <div className="commit-box">
-                            <textarea
-                                placeholder="Commit message..."
-                                value={commitMessage}
-                                onChange={(e) => setCommitMessage(e.target.value)}
-                                rows={3}
-                            />
-                            <button
-                                className="commit-btn"
-                                onClick={commit}
-                                disabled={!commitMessage.trim()}
-                            >
-                                <Check size={14} />
-                                Commit ({stagedFiles.length} file{stagedFiles.length > 1 ? 's' : ''})
-                            </button>
-                        </div>
-                    )}
-                </>
-            ) : (
-                /* History Tab */
-                <div className="history-list">
-                    {commits.length === 0 ? (
-                        <div className="empty-section">No commits yet</div>
-                    ) : (
-                        commits.map(c => (
-                            <div key={c.hash} className="commit-item">
-                                <div className="commit-icon"><GitCommit size={14} /></div>
-                                <div className="commit-info">
-                                    <div className="commit-message">{c.message}</div>
-                                    <div className="commit-meta">
-                                        <span className="commit-hash">{c.hash}</span>
-                                        <span className="commit-author">{c.author_name}</span>
-                                        <span className="commit-time">{formatTime(c.date)}</span>
+                ) : (
+                    /* History Tab */
+                    <div className="history-view">
+                        {commits.map(c => (
+                            <div key={c.hash} className="log-item">
+                                <div className="log-marker"><div className="log-dot" /></div>
+                                <div className="log-body">
+                                    <div className="log-message">{c.message}</div>
+                                    <div className="log-meta">
+                                        <span className="log-hash">{c.hash}</span>
+                                        <span className="log-author">{c.author_name}</span>
+                                        <span className="log-time">{formatTime(c.date)}</span>
                                     </div>
                                 </div>
                             </div>
-                        ))
-                    )}
-                </div>
-            )}
-
-            {/* Diff View */}
-            {diff && selectedFile && (
-                <div className="diff-panel">
-                    <div className="diff-header">
-                        <FileText size={14} />
-                        <span className="file-path-title">{selectedFile}</span>
-                        <button className="close-diff" onClick={() => { setDiff(null); setSelectedFile(null) }}>
-                            <X size={16} />
-                        </button>
+                        ))}
+                        {commits.length === 0 && <div className="empty-state-subtle">No commit history found.</div>}
                     </div>
-                    <div className="diff-body">
-                        {diff === 'BINARY_FILE' ? (
-                            <div className="binary-notice">
-                                <AlertCircle size={32} />
-                                <p>Binary file</p>
-                                <p className="sub">Diff preview is not available for binary files.</p>
+                )}
+            </div>
+
+            {/* Floating Diff Panel */}
+            {diff && selectedFile && (
+                <div className="floating-diff-overlay" onClick={() => { setDiff(null); setSelectedFile(null) }}>
+                    <div className="floating-diff-content animate-reveal-up" onClick={e => e.stopPropagation()}>
+                        <div className="diff-header-bar">
+                            <div className="diff-title-group">
+                                <FileText size={16} className="text-blue-400" />
+                                <span className="diff-file-name">{selectedFile}</span>
                             </div>
-                        ) : (
-                            <pre className="diff-content">{renderDiff(diff)}</pre>
-                        )}
+                            <button className="close-diff-btn" onClick={() => { setDiff(null); setSelectedFile(null) }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="diff-viewer-body">
+                            {diff === 'BINARY_FILE' ? (
+                                <div className="binary-preview">
+                                    <AlertCircle size={40} className="opacity-20 mb-4" />
+                                    <p>Binary File Detected</p>
+                                    <span>Diff preview is unavailable for this asset type.</span>
+                                </div>
+                            ) : (
+                                <div className="diff-code-wrapper">
+                                    {renderDiff(diff)}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -682,578 +681,410 @@ const gitPanelStyles = `
         display: flex;
         flex-direction: column;
         height: 100%;
-        background: var(--color-surface);
-        font-size: 13px;
+        background: #000000;
+        color: white;
+        font-family: var(--font-sans);
+        position: relative;
+        overflow: hidden;
     }
 
-    .git-panel.empty {
+    .empty-state {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        color: var(--color-text-muted);
         text-align: center;
-        padding: 24px;
+        padding: 40px;
         gap: 12px;
     }
 
-    .empty-icon {
-        opacity: 0.5;
+    .empty-state h3 {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 16px 0 8px;
     }
 
-    .init-btn {
-        margin-top: 8px;
-        padding: 10px 20px;
-        background: linear-gradient(135deg, #238636, #2ea043);
-        color: white;
-        border: none;
-        border-radius: 8px;
+    .empty-state p {
+        color: rgba(255, 255, 255, 0.4);
         font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .init-btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
-    }
-
-    .init-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        transform: none;
+        max-width: 200px;
     }
 
     .git-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--color-border-subtle);
-        gap: 8px;
-    }
-
-    .branch-selector {
-        position: relative;
+        padding: 16px 20px;
+        background: rgba(255, 255, 255, 0.02);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .branch-btn {
         display: flex;
         align-items: center;
-        gap: 6px;
-        padding: 6px 10px;
-        background: var(--color-surface-elevated);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: 6px;
-        color: var(--color-text);
+        gap: 8px;
+        padding: 6px 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        color: white;
         font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s;
+        font-weight: 600;
+        transition: all 0.2s;
     }
 
     .branch-btn:hover {
-        background: var(--color-bg);
-        border-color: var(--color-accent);
-    }
-
-    .branch-dropdown {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        margin-top: 4px;
-        min-width: 200px;
-        background: var(--color-surface-elevated);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-        z-index: 100;
-        overflow: hidden;
-    }
-
-    .dropdown-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--color-border-subtle);
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--color-text-muted);
-        text-transform: uppercase;
-    }
-
-    .dropdown-header button {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 8px;
-        background: var(--color-accent);
-        border: none;
-        border-radius: 4px;
-        color: white;
-        font-size: 11px;
-        cursor: pointer;
-    }
-
-    .branch-list {
-        max-height: 200px;
-        overflow-y: auto;
-    }
-
-    .branch-option {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        width: 100%;
-        padding: 8px 12px;
-        background: transparent;
-        border: none;
-        color: var(--color-text);
-        font-size: 12px;
-        text-align: left;
-        cursor: pointer;
-    }
-
-    .branch-option:hover {
-        background: var(--color-surface);
-    }
-
-    .branch-option.active {
-        color: var(--color-accent);
-        font-weight: 500;
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(59, 130, 246, 0.4);
     }
 
     .header-actions {
         display: flex;
-        gap: 4px;
+        align-items: center;
+        gap: 8px;
     }
+
+    .sync-badges {
+        display: flex;
+        gap: 4px;
+        margin-right: 8px;
+    }
+
+    .sync-badge {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 100px;
+        font-size: 10px;
+        font-weight: 800;
+    }
+
+    .sync-badge.ahead { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+    .sync-badge.behind { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
 
     .action-btn {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 6px 8px;
-        background: transparent;
-        border: none;
-        border-radius: 4px;
-        color: var(--color-text-secondary);
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .action-btn:hover {
-        background: var(--color-surface-elevated);
-        color: var(--color-text);
-    }
-
-    .action-btn.push span,
-    .action-btn.pull span {
-        font-size: 11px;
-        font-weight: 600;
-    }
-
-    .action-btn.push {
-        color: #3fb950;
-    }
-
-    .action-btn.pull {
-        color: #58a6ff;
-    }
-
-    .new-branch-input {
-        display: flex;
-        gap: 4px;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--color-border-subtle);
-    }
-
-    .new-branch-input input {
-        flex: 1;
-        padding: 6px 10px;
-        background: var(--color-bg);
-        border: 1px solid var(--color-accent);
-        border-radius: 4px;
-        color: var(--color-text);
-        font-size: 12px;
-        outline: none;
-    }
-
-    .new-branch-input button {
-        padding: 6px;
-        background: var(--color-surface-elevated);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: 4px;
-        color: var(--color-text-secondary);
-        cursor: pointer;
-    }
-
-    .new-branch-input button:hover {
-        background: var(--color-accent);
-        color: white;
-    }
-
-    .git-error {
-        padding: 8px 12px;
-        background: rgba(248, 81, 73, 0.1);
-        color: #f85149;
-        font-size: 12px;
-    }
-
-    .git-tabs {
-        display: flex;
-        border-bottom: 1px solid var(--color-border-subtle);
-    }
-
-    .tab {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex: 1;
-        padding: 10px 16px;
-        background: transparent;
-        border: none;
-        border-bottom: 2px solid transparent;
-        color: var(--color-text-muted);
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .tab:hover {
-        color: var(--color-text);
-        background: var(--color-surface-elevated);
-    }
-
-    .tab.active {
-        color: var(--color-accent);
-        border-bottom-color: var(--color-accent);
-    }
-
-    .tab .badge {
-        padding: 2px 6px;
-        background: var(--color-accent);
-        border-radius: 10px;
-        color: white;
-        font-size: 10px;
-    }
-
-    .git-section {
-        border-bottom: 1px solid var(--color-border-subtle);
-    }
-
-    .section-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 12px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--color-text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        background: var(--color-bg);
-    }
-
-    .section-action {
-        width: 20px;
-        height: 20px;
+        width: 32px;
+        height: 32px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
-        font-weight: bold;
-        background: transparent;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        color: var(--color-text-secondary);
+        border-radius: 8px;
+        color: rgba(255, 255, 255, 0.4);
+        transition: all 0.2s;
     }
 
-    .section-action:hover {
-        background: var(--color-accent);
+    .action-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.05);
         color: white;
     }
 
-    .empty-section {
-        padding: 16px;
-        color: var(--color-text-muted);
-        font-size: 12px;
-        text-align: center;
+    .git-tabs-strip {
+        display: flex;
+        padding: 0 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    .file-list {
-        max-height: 180px;
+    .git-tab {
+        padding: 12px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.3);
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .git-tab.active {
+        color: white;
+        border-bottom-color: #3b82f6;
+    }
+
+    .tab-badge {
+        padding: 1px 6px;
+        background: #3b82f6;
+        color: white;
+        font-size: 10px;
+        border-radius: 100px;
+    }
+
+    .git-content-area {
+        flex: 1;
         overflow-y: auto;
     }
 
-    .file-item {
+    .change-section {
+        margin-bottom: 24px;
+    }
+
+    .section-title {
         display: flex;
         align-items: center;
-        width: 100%;
-        border: none;
-        background: transparent;
-        color: inherit;
-        text-align: left;
         gap: 8px;
-        padding: 6px 12px;
+        padding: 12px 20px;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.2);
+    }
+
+    .stage-all-btn {
+        margin-left: auto;
+        color: #3b82f6;
+        font-size: 10px;
+        font-weight: 800;
+        background: none;
+        border: none;
         cursor: pointer;
     }
 
-    .file-item:hover {
-        background: var(--color-surface-elevated);
-    }
-
-    .status-badge {
-        font-size: 11px;
-        font-weight: bold;
-        font-family: 'SF Mono', monospace;
-        min-width: 14px;
-    }
-
-    .file-path {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--color-text-secondary);
-        font-size: 12px;
-    }
-
-    .file-actions {
-        display: flex;
-        gap: 2px;
-        opacity: 0;
-    }
-
-    .file-item:hover .file-actions,
-    .file-item:hover .file-action {
-        opacity: 1;
-    }
-
-    .file-action {
-        width: 20px;
-        height: 20px;
+    .file-row {
         display: flex;
         align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        font-weight: bold;
-        background: transparent;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        color: var(--color-text-muted);
-        opacity: 0;
-    }
-
-    .file-action:hover {
-        background: var(--color-accent);
-        color: white;
-    }
-
-    .file-action.discard:hover {
-        background: #f85149;
-    }
-
-    .commit-box {
-        padding: 12px;
-        border-top: 1px solid var(--color-border-subtle);
-    }
-
-    .commit-box textarea {
-        width: 100%;
-        padding: 10px;
-        background: var(--color-bg);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: 6px;
-        color: var(--color-text);
-        font-size: 13px;
-        font-family: inherit;
-        resize: none;
-        outline: none;
-    }
-
-    .commit-box textarea:focus {
-        border-color: var(--color-accent);
-    }
-
-    .commit-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        width: 100%;
-        margin-top: 8px;
-        padding: 10px 16px;
-        background: linear-gradient(135deg, #238636, #2ea043);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 13px;
-        font-weight: 500;
+        justify-content: space-between;
+        padding: 8px 20px;
         cursor: pointer;
         transition: all 0.2s;
     }
 
-    .commit-btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
+    .file-row:hover {
+        background: rgba(255, 255, 255, 0.03);
     }
 
-    .commit-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
-    }
-
-    .history-list {
-        flex: 1;
-        overflow-y: auto;
-    }
-
-    .commit-item {
+    .file-info {
         display: flex;
+        align-items: center;
         gap: 12px;
-        padding: 12px;
-        border-bottom: 1px solid var(--color-border-subtle);
+        overflow: hidden;
     }
 
-    .commit-item:hover {
-        background: var(--color-surface-elevated);
+    .file-badge {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 900;
+        font-family: monospace;
     }
 
-    .commit-icon {
-        color: var(--color-text-muted);
-        padding-top: 2px;
-    }
-
-    .commit-info {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .commit-message {
-        color: var(--color-text);
+    .file-name {
         font-size: 13px;
+        color: rgba(255, 255, 255, 0.7);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .commit-meta {
+    .file-row-actions {
         display: flex;
-        gap: 8px;
-        margin-top: 4px;
-        font-size: 11px;
-        color: var(--color-text-muted);
+        gap: 4px;
+        opacity: 0;
     }
 
-    .commit-hash {
-        font-family: 'SF Mono', monospace;
-        color: var(--color-accent);
+    .file-row:hover .file-row-actions {
+        opacity: 1;
     }
 
-    .diff-panel {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        border-top: 1px solid var(--color-border-subtle);
-        min-height: 200px;
-    }
-
-    .diff-header {
+    .file-control {
+        width: 24px;
+        height: 24px;
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        background: var(--color-bg);
-        font-size: 12px;
-        color: var(--color-text-secondary);
-    }
-
-    .file-path-title {
-        flex: 1;
-    }
-
-    .close-diff {
-        padding: 4px;
-        background: transparent;
+        justify-content: center;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.4);
         border: none;
-        border-radius: 4px;
-        color: var(--color-text-muted);
         cursor: pointer;
     }
 
-    .close-diff:hover {
-        background: var(--color-surface-elevated);
-        color: var(--color-text);
+    .file-control:hover {
+        background: white;
+        color: black;
     }
 
-    .diff-body {
+    .file-control.discard:hover {
+        background: #ef4444;
+        color: white;
+    }
+
+    .commit-footer {
+        position: sticky;
+        bottom: 0;
+        padding: 20px;
+        background: linear-gradient(to top, #000000 80%, transparent);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .commit-input-wrapper textarea {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 12px;
+        color: white;
+        font-size: 13px;
+        outline: none;
+        resize: none;
+    }
+
+    .btn-premium {
+        background: white;
+        color: black;
+        font-weight: 700;
+        font-size: 13px;
+        padding: 10px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all 0.2s;
+        border: none;
+        cursor: pointer;
+    }
+
+    .btn-premium:hover {
+        transform: scale(0.98);
+        background: rgba(255, 255, 255, 0.9);
+    }
+
+    .history-view {
+        padding: 20px;
+    }
+
+    .log-item {
+        display: flex;
+        gap: 16px;
+        padding-bottom: 24px;
+        position: relative;
+    }
+
+    .log-marker {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 6px;
+    }
+
+    .log-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #3b82f6;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    }
+
+    .log-item:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        left: 3px;
+        top: 14px;
+        bottom: 0;
+        width: 2px;
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .log-message {
+        font-size: 14px;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 4px;
+    }
+
+    .log-meta {
+        display: flex;
+        gap: 12px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.3);
+        font-weight: 700;
+    }
+
+    .log-hash {
+        font-family: monospace;
+        color: #3b82f6;
+    }
+
+    .floating-diff-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(12px);
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+    }
+
+    .floating-diff-content {
+        width: 100%;
+        height: 100%;
+        max-width: 1200px;
+        background: #050505;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 50px 100px rgba(0, 0, 0, 0.8);
+    }
+
+    .diff-header-bar {
+        padding: 20px 32px;
+        background: rgba(255, 255, 255, 0.02);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .diff-title-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .diff-file-name {
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .diff-viewer-body {
         flex: 1;
         overflow: auto;
+        padding: 32px;
     }
 
-    .diff-content {
-        margin: 0;
-        padding: 0;
-        font-family: 'SF Mono', 'Fira Code', monospace;
-        font-size: 11px;
+    .diff-code-wrapper {
+        font-family: 'SF Mono', monospace;
+        font-size: 12px;
         line-height: 1.6;
     }
 
-    .diff-line {
-        padding: 0 12px;
-        white-space: pre;
-    }
+    .diff-line { padding: 0 16px; white-space: pre; }
+    .diff-add { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+    .diff-remove { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .diff-hunk { color: #3b82f6; opacity: 0.6; padding: 8px 16px; }
 
-    .diff-add {
-        background: rgba(63, 185, 80, 0.15);
-        color: #3fb950;
-    }
-
-    .diff-remove {
-        background: rgba(248, 81, 73, 0.15);
-        color: #f85149;
-    }
-
-    .diff-hunk {
-        background: rgba(88, 166, 255, 0.1);
-        color: #58a6ff;
-        padding: 4px 12px;
-        margin: 4px 0;
-    }
-
-    .binary-notice {
-        flex: 1;
+    .binary-preview {
+        height: 100%;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 40px 20px;
-        color: var(--color-text-muted);
         text-align: center;
-        gap: 12px;
     }
 
-    .binary-notice p {
-        margin: 0;
-        font-weight: 500;
-    }
-
-    .binary-notice .sub {
-        font-size: 11px;
-        opacity: 0.7;
-    }
-
-    .animate-spin {
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
+    .animate-spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes reveal-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-reveal-up { animation: reveal-up 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
 `

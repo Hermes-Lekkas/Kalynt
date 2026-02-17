@@ -11,6 +11,7 @@ interface IDEBottomTerminalProps {
     workspacePath: string | null
     codeOutput?: string
     isRunning?: boolean
+    onActiveTerminalChange?: (id: string) => void
 }
 
 export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
@@ -19,7 +20,8 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
     setTerminalHeight,
     workspacePath,
     codeOutput = '',
-    isRunning = false
+    isRunning = false,
+    onActiveTerminalChange
 }) => {
     const [activeTab, setActiveTab] = useState<'terminal' | 'output'>('terminal')
     const outputRef = useRef<HTMLPreElement>(null)
@@ -110,7 +112,7 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
 
             {/* Terminal tab */}
             <div style={{ flex: 1, display: activeTab === 'terminal' ? 'flex' : 'none' }}>
-                <Terminal cwd={workspacePath || undefined} />
+                <Terminal cwd={workspacePath || undefined} onActiveTabChange={onActiveTerminalChange} />
             </div>
 
             {/* Output tab */}

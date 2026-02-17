@@ -413,6 +413,7 @@ class DebugSessionManager {
         '/usr/local/opt/llvm/bin/lldb-vscode',
         '/opt/homebrew/opt/llvm/bin/lldb-vscode',
         '/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-vscode',
+        '/usr/bin/lldb-vscode',
       ],
       linux: [
         '/usr/bin/lldb-vscode',

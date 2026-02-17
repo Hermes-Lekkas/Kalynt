@@ -7,7 +7,10 @@ import { useYDoc, useYArray } from '../hooks/useYjs'
 import { offlineLLMService, type ChatMessage } from '../services/offlineLLMService'
 import { useModelStore } from '../stores/modelStore'
 import UnifiedSettingsPanel from './UnifiedSettingsPanel'
-import { Plus, X, Sparkles, CheckCircle2, Clock, Trash2, Save } from 'lucide-react'
+import { 
+  Plus, X, Sparkles, CheckCircle2, Clock, Trash2, 
+  CheckSquare, ListTodo, User
+} from 'lucide-react'
 
 interface Task {
   id: string
@@ -22,13 +25,13 @@ interface Task {
 }
 
 const COLUMNS = [
-  { id: 'todo', title: 'To Do', color: 'var(--color-text-tertiary)' },
-  { id: 'in-progress', title: 'In Progress', color: 'var(--color-accent)' },
-  { id: 'done', title: 'Done', color: 'var(--color-success)' },
+  { id: 'todo', title: 'Strategy', icon: <ListTodo size={14} />, color: '#6b7280' },
+  { id: 'in-progress', title: 'Execution', icon: <Clock size={14} />, color: '#3b82f6' },
+  { id: 'done', title: 'Verified', icon: <CheckCircle2 size={14} />, color: '#10b981' },
 ] as const
 
 export default function TaskBoard() {
-  const { currentSpace } = useAppStore()
+  const { currentSpace, userName } = useAppStore()
   const { doc, peerCount } = useYDoc(currentSpace?.id ?? null)
   const { items: tasks, push, update, remove } = useYArray<Task>(doc, 'tasks')
   const { loadedModelId } = useModelStore()
@@ -38,7 +41,6 @@ export default function TaskBoard() {
   const [isAiLoading, setIsAiLoading] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
 
-  // Drag & Drop
   const handleDragStart = (taskId: string) => setDraggingTask(taskId)
   const handleDragOver = (e: React.DragEvent) => e.preventDefault()
 
@@ -54,11 +56,10 @@ export default function TaskBoard() {
     setDraggingTask(null)
   }, [draggingTask, tasks, update])
 
-  // CRUD
   const handleAddTask = (status: Task['status'] = 'todo') => {
     const newTask: Task = {
       id: crypto.randomUUID(),
-      title: 'New Task',
+      title: 'New Workspace Objective',
       status,
       priority: 'medium',
       tags: [],
@@ -77,18 +78,12 @@ export default function TaskBoard() {
 
   const handleSaveTask = (updatedTask: Task) => {
     const index = tasks.findIndex(t => t.id === updatedTask.id)
-    if (index !== -1) {
-      update(index, updatedTask)
-    }
+    if (index !== -1) update(index, updatedTask)
     setEditingTask(null)
   }
 
-  // AI Helper - Now uses offline models
-  // Returns the generated subtasks so modal can update its local state
   const handleAiBreakdown = async (task: Task): Promise<{ id: string; title: string; completed: boolean }[]> => {
-    // Check if a model is loaded
     if (!loadedModelId) {
-      // Prompt user to select a model
       setShowModelSelector(true)
       return []
     }
@@ -99,12 +94,10 @@ export default function TaskBoard() {
 ${task.description ? `Context: ${task.description}` : ''}
 
 Return ONLY a JSON array of strings, for example:
-["First subtask", "Second subtask", "Third subtask"]
-
-Do not include any other text.`
+["First subtask", "Second subtask", "Third subtask"]`
 
       const history: ChatMessage[] = [
-        { role: 'system', content: 'You are a helpful task planning assistant. Respond only with the requested JSON array.' },
+        { role: 'system', content: 'You are a task planning assistant. Respond only with JSON.' },
         { role: 'user', content: prompt }
       ]
 
@@ -113,41 +106,14 @@ Do not include any other text.`
         fullResponse += token
       }, { jsonSchema: undefined })
 
-      console.log('[TaskBoard] AI Response:', fullResponse)
-
-      // Parse JSON from response
-      let subtasks: string[] = []
-
-      try {
-        // Try to find JSON array in response
-        const jsonMatch = fullResponse.match(/\[[\s\S]*?\]/)
-        if (jsonMatch) {
-          subtasks = JSON.parse(jsonMatch[0])
-        }
-      } catch {
-        // Fallback: split by newlines
-        subtasks = fullResponse
-          .split('\n')
-          .filter(l => l.trim().length > 0)
-          .map(l => l.replace(/^[-*•]\s*/, '').replace(/^\d+\.\s*/, '').trim())
-          .filter(l => l.length > 0)
-          .slice(0, 5)
-      }
-
-      console.log('[TaskBoard] Parsed subtasks:', subtasks)
-
-      if (Array.isArray(subtasks) && subtasks.length > 0) {
-        const newSubtasks = subtasks.map(t => ({
-          id: crypto.randomUUID(),
-          title: typeof t === 'string' ? t : String(t),
-          completed: false
-        }))
-        return newSubtasks
+      const jsonMatch = fullResponse.match(/\[[\s\S]*?\]/)
+      if (jsonMatch) {
+        const subtasks: string[] = JSON.parse(jsonMatch[0])
+        return subtasks.map(t => ({ id: crypto.randomUUID(), title: t, completed: false }))
       }
       return []
     } catch (error) {
       console.error('AI Breakdown failed', error)
-      alert('Failed to generate subtasks. Please try again.')
       return []
     } finally {
       setIsAiLoading(false)
@@ -155,37 +121,38 @@ Do not include any other text.`
   }
 
   return (
-    <div className="task-board">
-      <div className="board-header">
-        <div>
-          <h2>Project Tasks</h2>
-          <p className="subtitle">{tasks.length} tasks • {peerCount > 0 ? `${peerCount} peers online` : 'Offline'}</p>
+    <div className="task-panel">
+      <header className="board-header">
+        <div className="header-info">
+          <h2>Mission Objectives</h2>
+          <span className="subtitle">{tasks.length} Active Targets â€¢ {peerCount + 1} Authorized Nodes</span>
         </div>
-        <button className="btn btn-primary" onClick={() => handleAddTask('todo')}>
-          <Plus size={16} /> New Task
+        <button className="btn-premium-action" onClick={() => handleAddTask('todo')}>
+          <Plus size={16} />
+          <span>New Objective</span>
         </button>
-      </div>
+      </header>
 
-      <div className="board-columns">
+      <div className="board-container">
         {COLUMNS.map(column => (
           <div
             key={column.id}
-            className="column glass"
+            className="column-premium"
             onDragOver={handleDragOver}
             onDrop={() => handleDrop(column.id)}
           >
             <div className="column-header">
-              <div className="column-title-group">
-                <span className="status-indicator" style={{ background: column.color }} />
+              <div className="col-title">
+                <div className="col-icon" style={{ color: column.color }}>{column.icon}</div>
                 <h3>{column.title}</h3>
-                <span className="count-badge">{tasks.filter(t => t.status === column.id).length}</span>
+                <span className="col-count">{tasks.filter(t => t.status === column.id).length}</span>
               </div>
-              <button className="btn-icon-sm" onClick={() => handleAddTask(column.id)}>
+              <button className="btn-add-subtle" onClick={() => handleAddTask(column.id)}>
                 <Plus size={14} />
               </button>
             </div>
 
-            <div className="column-content">
+            <div className="column-scroll">
               {tasks
                 .filter(task => task.status === column.id)
                 .map(task => (
@@ -194,9 +161,7 @@ Do not include any other text.`
                     task={task}
                     onClick={() => setEditingTask(task)}
                     onDragStart={() => handleDragStart(task.id)}
-                    onDelete={() => handleDeleteTask(task.id)}
                     isDragging={draggingTask === task.id}
-                    showDelete={column.id === 'done'}
                   />
                 ))}
             </div>
@@ -210,732 +175,421 @@ Do not include any other text.`
           onClose={() => setEditingTask(null)}
           onSave={handleSaveTask}
           onDelete={() => handleDeleteTask(editingTask.id)}
-          onAiBreakdown={(currentTask) => handleAiBreakdown(currentTask)}
+          onAiBreakdown={handleAiBreakdown}
           isAiLoading={isAiLoading}
+          userName={userName}
         />
       )}
 
-      {showModelSelector && (
-        <UnifiedSettingsPanel onClose={() => setShowModelSelector(false)} />
-      )}
+      {showModelSelector && <UnifiedSettingsPanel onClose={() => setShowModelSelector(false)} />}
 
       <style>{`
-        .task-board {
+        .task-panel {
           height: 100%;
           display: flex;
           flex-direction: column;
-          background: var(--color-bg);
-          color: var(--color-text);
+          background: #000;
+          color: white;
         }
-        
+
         .board-header {
-          padding: var(--space-5) var(--space-6);
+          padding: 24px 32px;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border-bottom: 1px solid var(--color-border-subtle);
-        }
-        
-        .subtitle {
-          font-size: var(--text-xs);
-          color: var(--color-text-tertiary);
-          margin-top: 2px;
+          background: rgba(255, 255, 255, 0.02);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .board-columns {
+        .header-info h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+        .subtitle { font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; letter-spacing: 0.05em; }
+
+        .btn-premium-action {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 16px;
+          height: 36px;
+          background: white;
+          color: black;
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 700;
+          transition: all 0.2s;
+        }
+
+        .btn-premium-action:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2); }
+
+        .board-container {
           flex: 1;
           display: flex;
-          gap: var(--space-4);
-          padding: var(--space-4);
+          gap: 24px;
+          padding: 24px;
           overflow-x: auto;
         }
 
-        .column {
+        .column-premium {
           flex: 1;
-          min-width: 300px;
+          min-width: 320px;
           max-width: 400px;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 20px;
           display: flex;
           flex-direction: column;
-          background: rgba(10, 10, 10, 0.6);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border-radius: var(--radius-lg);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+          overflow: hidden;
         }
 
         .column-header {
-          padding: var(--space-3) var(--space-4);
+          padding: 16px 20px;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border-bottom: 1px solid var(--color-border-subtle);
+          background: rgba(255, 255, 255, 0.01);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.03);
         }
 
-        .column-title-group {
+        .col-title {
           display: flex;
           align-items: center;
-          gap: var(--space-2);
+          gap: 12px;
         }
 
-        .column-title-group h3 {
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
+        .col-title h3 { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; }
+        
+        .col-count {
+          padding: 2px 8px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 6px;
+          font-size: 10px;
+          font-weight: 800;
+          color: rgba(255, 255, 255, 0.4);
         }
 
-        .status-indicator {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-        }
-
-        .count-badge {
-          background: var(--color-surface-elevated);
-          padding: 2px 6px;
-          border-radius: var(--radius-sm);
-          font-size: var(--text-xs);
-          color: var(--color-text-tertiary);
-        }
-
-        .btn-icon-sm {
-          padding: 4px;
-          border-radius: var(--radius-sm);
-          color: var(--color-text-tertiary);
+        .btn-add-subtle {
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgba(255, 255, 255, 0.2);
           transition: all 0.2s;
         }
-        
-        .btn-icon-sm:hover {
-          background: var(--color-surface-elevated);
-          color: var(--color-text);
-        }
 
-        .column-content {
+        .btn-add-subtle:hover { background: rgba(255, 255, 255, 0.05); color: white; }
+
+        .column-scroll {
           flex: 1;
-          padding: var(--space-2);
+          padding: 16px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
-          gap: var(--space-2);
+          gap: 12px;
         }
       `}</style>
     </div>
   )
 }
 
-function TaskCard({ task, onClick, onDragStart, onDelete, isDragging, showDelete }: {
-  task: Task;
-  onClick: () => void;
-  onDragStart: () => void;
-  onDelete: () => void;
-  isDragging: boolean;
-  showDelete: boolean;
-}) {
-  const [isHovered, setIsHovered] = useState(false)
-  const completedSubtasks = task.subtasks?.filter(s => s.completed).length || 0
-  const totalSubtasks = task.subtasks?.length || 0
-
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (window.confirm(`Delete "${task.title}"?`)) {
-      onDelete()
-    }
-  }
+function TaskCard({ task, onClick, onDragStart, isDragging }: any) {
+  const completedCount = task.subtasks?.filter((s: any) => s.completed).length || 0
+  const totalCount = task.subtasks?.length || 0
 
   return (
     <div
-      className={`task-card glass-card ${isDragging ? 'dragging' : ''}`}
+      className={`task-card-premium animate-reveal-up ${isDragging ? 'dragging' : ''}`}
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="task-card-header">
-        {showDelete && isHovered && (
-          <button className="delete-btn-card" onClick={handleDelete} title="Delete task">
-            <Trash2 size={14} />
-          </button>
-        )}
-        <span className={`priority-badge ${task.priority}`}>{task.priority}</span>
-        {task.dueDate && (
-          <span className="date-badge">
-            <Clock size={10} /> {new Date(task.dueDate).toLocaleDateString()}
-          </span>
-        )}
+      <div className="card-header">
+        <div className={`p-badge ${task.priority}`}>{task.priority}</div>
+        <div className="card-user"><User size={10} /></div>
       </div>
 
-      <div className="task-card-title">{task.title}</div>
-
+      <div className="card-title">{task.title}</div>
+      
       {task.description && (
-        <div className="task-card-desc">{task.description.slice(0, 60)}{task.description.length > 60 ? '...' : ''}</div>
+        <div className="card-desc">{task.description.slice(0, 80)}{task.description.length > 80 && '...'}</div>
       )}
 
-      <div className="task-card-footer">
-        {task.tags.length > 0 && (
-          <div className="tags-row">
-            {task.tags.slice(0, 2).map(tag => (
-              <span key={tag} className="tag-mini"># {tag}</span>
+      {(task.tags.length > 0 || totalCount > 0) && (
+        <div className="card-footer">
+          <div className="tag-strip">
+            {task.tags.slice(0, 2).map((t: string) => (
+              <span key={t} className="mini-tag">#{t}</span>
             ))}
-            {task.tags.length > 2 && <span className="tag-more">+{task.tags.length - 2}</span>}
           </div>
-        )}
-
-        {totalSubtasks > 0 && (
-          <div className="subtask-indicator" title={`${completedSubtasks}/${totalSubtasks} subtasks`}>
-            <CheckCircle2 size={12} /> {completedSubtasks}/{totalSubtasks}
-          </div>
-        )}
-      </div>
+          {totalCount > 0 && (
+            <div className="subtask-badge">
+              <CheckSquare size={10} />
+              <span>{completedCount}/{totalCount}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <style>{`
-        .task-card {
-          padding: var(--space-3);
-          border-radius: var(--radius-md);
+        .task-card-premium {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 14px;
+          padding: 16px;
           cursor: grab;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          position: relative;
+          transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
-        .glass-card {
-          background: rgba(38, 38, 38, 0.5);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        .task-card-premium:hover {
+          background: rgba(255, 255, 255, 0.05);
+          border-color: rgba(59, 130, 246, 0.3);
+          transform: translateY(-2px) scale(1.01);
         }
 
-        .glass-card:hover {
-          transform: translateY(-2px);
-          border-color: rgba(59, 130, 246, 0.4);
-          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-          background: rgba(38, 38, 38, 0.7);
-        }
+        .task-card-premium.dragging { opacity: 0.4; cursor: grabbing; }
 
-        .delete-btn-card {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          padding: 4px;
-          background: rgba(239, 68, 68, 0.2);
-          border: 1px solid rgba(239, 68, 68, 0.3);
-          border-radius: 4px;
-          color: var(--color-error);
-          transition: all 0.2s;
-          z-index: 10;
-        }
-
-        .delete-btn-card:hover {
-          background: rgba(239, 68, 68, 0.3);
-          transform: scale(1.1);
-        }
-
-        .task-card.dragging {
-          opacity: 0.5;
-          cursor: grabbing;
-          transform: rotate(2deg) scale(1.05);
-        }
-
-        .task-card-header {
+        .card-header {
           display: flex;
           justify-content: space-between;
-          margin-bottom: var(--space-2);
+          margin-bottom: 12px;
         }
 
-        .priority-badge {
-          font-size: 10px;
+        .p-badge {
+          font-size: 9px;
+          font-weight: 800;
           text-transform: uppercase;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 4px;
-        }
-        
-        .priority-badge.high { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-        .priority-badge.medium { background: rgba(234, 179, 8, 0.15); color: #eab308; }
-        .priority-badge.low { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-
-        .date-badge {
-          font-size: 10px;
-          color: var(--color-text-tertiary);
-          display: flex;
-          align-items: center;
-          gap: 4px;
+          padding: 2px 8px;
+          border-radius: 100px;
         }
 
-        .task-card-title {
-          font-size: var(--text-sm);
-          font-weight: var(--font-medium);
-          color: var(--color-text);
-          margin-bottom: var(--space-1);
-          line-height: 1.4;
+        .p-badge.high { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+        .p-badge.medium { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+        .p-badge.low { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+
+        .card-user {
+          width: 18px; height: 18px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          color: rgba(255, 255, 255, 0.3);
         }
 
-        .task-card-desc {
-          font-size: var(--text-xs);
-          color: var(--color-text-secondary);
-          margin-bottom: var(--space-2);
-          line-height: 1.3;
-        }
+        .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 6px; line-height: 1.4; }
+        .card-desc { font-size: 12px; color: rgba(255, 255, 255, 0.4); line-height: 1.5; margin-bottom: 12px; }
 
-        .task-card-footer {
+        .card-footer {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-top: auto;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255, 255, 255, 0.03);
         }
 
-        .tags-row {
-          display: flex;
-          gap: 4px;
-          flex-wrap: wrap;
-        }
+        .tag-strip { display: flex; gap: 4px; }
+        .mini-tag { font-size: 10px; font-weight: 700; color: #3b82f6; opacity: 0.8; }
 
-        .tag-mini {
-          font-size: 10px;
-          color: var(--color-text-tertiary);
-          background: var(--color-bg);
-          padding: 1px 4px;
-          border-radius: 3px;
-        }
-
-        .subtask-indicator {
-          font-size: 11px;
-          color: var(--color-text-tertiary);
-          display: flex;
-          align-items: center;
-          gap: 4px;
+        .subtask-badge {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3);
         }
       `}</style>
     </div>
   )
 }
 
-function TaskModal({
-  task, onClose, onSave, onDelete, onAiBreakdown, isAiLoading
-}: {
-  task: Task;
-  onClose: () => void;
-  onSave: (t: Task) => void;
-  onDelete: () => void;
-  onAiBreakdown: (currentTask: Task) => Promise<any[]>;
-  isAiLoading: boolean;
-}) {
-  // LOCAL STATE for editing (fixes input lag)
-  const [localTask, setLocalTask] = useState<Task>(task)
-  const [newTag, setNewTag] = useState('')
-  const [newSubtask, setNewSubtask] = useState('')
+function TaskModal({ task, onClose, onSave, onDelete, onAiBreakdown, isAiLoading }: any) {
+  const [local, setLocal] = useState<Task>(task)
 
-
-  const addTag = () => {
-    if (newTag.trim() && !localTask.tags.includes(newTag.trim())) {
-      setLocalTask({ ...localTask, tags: [...localTask.tags, newTag.trim()] })
-      setNewTag('')
-    }
-  }
-
-  const removeTag = (tag: string) => {
-    setLocalTask({ ...localTask, tags: localTask.tags.filter(t => t !== tag) })
-  }
-
-  const addSubtask = () => {
-    if (newSubtask.trim()) {
-      setLocalTask({
-        ...localTask,
-        subtasks: [...(localTask.subtasks || []), { id: crypto.randomUUID(), title: newSubtask.trim(), completed: false }]
-      })
-      setNewSubtask('')
-    }
-  }
-
-  const toggleSubtask = (id: string) => {
-    const updatedSubtasks = localTask.subtasks?.map(s =>
-      s.id === id ? { ...s, completed: !s.completed } : s
-    )
-    setLocalTask({ ...localTask, subtasks: updatedSubtasks })
-  }
-
-  const handleSave = () => {
-    onSave(localTask)
-  }
-
-  const handleAiBreakdown = async () => {
-    const newSubtasks = await onAiBreakdown(localTask)
-    if (newSubtasks.length > 0) {
-      setLocalTask({
-        ...localTask,
-        subtasks: [...(localTask.subtasks || []), ...newSubtasks]
-      })
+  const handleAiAction = async () => {
+    const subtasks = await onAiBreakdown(local)
+    if (subtasks.length > 0) {
+      setLocal({ ...local, subtasks: [...(local.subtasks || []), ...subtasks] })
     }
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <input
-            className="title-input"
-            value={localTask.title}
-            onChange={e => setLocalTask({ ...localTask, title: e.target.value })}
-            placeholder="Task Title"
+    <div className="premium-modal-overlay" onClick={onClose}>
+      <div className="premium-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-top">
+          <input 
+            className="title-field" 
+            value={local.title} 
+            onChange={e => setLocal({...local, title: e.target.value})}
           />
-          <button className="btn-icon" onClick={onClose}><X size={20} /></button>
+          <button className="btn-close" onClick={onClose}><X size={20} /></button>
         </div>
 
-        <div className="modal-body">
-          <div className="modal-section">
-            <label>Description</label>
-            <textarea
-              className="desc-input"
-              value={localTask.description || ''}
-              onChange={e => setLocalTask({ ...localTask, description: e.target.value })}
-              placeholder="Add details..."
+        <div className="modal-main">
+          <div className="field-group">
+            <label>Context & Requirements</label>
+            <textarea 
               rows={4}
+              value={local.description}
+              onChange={e => setLocal({...local, description: e.target.value})}
+              placeholder="Define the objective parameters..."
             />
           </div>
 
-          <div className="modal-row">
-            <div className="modal-section">
-              <label>Status</label>
-              <select
-                value={localTask.status}
-                onChange={e => setLocalTask({ ...localTask, status: e.target.value as Task['status'] })}
-              >
-                <option value="todo">To Do</option>
-                <option value="in-progress">In Progress</option>
-                <option value="done">Done</option>
-              </select>
-            </div>
-
-            <div className="modal-section">
+          <div className="field-row">
+            <div className="field-group">
               <label>Priority</label>
-              <select
-                value={localTask.priority}
-                onChange={e => setLocalTask({ ...localTask, priority: e.target.value as Task['priority'] })}
-              >
+              <select value={local.priority} onChange={e => setLocal({...local, priority: e.target.value as any})}>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
               </select>
             </div>
-
-            <div className="modal-section">
+            <div className="field-group">
               <label>Due Date</label>
-              <input
-                type="date"
-                value={localTask.dueDate ? new Date(localTask.dueDate).toISOString().split('T')[0] : ''}
-                onChange={e => setLocalTask({ ...localTask, dueDate: e.target.valueAsDate?.getTime() })}
-              />
+              <input type="date" value={local.dueDate ? new Date(local.dueDate).toISOString().split('T')[0] : ''} onChange={e => setLocal({...local, dueDate: e.target.valueAsDate?.getTime()})} />
             </div>
           </div>
 
-          <div className="modal-section">
-            <label>Tags</label>
-            <div className="tags-container">
-              {localTask.tags.map(tag => (
-                <span key={tag} className="tag-chip">
-                  {tag}
-                  <button onClick={() => removeTag(tag)}><X size={12} /></button>
-                </span>
-              ))}
-              <input
-                className="tag-input"
-                placeholder="+ Add tag"
-                value={newTag}
-                onChange={e => setNewTag(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addTag()
-                  }
-                }}
-                onBlur={addTag}
-              />
-            </div>
-          </div>
-
-          <div className="modal-section">
-            <div className="section-header">
-              <label>Subtasks</label>
-              <button
-                className="btn-ai"
-                onClick={handleAiBreakdown}
-                disabled={isAiLoading}
-              >
-                <Sparkles size={12} /> {isAiLoading ? 'Generating...' : 'AI Breakdown'}
+          <div className="subtask-section">
+            <div className="sub-header">
+              <label>Execution Steps</label>
+              <button className="btn-ai-magic" onClick={handleAiAction} disabled={isAiLoading}>
+                <Sparkles size={12} />
+                <span>{isAiLoading ? 'Analyzing...' : 'AI Blueprint'}</span>
               </button>
             </div>
-
-            <div className="subtasks-list">
-              {localTask.subtasks?.map(subtask => (
-                <div key={subtask.id} className="subtask-item">
-                  <button
-                    className={`checkbox ${subtask.completed ? 'checked' : ''}`}
-                    onClick={() => toggleSubtask(subtask.id)}
+            
+            <div className="sub-list">
+              {local.subtasks?.map(s => (
+                <div key={s.id} className="sub-item">
+                  <button 
+                    className={`sub-check ${s.completed ? 'active' : ''}`}
+                    onClick={() => setLocal({...local, subtasks: local.subtasks?.map(st => st.id === s.id ? {...st, completed: !st.completed} : st)})}
                   >
-                    {subtask.completed && <CheckCircle2 size={14} />}
+                    {s.completed && <Check size={12} />}
                   </button>
-                  <span className={subtask.completed ? 'completed' : ''}>{subtask.title}</span>
+                  <span className={s.completed ? 'completed' : ''}>{s.title}</span>
                 </div>
               ))}
-              <input
-                className="subtask-input"
-                placeholder="+ Add subtask"
-                value={newSubtask}
-                onChange={e => setNewSubtask(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addSubtask()}
+              <input 
+                className="add-sub-input"
+                placeholder="+ Add execution step..."
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.target as any).value.trim()) {
+                    setLocal({...local, subtasks: [...(local.subtasks || []), { id: crypto.randomUUID(), title: (e.target as any).value.trim(), completed: false }]});
+                    (e.target as any).value = ''
+                  }
+                }}
               />
             </div>
           </div>
         </div>
 
-        <div className="modal-footer">
-          <button className="btn btn-ghost delete-btn" onClick={onDelete}>
-            <Trash2 size={16} /> Delete
-          </button>
-          <div className="action-buttons">
-            <button className="btn btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={handleSave}>
-              <Save size={16} /> Save Changes
-            </button>
+        <div className="modal-footer-premium">
+          <button className="btn-purge" onClick={onDelete}><Trash2 size={16} /> Purge</button>
+          <div className="footer-actions">
+            <button className="btn-glass" onClick={onClose}>Cancel</button>
+            <button className="btn-solid" onClick={() => onSave(local)}>Save Changes</button>
           </div>
         </div>
       </div>
 
       <style>{`
-        .modal-overlay {
+        .premium-modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.7);
-          backdrop-filter: blur(4px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          background: rgba(0, 0, 0, 0.8);
+          backdrop-filter: blur(12px);
+          display: flex; align-items: center; justify-content: center;
           z-index: 10000;
-          animation: fadeIn 0.2s ease-out;
         }
 
-        .modal-content {
-          width: 600px;
-          max-height: 85vh;
-          background: var(--color-surface);
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-xl);
-          box-shadow: var(--shadow-xl);
-          display: flex;
-          flex-direction: column;
-          animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .premium-modal {
+          width: 560px;
+          background: #0a0a0a;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 24px;
+          display: flex; flex-direction: column;
+          box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+          overflow: hidden;
         }
 
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
+        .modal-top {
+          padding: 24px 32px;
+          display: flex; justify-content: space-between; align-items: center;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        @keyframes slideUp {
-          from { 
-            opacity: 0; 
-            transform: translateY(20px) scale(0.95);
-          }
-          to { 
-            opacity: 1; 
-            transform: translateY(0) scale(1);
-          }
-        }
-
-        .modal-header {
-          padding: var(--space-4) var(--space-6);
-          display: flex;
-          align-items: flex-start;
-          gap: var(--space-4);
-          border-bottom: 1px solid var(--color-border-subtle);
-        }
-
-        .title-input {
-          flex: 1;
-          background: transparent;
-          font-size: var(--text-xl);
-          font-weight: var(--font-semibold);
-          color: var(--color-text);
-          border: none;
-          outline: none;
-        }
-
-        .modal-body {
-          flex: 1;
-          overflow-y: auto;
-          padding: var(--space-6);
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-6);
-        }
-
-        .modal-section label {
-          display: block;
-          font-size: var(--text-xs);
-          font-weight: var(--font-medium);
-          color: var(--color-text-tertiary);
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          margin-bottom: var(--space-2);
-        }
-
-        .desc-input {
+        .title-field {
+          background: none; border: none; outline: none;
+          font-size: 20px; font-weight: 800; color: white;
           width: 100%;
-          min-height: 100px;
-          background: var(--color-surface-elevated);
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-md);
-          padding: var(--space-3);
-          color: var(--color-text);
-          resize: vertical;
-          font-family: inherit;
-          font-size: var(--text-sm);
-          line-height: 1.5;
         }
 
-        .desc-input:focus {
-          outline: none;
-          border-color: var(--color-accent);
+        .modal-main {
+          padding: 32px;
+          display: flex; flex-direction: column; gap: 24px;
+          max-height: 60vh; overflow-y: auto;
         }
 
-        .modal-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: var(--space-4);
-        }
-
-        select, input[type="date"] {
-          width: 100%;
-          background: var(--color-surface-elevated);
-          border: 1px solid var(--color-border);
-          padding: var(--space-2);
-          border-radius: var(--radius-md);
-          color: var(--color-text);
-          font-size: var(--text-sm);
-        }
-
-        select:focus, input[type="date"]:focus {
-          outline: none;
-          border-color: var(--color-accent);
-        }
-
-        .tags-container {
-          display: flex;
-          flex-wrap: wrap;
-          gap: var(--space-2);
-        }
-
-        .tag-chip {
-          background: var(--color-surface-elevated);
-          border: 1px solid var(--color-border);
-          padding: 2px 8px;
-          border-radius: var(--radius-full);
-          font-size: var(--text-sm);
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .tag-chip button {
-          opacity: 0.5;
-        }
-        .tag-chip button:hover { opacity: 1; }
-
-        .tag-input {
-          background: transparent;
-          border: none;
-          min-width: 80px;
-          outline: none;
-          font-size: var(--text-sm);
-        }
-
-        .section-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: var(--space-2);
-        }
-
-        .btn-ai {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 11px;
-          color: var(--color-accent);
-          background: rgba(59, 130, 246, 0.1);
-          padding: 4px 10px;
-          border-radius: var(--radius-md);
-          border: 1px solid rgba(59, 130, 246, 0.2);
-          transition: all 0.2s;
-        }
+        .field-group { display: flex; flex-direction: column; gap: 8px; }
+        .field-group label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: rgba(255, 255, 255, 0.3); letter-spacing: 0.05em; }
         
-        .btn-ai:hover { background: rgba(59, 130, 246, 0.15); }
-        .btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .subtasks-list {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-2);
+        .field-group textarea, .field-group select, .field-group input {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 12px;
+          color: white; font-size: 14px; outline: none;
         }
 
-        .subtask-item {
-          display: flex;
-          align-items: center;
-          gap: var(--space-3);
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+        .sub-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        
+        .btn-ai-magic {
+          display: flex; align-items: center; gap: 8px;
+          padding: 6px 14px; background: rgba(59, 130, 246, 0.1);
+          border: 1px solid rgba(59, 130, 246, 0.2);
+          border-radius: 100px; color: #3b82f6; font-size: 11px; font-weight: 700;
         }
 
-        .checkbox {
-          width: 20px;
-          height: 20px;
-          border-radius: 6px;
-          border: 2px solid var(--color-border);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--color-success);
-          transition: all 0.2s;
-          flex-shrink: 0;
+        .sub-list { display: flex; flex-direction: column; gap: 8px; }
+        
+        .sub-item {
+          display: flex; align-items: center; gap: 12px;
+          padding: 10px 14px; background: rgba(255, 255, 255, 0.02);
+          border-radius: 12px; font-size: 13px;
         }
 
-        .checkbox:hover { border-color: var(--color-text-tertiary); }
-        .checkbox.checked { border-color: var(--color-success); background: rgba(34, 197, 94, 0.1); }
+        .sub-check {
+          width: 18px; height: 18px; border-radius: 6px;
+          border: 2px solid rgba(255, 255, 255, 0.1);
+          display: flex; align-items: center; justify-content: center; color: white;
+        }
+        .sub-check.active { background: #10b981; border-color: #10b981; }
 
-        .completed {
-          text-decoration: line-through;
-          color: var(--color-text-muted);
+        .completed { text-decoration: line-through; opacity: 0.4; }
+
+        .add-sub-input {
+          background: none; border: none; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          padding: 8px 0; color: white; font-size: 13px; outline: none;
         }
 
-        .subtask-input {
-          margin-top: var(--space-2);
-          background: transparent;
-          border-bottom: 2px solid var(--color-border); 
-          padding: 4px 0;
-          width: 100%;
-          outline: none;
-          font-size: var(--text-sm);
+        .modal-footer-premium {
+          padding: 24px 32px;
+          background: rgba(255, 255, 255, 0.02);
+          display: flex; justify-content: space-between; align-items: center;
         }
 
-        .subtask-input:focus { border-color: var(--color-accent); }
-
-        .modal-footer {
-          padding: var(--space-4) var(--space-6);
-          border-top: 1px solid var(--color-border-subtle);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .action-buttons {
-          display: flex;
-          gap: var(--space-2);
-        }
-
-        .delete-btn {
-          color: var(--color-error);
-        }
-        .delete-btn:hover { background: rgba(239, 68, 68, 0.1); }
+        .btn-purge { color: #ef4444; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .footer-actions { display: flex; gap: 12px; }
+        .btn-glass { padding: 10px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.6); }
+        .btn-solid { padding: 10px 24px; background: white; color: black; border-radius: 12px; font-size: 13px; font-weight: 800; }
       `}</style>
     </div>
+  )
+}
+
+function Check({ size }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   )
 }

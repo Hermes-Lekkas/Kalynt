@@ -46,7 +46,38 @@ class ExtensionHost {
 
   constructor() {
     this.hookModuleLoader()
+    this.redirectConsole()
     this.setupMessageHandlers()
+  }
+
+  private redirectConsole(): void {
+    const originalLog = console.log
+    const originalWarn = console.warn
+    const originalError = console.error
+
+    console.log = (...args: unknown[]) => {
+      this.sendMessage({
+        type: 'log-message',
+        payload: { level: 'info', message: args.map(String).join(' ') }
+      })
+      originalLog.apply(console, args)
+    }
+
+    console.warn = (...args: unknown[]) => {
+      this.sendMessage({
+        type: 'log-message',
+        payload: { level: 'warn', message: args.map(String).join(' ') }
+      })
+      originalWarn.apply(console, args)
+    }
+
+    console.error = (...args: unknown[]) => {
+      this.sendMessage({
+        type: 'log-message',
+        payload: { level: 'error', message: args.map(String).join(' ') }
+      })
+      originalError.apply(console, args)
+    }
   }
 
   private hookModuleLoader(): void {
