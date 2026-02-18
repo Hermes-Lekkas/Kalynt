@@ -147,7 +147,7 @@ Tool Usage Example:
   "reasoning": "Need to find the auth middleware before suggesting security fixes",
   "confidence": 0.9,
   "payload": {
-    "tool": "searchRelevantContext",
+    "name": "searchRelevantContext",
     "params": {"query": "auth middleware"}
   }
 }
@@ -197,7 +197,7 @@ Provide your analysis as valid JSON:
 
 **tool-call** (IDE interaction):
 {
-  "tool": "toolName",
+  "name": "toolName",
   "params": { /* tool-specific parameters */ }
 }
 

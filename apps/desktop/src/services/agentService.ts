@@ -43,7 +43,7 @@ class AgentService {
     private provider: AIProvider = 'openai'
     private useOfflineAI: boolean = false
     private workspacePath: string = ''
-    private missionHistory: AIMessage[] = []
+    private missionHistory: any[] = []
 
     private onStateChange: StateCallback | null = null
     private onSuggestions: SuggestionsCallback | null = null
@@ -51,8 +51,6 @@ class AgentService {
 
     private editorObserver: ((event: Y.YTextEvent) => void) | null = null
     private tasksObserver: ((event: Y.YArrayEvent<any>) => void) | null = null
-
-    private abortController: AbortController | null = null
 
     setCallbacks(
         onStateChange: StateCallback,
@@ -324,7 +322,7 @@ class AgentService {
      * - Large models (24B+): Chain-of-thought, full tools
      * - Flagship (online): Maximum capability, thinking mode
      */
-    private buildPrompt(context: WorkspaceContext): AIMessage[] {
+    private buildPrompt(context: WorkspaceContext): string {
         // Get current loaded model ID for tier detection
         const loadedModelId = this.useOfflineAI
             ? useModelStore.getState().loadedModelId
@@ -337,16 +335,9 @@ class AgentService {
             this.useOfflineAI
         )
 
-        logger.agent.debug('Building prompt for model tier:', {
-            tier,
-            modelId: loadedModelId,
-            provider: this.provider,
-            useOfflineAI: this.useOfflineAI
-        })
-
         // Build instruction config
         const instructionConfig: InstructionConfig = {
-            mode: context.mode,
+            mode: this.currentMode,
             workspacePath: this.workspacePath,
             context,
             useTools: this.config.enabledActions.includes('tool-call')
@@ -361,14 +352,14 @@ class AgentService {
         )
 
         // Update config based on tier recommendations
-        // This allows dynamic adjustment of maxSuggestions, etc.
         this.config = {
             ...this.config,
             maxSuggestions: instructions.maxSuggestions,
             enabledActions: instructions.enabledActions as any
         }
 
-        return instructions.messages
+        // We only return the SYSTEM prompt part for the loop override
+        return instructions.messages.find(m => m.role === 'system')?.content || ''
     }
 
     private async analyze() {
@@ -382,138 +373,77 @@ class AgentService {
         this.setState('thinking')
         this.addActivity('analysis', 'Analyzing workspace...')
 
-        this.abortController = new AbortController()
-        const abortSignal = this.abortController.signal
-
-        const MAX_RETRIES = 3
-        let lastError: Error | null = null
-
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            try {
-
-                if (attempt > 0) {
-                    const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 8000)
-                    this.addActivity('analysis', `Retrying analysis (attempt ${attempt + 1}/${MAX_RETRIES})...`)
-                    await new Promise(resolve => setTimeout(resolve, backoffMs))
-                }
-
-                const timeoutMs = this.useOfflineAI ? 90000 : 60000
-                // PROMISE FIX: Properly handle abort and cleanup the event listener
-                let timeoutId: ReturnType<typeof setTimeout> | null = null
-                let abortHandler: (() => void) | null = null
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    timeoutId = setTimeout(() => reject(new Error('AI request timed out')), timeoutMs)
-                    abortHandler = () => {
-                        if (timeoutId) clearTimeout(timeoutId)
-                        reject(new Error('Analysis aborted'))
-                    }
-                    abortSignal.addEventListener('abort', abortHandler)
-                }).finally(() => {
-                    // Clean up resources
-                    if (timeoutId) clearTimeout(timeoutId)
-                    if (abortHandler) abortSignal.removeEventListener('abort', abortHandler)
-                })
-
-                const messages = this.buildPrompt(context)
-
-                // If we have a mission history, append it to the prompt
-                const fullMessages = this.missionHistory.length > 0
-                    ? [...messages, ...this.missionHistory]
-                    : messages
-
-                let responseContent: string
-
-                if (this.useOfflineAI) {
-
-                    const offlineMessages: OfflineChatMessage[] = fullMessages.map(m => ({
-                        role: m.role,
-                        content: m.content
-                    }))
-
-                    const offlinePromise = offlineLLMService.generate(offlineMessages, {
-                        temperature: 0.3,
-                        maxTokens: 1000
-                    })
-
-                    responseContent = await Promise.race([offlinePromise, timeoutPromise])
-                } else {
-
-                    const chatPromise = aiService.chat(fullMessages, this.provider, {
-                        temperature: 0.3,
-                        maxTokens: 1500,
-                        thinking: true
-                    })
-
-                    const response = await Promise.race([chatPromise, timeoutPromise])
-
-                    if (response.error) {
-                        throw new Error(response.error)
-                    }
-                    responseContent = response.content
-                }
-
-                if (responseContent.includes('"action": "tool-call"') || responseContent.includes('"name":')) {
-                    this.missionHistory.push({
-                        role: 'assistant',
-                        content: responseContent
-                    })
-                }
-
-                const parsed = this.parseResponse(responseContent)
-
-                if (parsed.suggestions.length === 0) {
-                    this.setState('idle')
-                    return
-                }
-
-                const newSuggestions: AgentSuggestion[] = parsed.suggestions
-                    .slice(0, this.config.maxSuggestions)
-                    .filter(s => this.config.enabledActions.includes(s.action))
-                    .map(s => ({
-                        id: crypto.randomUUID(),
-                        action: s.action,
-                        target: s.target,
-                        description: s.description,
-                        reasoning: s.reasoning,
-                        confidence: Math.min(1, Math.max(0, s.confidence)),
-                        payload: s.payload,
-                        timestamp: Date.now(),
-                        status: 'pending' as const
-                    }))
-
-                if (newSuggestions.length > 0) {
-                    this.suggestions = [...newSuggestions, ...this.suggestions.filter(s => s.status !== 'pending')]
-
-                    if (this.suggestions.length > 100) {
-                        this.suggestions = this.suggestions.slice(0, 100)
-                    }
-
-                    this.saveSuggestions()
-                    this.onSuggestions?.(this.suggestions)
-                    this.setState('waiting-approval')
-                    this.addActivity('suggestion', `Generated ${newSuggestions.length} suggestion(s)`)
-                } else {
-                    this.setState('idle')
-                }
-
-                return
-
-            } catch (error) {
-                lastError = error instanceof Error ? error : new Error(String(error))
-                logger.agent.warn(`Agent analysis attempt ${attempt + 1} failed`, error)
-
-                if (abortSignal.aborted ||
-                    lastError.message.includes('API key') ||
-                    lastError.message.includes('unauthorized') ||
-                    lastError.message.includes('No model loaded')) {
-                    break
-                }
-            }
+        // Configure the loop service with current settings
+        agentLoopService.setWorkspacePath(this.workspacePath)
+        agentLoopService.setUseOfflineAI(this.useOfflineAI)
+        if (!this.useOfflineAI) {
+            agentLoopService.setCloudProvider(this.provider)
         }
 
-        logger.agent.error('Agent analysis failed after retries', lastError)
-        this.setState('error')
-        this.addActivity('error', `Analysis failed: ${lastError?.message || 'Unknown error'}`)
+        try {
+            // Specialized background prompt for generating JSON suggestions
+            const systemPrompt = this.buildPrompt(context)
+            
+            // The instruction is the user's current situation
+            const instruction = `Current Mode: ${this.currentMode}\nWorkspace: ${this.workspacePath}\n\nAnalyze the context and provide suggestions.`
+
+            const result = await agentLoopService.run(instruction, this.missionHistory, {
+                maxIterations: 2, // Keep background analysis very short
+                trustedMode: true,
+                useRAG: true,
+                autoApproveReadOnly: true,
+                systemPrompt // OVERRIDE the default tool loop prompt
+            })
+
+            // Update local history from the loop
+            this.missionHistory = agentLoopService.getMissionHistory()
+
+            const parsed = this.parseResponse(result)
+
+            if (parsed.suggestions.length === 0) {
+                // Check if the loop result itself is a useful suggestion even if not in JSON suggestions list
+                if (result && result.length > 20 && !result.includes('Error:')) {
+                    this.addActivity('suggestion', result)
+                }
+                this.setState('idle')
+                return
+            }
+
+            const newSuggestions: AgentSuggestion[] = parsed.suggestions
+                .slice(0, this.config.maxSuggestions)
+                .filter(s => this.config.enabledActions.includes(s.action))
+                .map(s => ({
+                    id: crypto.randomUUID(),
+                    action: s.action,
+                    target: s.target,
+                    description: s.description,
+                    reasoning: s.reasoning,
+                    confidence: Math.min(1, Math.max(0, s.confidence)),
+                    payload: s.payload,
+                    timestamp: Date.now(),
+                    status: 'pending' as const
+                }))
+
+            if (newSuggestions.length > 0) {
+                this.suggestions = [...newSuggestions, ...this.suggestions.filter(s => s.status !== 'pending')]
+
+                if (this.suggestions.length > 100) {
+                    this.suggestions = this.suggestions.slice(0, 100)
+                }
+
+                this.saveSuggestions()
+                this.onSuggestions?.(this.suggestions)
+                this.setState('waiting-approval')
+                this.addActivity('suggestion', `Generated ${newSuggestions.length} suggestion(s)`)
+            } else {
+                this.setState('idle')
+            }
+
+        } catch (error) {
+            logger.agent.error('Agent analysis failed', error)
+            this.setState('error')
+            this.addActivity('error', `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
     }
 
     private parseResponse(response: string): AgentAIResponse {
@@ -598,7 +528,7 @@ class AgentService {
                 if (result.success && this.config.enabled) {
                     this.missionHistory.push({
                         role: 'user',
-                        content: `Tool Result (${(suggestion.payload as ToolCallPayload).tool}):\n${JSON.stringify(result.data, null, 2)}`
+                        content: `Tool Result (${(suggestion.payload as ToolCallPayload).name}):\n${JSON.stringify(result.data, null, 2)}`
                     })
                     // Trigger next turn
                     setTimeout(() => this.analyze(), 500)
@@ -740,34 +670,34 @@ class AgentService {
     }
 
     private async executeToolCall(payload: ToolCallPayload): Promise<{ success: boolean, data?: any, error?: string }> {
-        logger.agent.info('Executing tool call', { tool: payload.tool, params: payload.params })
+        logger.agent.info('Executing tool call', { tool: payload.name, params: payload.params })
 
         const context: ToolContext = {
             workspacePath: this.workspacePath || ''
         }
 
         try {
-            const result = await executeTool(payload.tool, payload.params, context)
+            const result = await executeTool(payload.name, payload.params, context)
 
             if (result.success) {
-                this.addActivity('execution', `Tool executed: ${payload.tool}`, {
-                    tool: payload.tool,
+                this.addActivity('execution', `Tool executed: ${payload.name}`, {
+                    tool: payload.name,
                     result: result.data
                 })
-                logger.agent.info('Tool call succeeded', { tool: payload.tool, data: result.data })
+                logger.agent.info('Tool call succeeded', { tool: payload.name, data: result.data })
                 return { success: true, data: result.data }
             } else {
-                this.addActivity('error', `Tool failed: ${payload.tool} - ${result.error}`, {
-                    tool: payload.tool,
+                this.addActivity('error', `Tool failed: ${payload.name} - ${result.error}`, {
+                    tool: payload.name,
                     error: result.error
                 })
-                logger.agent.error('Tool call failed', { tool: payload.tool, error: result.error })
+                logger.agent.error('Tool call failed', { tool: payload.name, error: result.error })
                 return { success: false, error: result.error }
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-            this.addActivity('error', `Tool exception: ${payload.tool} - ${errorMsg}`)
-            logger.agent.error('Tool call exception', { tool: payload.tool, error })
+            this.addActivity('error', `Tool exception: ${payload.name} - ${errorMsg}`)
+            logger.agent.error('Tool call exception', { tool: payload.name, error })
             return { success: false, error: errorMsg }
         }
     }

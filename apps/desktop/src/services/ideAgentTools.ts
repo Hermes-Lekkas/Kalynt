@@ -200,6 +200,8 @@ const readFileTool: Tool = {
 
             const result = await globalThis.window.electronAPI?.fs.readFile(validatedPath)
             if (result?.success) {
+                // UI SIDE EFFECT: Open the file in the editor so user can see it
+                window.dispatchEvent(new CustomEvent('kalynt-open-file', { detail: { path: validatedPath } }))
                 return { success: true, data: result.content }
             }
             return { success: false, error: result?.error || 'Failed to read file' }
@@ -245,6 +247,8 @@ const writeFileTool: Tool = {
 
             const result = await globalThis.window.electronAPI?.fs.writeFile({ path: validatedPath, content: content || '' })
             if (result?.success) {
+                // UI SIDE EFFECT: Focus the modified file
+                window.dispatchEvent(new CustomEvent('kalynt-open-file', { detail: { path: validatedPath } }))
                 return { success: true, data: { path: validatedPath, bytesWritten: content?.length || 0 } }
             }
             return { success: false, error: result?.error || 'Failed to write file' }
@@ -585,6 +589,9 @@ const runFileTool: Tool = {
             if (activeExecId === execId) activeExecId = null
 
             if (result?.success) {
+                // UI SIDE EFFECT: Ensure the bottom terminal/output tab is visible
+                window.dispatchEvent(new CustomEvent('kalynt-show-output', { detail: { id: execId } }))
+                
                 return {
                     success: true,
                     data: {
@@ -879,6 +886,8 @@ const replaceInFileTool: Tool = {
             // Write back
             const writeResult = await globalThis.window.electronAPI?.fs.writeFile({ path, content: newContent })
             if (writeResult?.success) {
+                // UI SIDE EFFECT: Focus the modified file
+                window.dispatchEvent(new CustomEvent('kalynt-open-file', { detail: { path } }))
                 return {
                     success: true,
                     data: {
@@ -1129,6 +1138,8 @@ const fuzzyReplaceTool: Tool = {
             const writeResult = await globalThis.window.electronAPI?.fs.writeFile({ path: validatedPath, content: newContent })
 
             if (writeResult?.success) {
+                // UI SIDE EFFECT: Focus the modified file
+                window.dispatchEvent(new CustomEvent('kalynt-open-file', { detail: { path: validatedPath } }))
                 return {
                     success: true,
                     data: {

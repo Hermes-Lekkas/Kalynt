@@ -77,6 +77,7 @@ export function createDefaultCommands(handlers: {
     aiChat?: CommandHandler
     aiExplain?: CommandHandler
     aiRefactor?: CommandHandler
+    openSettings?: CommandHandler
 }): IDECommand[] {
     const configs: Array<{
         key: keyof typeof handlers
@@ -88,7 +89,8 @@ export function createDefaultCommands(handlers: {
     }> = [
             { key: 'newFile', id: 'file.new', title: 'New File', shortcut: 'Ctrl+N', category: 'file', icon: 'FilePlus' },
             { key: 'saveFile', id: 'file.save', title: 'Save File', shortcut: 'Ctrl+S', category: 'file', icon: 'Save' },
-            { key: 'closeFile', id: 'file.close', title: 'Close File', shortcut: 'Ctrl+W', category: 'file', icon: 'X' },
+            { key: 'closeFile', id: 'file.close', shortcut: 'Ctrl+W', title: 'Close File', category: 'file', icon: 'X' },
+            { key: 'openSettings', id: 'view.settings', title: 'Open Settings', shortcut: 'Ctrl+,', category: 'view', icon: 'Settings' },
             { key: 'closeAllFiles', id: 'file.closeAll', title: 'Close All Files', shortcut: 'Ctrl+Shift+W', category: 'file', icon: 'X' },
             { key: 'openFolder', id: 'file.openFolder', title: 'Open Folder', shortcut: 'Ctrl+K Ctrl+O', category: 'file', icon: 'Folder' },
             { key: 'toggleTerminal', id: 'view.terminal', title: 'Toggle Terminal', shortcut: 'Ctrl+`', category: 'view', icon: 'Terminal' },

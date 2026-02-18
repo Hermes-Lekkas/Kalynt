@@ -1,6 +1,7 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+const APP_START_TIME = Date.now()
 import { app, BrowserWindow, ipcMain, dialog, session } from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import path from 'node:path'
@@ -8,6 +9,7 @@ import fs from 'node:fs'
 
 // Import services
 import { RuntimeManager } from './services/runtime-manager'
+import { performanceAcceleration } from './services/Performance_Acceleration'
 
 // Import handlers
 import { registerAppInfoHandlers } from './handlers/app-info'
@@ -69,6 +71,11 @@ function validateDeepLink(link: string): string | null {
 
 // Environment
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
+
+// Linux Optimization: Disable hardware acceleration to prevent persistent VSync/GL errors
+if (process.platform === 'linux') {
+    app.disableHardwareAcceleration()
+}
 
 // Directory constants (initialized after app is ready)
 let MODELS_DIR: string
@@ -179,6 +186,11 @@ function createWindow() {
 function registerAllHandlers() {
     // App info and hardware
     registerAppInfoHandlers(ipcMain, app, MODELS_DIR)
+    
+    // Performance Boot Time
+    ipcMain.handle('performance:get-boot-time', () => {
+        return Date.now() - APP_START_TIME
+    })
 
     // Runtime management
     registerRuntimeHandlers(ipcMain, runtimeManager)
@@ -191,7 +203,7 @@ function registerAllHandlers() {
     )
 
     // Git operations
-    registerGitHandlers(ipcMain, () => currentWorkspacePath)
+    registerGitHandlers(ipcMain, () => currentWorkspacePath, () => app.getPath('userData'))
 
     // File system operations
     registerFileSystemHandlers(
@@ -319,6 +331,7 @@ if (!gotTheLock) {
         console.log('[Main] Ensuring directories...');
         // Initialize services
         runtimeManager = new RuntimeManager(RUNTIMES_DIR)
+        performanceAcceleration.init()
 
         ensureModelsDir()
         ensureRuntimesDir()

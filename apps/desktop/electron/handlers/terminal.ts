@@ -164,12 +164,18 @@ export function registerTerminalHandlers(
 
     ipcMain.handle('tasks:getExecutions', async () => {
         const executions = await terminalService!.taskRunner.getTaskExecutions()
-        return { success: true, executions }
+        const serialized = executions.map(ex => {
+            const { process, ...rest } = ex
+            return JSON.parse(JSON.stringify(rest))
+        })
+        return { success: true, executions: serialized }
     })
 
     ipcMain.handle('tasks:getExecution', async (_event, executionId) => {
         const execution = await terminalService!.taskRunner.getTaskExecution(executionId)
-        return { success: !!execution, execution }
+        if (!execution) return { success: false }
+        const { process, ...rest } = execution
+        return { success: true, execution: JSON.parse(JSON.stringify(rest)) }
     })
 
     // ==========================================

@@ -5,9 +5,10 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { spawn, ChildProcess, execFileSync } from 'node:child_process'
-import { shell } from 'electron'
+import { shell, app } from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import treeKill from 'tree-kill'
+import { binaryManager } from '../services/binary-manager'
 
 // Stateful map for running processes
 const runningProcesses = new Map<string, ChildProcess>()
@@ -130,7 +131,14 @@ function getEnhancedPATH(): string {
  * @returns Resolved path or null if not found
  */
 async function findBinary(name: string, workspacePath?: string | null): Promise<string | null> {
-    // Check cache first
+    // Priority 0: Check bundled portable binaries in app binary directory
+    const bundledPath = binaryManager.getBinaryPath(name)
+    if (bundledPath) {
+        console.log(`[CodeExec] Using bundled portable binary: ${bundledPath}`)
+        return bundledPath
+    }
+
+    // Check cache next
     const cacheKey = workspacePath ? `${name}:${workspacePath}` : name
     if (binaryPathCache.has(cacheKey)) {
         return binaryPathCache.get(cacheKey)!
@@ -344,7 +352,7 @@ async function getLanguageCommand(
     switch (normalizedLang) {
         case 'javascript':
         case 'node': {
-            const nodePath = await findBinary('node', workspacePath) || 'node'
+            const nodePath = await findBinary('node', workspacePath) || process.execPath
             return { command: nodePath, args: [tempFile] }
         }
 
@@ -632,16 +640,21 @@ export function registerCodeExecutionHandlers(
 
             // Get file extension and create temp file
             const ext = getFileExtension(normalizedLang)
-            // Java requires specific filename
-            const tempFile = normalizedLang === 'java'
-                ? path.join(tempDir, 'Main.java')
-                : path.join(tempDir, `kalynt_${id}${ext}`)
+            // Java requires specific filename - we use a subfolder per ID to avoid collisions
+            let tempFile: string
+            if (normalizedLang === 'java') {
+                const javaDir = path.join(tempDir, `kalynt_java_${id}`)
+                await fs.promises.mkdir(javaDir, { recursive: true })
+                tempFile = path.join(javaDir, 'Main.java')
+            } else {
+                tempFile = path.join(tempDir, `kalynt_${id}${ext}`)
+            }
 
             // Write code to temp file
             await fs.promises.writeFile(tempFile, code)
 
             // Get the optimal command for this language
-            const langCommand = await getLanguageCommand(normalizedLang, tempFile, tempDir, currentWorkspacePath) as any
+            const langCommand = await getLanguageCommand(normalizedLang, tempFile, normalizedLang === 'java' ? path.dirname(tempFile) : tempDir, currentWorkspacePath) as any
 
             if (!langCommand) {
                 return { success: false, error: `Unsupported language: ${language}` }
@@ -783,14 +796,21 @@ export function registerCodeExecutionHandlers(
                 // Wrap Windows .cmd files
                 const wrapped = wrapWindowsCommand(command, args)
 
+                const env: NodeJS.ProcessEnv = {
+                    ...getSafeEnv(),
+                    NODE_NO_WARNINGS: '1',
+                    NO_UPDATE_NOTIFIER: '1'
+                }
+
+                // FIX: Force unbuffered output for Python to ensure prompts like input() appear immediately
+                if (normalizedLang === 'python') {
+                    env.PYTHONUNBUFFERED = '1'
+                }
+
                 const proc = spawn(wrapped.command, wrapped.args, {
                     cwd: safeCwd,
                     shell: false,
-                    env: {
-                        ...getSafeEnv(),
-                        NODE_NO_WARNINGS: '1',
-                        NO_UPDATE_NOTIFIER: '1'
-                    }
+                    env
                 })
 
                 runningProcesses.set(id, proc)
@@ -921,6 +941,21 @@ export function registerCodeExecutionHandlers(
             return { success: true }
         }
         return { success: false, error: 'Process not found' }
+    })
+
+    // Write input to a running process
+    ipcMain.handle('code:write-input', async (_event, id: string, data: string) => {
+        const proc = runningProcesses.get(id)
+        if (proc && proc.stdin) {
+            try {
+                proc.stdin.write(data)
+                return { success: true }
+            } catch (e) {
+                console.error('[CodeExec] Failed to write to stdin:', e)
+                return { success: false, error: String(e) }
+            }
+        }
+        return { success: false, error: 'Process not found or stdin not available' }
     })
 
     // Clear binary cache (useful if user installs new tools)

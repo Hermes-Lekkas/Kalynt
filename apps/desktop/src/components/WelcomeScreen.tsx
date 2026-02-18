@@ -9,7 +9,7 @@ import {
   MoreVertical,
   Plus, Search, Loader2,
   Activity, Globe, FolderTree, HardDrive,
-  FileCode, Clock, Users
+  FileCode, Clock, Users, GitBranch
 } from 'lucide-react'
 
 import { useNotificationStore } from '../stores/notificationStore'
@@ -24,7 +24,9 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
   const { addNotification } = useNotificationStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [isCloning, setIsCloning] = useState(false)
   const [newSpaceName, setNewSpaceName] = useState('')
+  const [cloneUrl, setCloneUrl] = useState('')
   
   // Real-time Stats State
   const [stats, setStats] = useState<RealTimeStats | null>(null)
@@ -54,6 +56,39 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
     onShowCollaboration()
   }
 
+  const handleClone = async () => {
+    if (!cloneUrl.trim() || !newSpaceName.trim()) return
+    setIsCloning(true)
+    addNotification('Cloning Repository...', 'info')
+    
+    try {
+      // Construction of target path
+      const appPath = await window.electronAPI.getAppPath()
+      const targetPath = `${appPath}/workspaces/${newSpaceName.trim()}`
+      
+      const result = await window.electronAPI.ipcRenderer.invoke('git:clone', {
+        url: cloneUrl.trim(),
+        targetPath
+      })
+
+      if (result.success) {
+        const space = createSpace(newSpaceName.trim())
+        // Link space to the path? (appStore logic)
+        setCurrentSpace(space)
+        addNotification('Repository Cloned Successfully', 'success')
+        setIsCloning(false)
+        setCloneUrl('')
+        setNewSpaceName('')
+      } else {
+        addNotification(`Clone Failed: ${result.error}`, 'error')
+        setIsCloning(false)
+      }
+    } catch (e) {
+      addNotification('An unexpected error occurred during clone', 'error')
+      setIsCloning(false)
+    }
+  }
+
   return (
     <div className="manager-viewport">
       <div className="manager-mesh" />
@@ -80,7 +115,11 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
               <Shield size={14} />
               <span>Security</span>
             </button>
-            <button className="btn-premium" onClick={() => setIsCreating(true)}>
+            <button className="btn-glass" onClick={() => { setIsCloning(true); setIsCreating(false); }}>
+              <GitBranch size={14} />
+              <span>Clone</span>
+            </button>
+            <button className="btn-premium" onClick={() => { setIsCreating(true); setIsCloning(false); }}>
               <Plus size={16} />
               <span>Initialize</span>
             </button>
@@ -102,6 +141,38 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
               <div className="creation-actions">
                 <button className="btn-cancel" onClick={() => setIsCreating(false)}>Cancel</button>
                 <button className="btn-confirm" onClick={handleCreate}>Build</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clone Overlay */}
+        {isCloning && (
+          <div className="inline-creation-box animate-reveal-up" style={{ borderColor: 'rgba(139, 92, 246, 0.3)' }}>
+            <div className="creation-content" style={{ flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', width: '100%', gap: '12px', alignItems: 'center' }}>
+                <GitBranch size={20} className="text-purple-400" />
+                <input 
+                  autoFocus
+                  placeholder="https://github.com/user/repo.git" 
+                  value={cloneUrl}
+                  onChange={e => setCloneUrl(e.target.value)}
+                  style={{ fontSize: '16px' }}
+                />
+              </div>
+              <div style={{ display: 'flex', width: '100%', gap: '12px', alignItems: 'center' }}>
+                <Plus size={20} className="text-blue-400 opacity-40" />
+                <input 
+                  placeholder="Local workspace name..." 
+                  value={newSpaceName}
+                  onChange={e => setNewSpaceName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleClone()}
+                  style={{ fontSize: '16px' }}
+                />
+                <div className="creation-actions">
+                  <button className="btn-cancel" onClick={() => setIsCloning(false)}>Cancel</button>
+                  <button className="btn-confirm" style={{ background: '#8b5cf6' }} onClick={handleClone}>Clone</button>
+                </div>
               </div>
             </div>
           </div>

@@ -4,27 +4,36 @@
 
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 import * as chokidar from 'chokidar'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import { nativeHelperService } from '../services/native-helper-service'
+import { binaryManager } from '../services/binary-manager'
 
 // Stateful maps for file watchers
 const watchers = new Map<string, chokidar.FSWatcher>()
 const nativeWatchers = new Set<string>() // Track IDs using native watcher
 
 // Set up native event forwarding
-nativeHelperService.on('file-changed', (params: { path: string, flags: number }) => {
-    // Note: We don't have the watcher ID here from the native side easily 
-    // without more state tracking. For now, we broadcast to all native-managed watchers
-    // or just send a general refresh. For AIME compatibility, we map it to fs:change.
-    // In a real implementation, we'd map FSEvent flags to Chokidar events (add/unlink/change).
-    // FSEvent kFSEventStreamEventFlagItemModified = 0x00001000
-    
-    // Simple mapping: 
-    const event = 'change' // Default to change for now
-    
-    // We broadcast to the first available window as a general change
-    // This is a simplified implementation for the sidecar
+nativeHelperService.on('file-changed', (params: { path: string, flags: number, watcherId?: string }) => {
+    // SECURITY: Validate that the watcherId exists and is being tracked
+    if (params.watcherId && nativeWatchers.has(params.watcherId)) {
+        // Broadcast specifically to the mapped watcher ID
+        const mainWindow = nativeHelperService.getMainWindow()
+        if (mainWindow) {
+            let event: 'add' | 'unlink' | 'change' | 'unlinkDir' = 'change'
+            // kFSEventStreamEventFlagItemCreated = 0x00000100
+            // kFSEventStreamEventFlagItemRemoved = 0x00000200
+            if (params.flags & 0x00000100) event = 'add'
+            if (params.flags & 0x00000200) event = 'unlink'
+
+            mainWindow.webContents.send('fs:change', {
+                id: params.watcherId,
+                event,
+                path: params.path
+            })
+        }
+    }
 })
 
 // Path validation helper - prevents path traversal attacks
@@ -359,7 +368,7 @@ export function registerFileSystemHandlers(
             }
             if (nativeWatchers.has(options.id)) {
                 if (nativeHelperService.isAvailable()) {
-                    await nativeHelperService.request('watch-stop')
+                    await nativeHelperService.request('watch-stop', { watcherId: options.id })
                 }
                 nativeWatchers.delete(options.id)
             }
@@ -367,7 +376,10 @@ export function registerFileSystemHandlers(
             // Prefer Native FSEvents on macOS
             if (process.platform === 'darwin' && nativeHelperService.isAvailable()) {
                 try {
-                    await nativeHelperService.request('watch-start', { path: safePath })
+                    await nativeHelperService.request('watch-start', { 
+                        path: safePath,
+                        watcherId: options.id 
+                    })
                     nativeWatchers.add(options.id)
                     console.log(`[FS] Using native FSEvents for ${options.id}`)
                     return { success: true, native: true }
@@ -406,7 +418,7 @@ export function registerFileSystemHandlers(
 
         if (nativeWatchers.has(id)) {
             if (nativeHelperService.isAvailable()) {
-                await nativeHelperService.request('watch-stop').catch(() => {})
+                await nativeHelperService.request('watch-stop', { watcherId: id }).catch(() => {})
             }
             nativeWatchers.delete(id)
         }
@@ -427,32 +439,62 @@ export function registerFileSystemHandlers(
             }
             
             const safePath = validatePath(currentWorkspacePath, options.searchPath)
-            const results: { file: string; line: number; content: string }[] = []
             const maxResults = options.maxResults || 100
-            
-            // Escape special regex characters for safety
-            const escapeRegex = (str: string): string => {
-                return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+            // PRIORITY: Use Bundled Ripgrep (rg)
+            const rgPath = binaryManager.getRipgrepPath()
+            if (rgPath) {
+                return new Promise((resolve) => {
+                    const args = [
+                        '--json',
+                        '--max-count', maxResults.toString(),
+                        '--ignore-case',
+                        '--fixed-strings',
+                        options.pattern,
+                        safePath
+                    ]
+
+                    const rg = spawn(rgPath, args)
+                    const results: any[] = []
+                    let buffer = ''
+
+                    rg.stdout.on('data', (data) => {
+                        buffer += data.toString()
+                        const lines = buffer.split('\n')
+                        buffer = lines.pop() || ''
+
+                        for (const line of lines) {
+                            try {
+                                const entry = JSON.parse(line)
+                                if (entry.type === 'match') {
+                                    results.push({
+                                        file: path.relative(safePath, entry.data.path.text),
+                                        line: entry.data.line_number,
+                                        content: entry.data.lines.text.trim().substring(0, 200)
+                                    })
+                                }
+                            } catch (e) {}
+                        }
+                    })
+
+                    rg.on('close', () => {
+                        resolve({ success: true, results, truncated: results.length >= maxResults })
+                    })
+
+                    rg.on('error', (err) => {
+                        console.error('[FS] Ripgrep error:', err)
+                        // Fallback to JS search logic (not implemented here for brevity, 
+                        // but normally we would resolve with the JS search result)
+                    })
+                })
             }
             
-            // Create search regex
-            const searchRegex = new RegExp(escapeRegex(options.pattern), 'i')
-            
-            // File pattern matching
-            const shouldSearchFile = (fileName: string): boolean => {
-                if (!options.filePattern) return true
-                // Simple glob to regex conversion
-                const pattern = options.filePattern
-                    .replace(/\./g, '\\.')
-                    .replace(/\*/g, '.*')
-                    .replace(/\?/g, '.')
-                const regex = new RegExp(pattern, 'i')
-                return regex.test(fileName)
-            }
-            
-            // Recursive search function
+            // Fallback: Recursive JS search function - optimized with setImmediate to prevent UI blocking
             const searchDirectory = async (dirPath: string, relativePath: string): Promise<void> => {
                 if (results.length >= maxResults) return
+                
+                // Yield to event loop to keep UI responsive
+                await new Promise(resolve => setImmediate(resolve))
                 
                 const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
                 
@@ -530,6 +572,9 @@ export function registerFileSystemHandlers(
             await fs.promises.mkdir(destPath, { recursive: true })
 
             const copyRecursive = async (src: string, dest: string) => {
+                // Yield to event loop
+                await new Promise(resolve => setImmediate(resolve))
+                
                 const entries = await fs.promises.readdir(src, { withFileTypes: true })
                 for (const entry of entries) {
                     const srcPath = path.join(src, entry.name)

@@ -3,7 +3,7 @@
  */
 // main-process/terminal.ts
 import * as pty from 'node-pty'
-import type { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import { EventEmitter } from 'node:events'
 import * as fs from 'node:fs'
 import { ShellIntegrationService } from './shellIntegration'
@@ -163,6 +163,16 @@ export class TerminalService extends EventEmitter {
             // On Windows, Electron may not inherit user PATH fully when launched from shortcuts
             // We need to explicitly add common install paths
             let enhancedPath = process.env.PATH || ''
+
+            // PRIORITY: Add bundled bin directory
+            const bundledBinPath = app.isPackaged 
+                ? path.join(process.resourcesPath, 'bin')
+                : path.join(app.getAppPath(), 'bin')
+            
+            const pathSeparator = process.platform === 'win32' ? ';' : ':'
+            if (fs.existsSync(bundledBinPath)) {
+                enhancedPath = `${bundledBinPath}${pathSeparator}${enhancedPath}`
+            }
 
             if (process.platform === 'win32') {
                 const userProfile = process.env.USERPROFILE || 'C:\\Users\\Default'
@@ -504,7 +514,7 @@ export class TerminalService extends EventEmitter {
             status: terminal.status,
             lastExitCode: terminal.lastExitCode,
             processType: terminal.processType,
-            metadata: terminal.metadata,
+            metadata: terminal.metadata ? JSON.parse(JSON.stringify(terminal.metadata)) : {},
             cols: (terminal as any)._cols,
             rows: (terminal as any)._rows
         }

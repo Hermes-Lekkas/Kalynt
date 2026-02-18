@@ -621,6 +621,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
                 ipcRenderer.removeListener('debug:error', subscription)
             }
         },
+        onAdapterMissing: (callback: (data: { type: string, requiredBinary: string, installInstructions: string }) => void) => {
+            const subscription = (_event: IpcRendererEvent, data: any) => callback(data)
+            ipcRenderer.on('debug:adapter-missing', subscription)
+            return () => {
+                ipcRenderer.removeListener('debug:adapter-missing', subscription)
+            }
+        },
         removeListeners: () => {
             ipcRenderer.removeAllListeners('debug:started')
             ipcRenderer.removeAllListeners('debug:stopped')
@@ -631,6 +638,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.removeAllListeners('debug:event')
             ipcRenderer.removeAllListeners('debug:response')
             ipcRenderer.removeAllListeners('debug:error')
+            ipcRenderer.removeAllListeners('debug:adapter-missing')
         }
     },
 
@@ -747,10 +755,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Generic IPC listener for deep links
     // ==========================================
     on: (channel: string, callback: (...args: any[]) => void) => {
-        const validChannels = ['deep-link', 'extension:extension-activated', 'extension:extension-deactivated', 'extension:show-message']
+        const validChannels = [
+            'deep-link', 
+            'extension:extension-activated', 
+            'extension:extension-deactivated', 
+            'extension:show-message',
+            'performance:request-gc',
+            'performance:suspend-background-tasks',
+            'performance:optimize-monaco',
+            'performance:dispose-workers'
+        ]
         if (validChannels.includes(channel)) {
-            ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+            const listener = (_event: IpcRendererEvent, ...args: any[]) => callback(...args)
+            ipcRenderer.on(channel, listener)
+            return () => {
+                ipcRenderer.removeListener(channel, listener)
+            }
         }
+        return () => {}
     },
 
     // ==========================================

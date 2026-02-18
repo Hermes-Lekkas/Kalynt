@@ -66,12 +66,14 @@ struct AnyCodable: Codable {
 class FileWatcher {
     private var stream: FSEventStreamRef?
     private let callback: (String, UInt32) -> Void
+    private let path: String
 
-    init(callback: @escaping (String, UInt32) -> Void) {
+    init(path: String, callback: @escaping (String, UInt32) -> Void) {
+        self.path = path
         self.callback = callback
     }
 
-    func start(path: String) {
+    func start() {
         stop()
 
         let paths = [path] as CFArray
@@ -92,7 +94,7 @@ class FileWatcher {
             &context,
             paths,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            1.0, // Latency
+            0.1, // Reduced latency for better responsiveness
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
         )
 
@@ -139,7 +141,7 @@ class InferenceEngine {
 // MARK: - Helper Core
 
 class KalyntHelper {
-    private var watcher: FileWatcher?
+    private var watchers: [String: FileWatcher] = [:]
     private var inferenceEngine: InferenceEngine?
     private var buffer = Data()
 
@@ -175,7 +177,7 @@ class KalyntHelper {
         case "watch-start":
             startWatching(id: id, params: request.params)
         case "watch-stop":
-            stopWatching(id: id)
+            stopWatching(id: id, params: request.params)
         case "llm-load":
             loadLLM(id: id, params: request.params)
         case "llm-predict":
@@ -205,22 +207,42 @@ class KalyntHelper {
     }
 
     private func startWatching(id: Int, params: [String: AnyCodable]?) {
-        guard let path = params?["path"]?.value as? String else {
-            sendError(id: id, message: "Missing path parameter")
+        guard let path = params?["path"]?.value as? String,
+              let watcherId = params?["watcherId"]?.value as? String else {
+            sendError(id: id, message: "Missing path or watcherId parameter")
             return
         }
-        if watcher == nil {
-            watcher = FileWatcher { path, flags in
-                self.sendNotification(method: "file-changed", params: ["path": path, "flags": Int(flags)])
-            }
+        
+        // Stop existing if any
+        watchers[watcherId]?.stop()
+        
+        let watcher = FileWatcher(path: path) { [weak self] path, flags in
+            self?.sendNotification(method: "file-changed", params: [
+                "path": path, 
+                "flags": Int(flags),
+                "watcherId": watcherId
+            ])
         }
-        watcher?.start(path: path)
-        sendResult(id: id, result: ["status": "watching", "path": path])
+        
+        watchers[watcherId] = watcher
+        watcher.start()
+        
+        sendResult(id: id, result: ["status": "watching", "path": path, "watcherId": watcherId])
     }
 
-    private func stopWatching(id: Int) {
-        watcher?.stop()
-        sendResult(id: id, result: ["status": "stopped"])
+    private func stopWatching(id: Int, params: [String: AnyCodable]?) {
+        guard let watcherId = params?["watcherId"]?.value as? String else {
+            sendError(id: id, message: "Missing watcherId parameter")
+            return
+        }
+        
+        if let watcher = watchers[watcherId] {
+            watcher.stop()
+            watchers.removeValue(forKey: watcherId)
+            sendResult(id: id, result: ["status": "stopped", "watcherId": watcherId])
+        } else {
+            sendError(id: id, message: "Watcher not found")
+        }
     }
 
     private func loadLLM(id: Int, params: [String: AnyCodable]?) {

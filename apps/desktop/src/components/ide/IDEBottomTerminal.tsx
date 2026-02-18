@@ -1,8 +1,9 @@
 ﻿/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import Terminal from './Terminal'
+import { OutputTerminal } from './terminal/OutputTerminal'
 
 interface IDEBottomTerminalProps {
     showTerminal: boolean
@@ -10,8 +11,13 @@ interface IDEBottomTerminalProps {
     setTerminalHeight: (height: number) => void
     workspacePath: string | null
     codeOutput?: string
+    buildOutput?: string
+    debugOutput?: string
     isRunning?: boolean
+    isBuilding?: boolean
+    isDebugging?: boolean
     onActiveTerminalChange?: (id: string) => void
+    onOutputInput?: (data: string) => void
 }
 
 export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
@@ -20,25 +26,36 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
     setTerminalHeight,
     workspacePath,
     codeOutput = '',
+    buildOutput = '',
+    debugOutput = '',
     isRunning = false,
-    onActiveTerminalChange
+    isBuilding = false,
+    isDebugging = false,
+    onActiveTerminalChange,
+    onOutputInput
 }) => {
-    const [activeTab, setActiveTab] = useState<'terminal' | 'output'>('terminal')
-    const outputRef = useRef<HTMLPreElement>(null)
+    const [activeTab, setActiveTab] = useState<'terminal' | 'output' | 'build' | 'debug'>('terminal')
 
     // Switch to output tab when code starts running
     useEffect(() => {
-        if (isRunning || codeOutput) {
+        if (isRunning) {
             setActiveTab('output')
         }
-    }, [isRunning, codeOutput])
+    }, [isRunning])
 
-    // Auto-scroll output
+    // Switch to build tab when build starts
     useEffect(() => {
-        if (outputRef.current) {
-            outputRef.current.scrollTop = outputRef.current.scrollHeight
+        if (isBuilding) {
+            setActiveTab('build')
         }
-    }, [codeOutput])
+    }, [isBuilding])
+
+    // Switch to debug tab when debug starts
+    useEffect(() => {
+        if (isDebugging) {
+            setActiveTab('debug')
+        }
+    }, [isDebugging])
 
     return (
         <div
@@ -108,6 +125,42 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
                     Output
                     {isRunning && <span style={{ color: 'var(--success, #a6e3a1)' }}>{"\u25CF"}</span>}
                 </button>
+                <button
+                    onClick={() => setActiveTab('build')}
+                    style={{
+                        padding: '6px 12px',
+                        background: activeTab === 'build' ? 'var(--bg-active, #45475a)' : 'transparent',
+                        border: 'none',
+                        color: activeTab === 'build' ? 'var(--text-primary, #cdd6f4)' : 'var(--text-secondary, #a6adc8)',
+                        cursor: 'pointer',
+                        borderBottom: activeTab === 'build' ? '2px solid var(--accent, #89b4fa)' : '2px solid transparent',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                    }}
+                >
+                    Build
+                    {isBuilding && <span style={{ color: 'var(--warning, #f9e2af)' }}>{"\u25CF"}</span>}
+                </button>
+                <button
+                    onClick={() => setActiveTab('debug')}
+                    style={{
+                        padding: '6px 12px',
+                        background: activeTab === 'debug' ? 'var(--bg-active, #45475a)' : 'transparent',
+                        border: 'none',
+                        color: activeTab === 'debug' ? 'var(--text-primary, #cdd6f4)' : 'var(--text-secondary, #a6adc8)',
+                        cursor: 'pointer',
+                        borderBottom: activeTab === 'debug' ? '2px solid var(--accent, #89b4fa)' : '2px solid transparent',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                    }}
+                >
+                    Debug
+                    {isDebugging && <span style={{ color: 'var(--error, #f38ba8)' }}>{"\u25CF"}</span>}
+                </button>
             </div>
 
             {/* Terminal tab */}
@@ -116,30 +169,56 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
             </div>
 
             {/* Output tab */}
-            <div style={{
-                flex: 1,
-                display: activeTab === 'output' ? 'flex' : 'none',
-                flexDirection: 'column',
-                background: 'var(--terminal-bg, #11111b)',
-                overflow: 'hidden'
-            }}>
-                <pre
-                    ref={outputRef}
-                    style={{
-                        margin: 0,
-                        padding: '12px',
-                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                        fontSize: '13px',
-                        color: 'var(--text-primary, #cdd6f4)',
-                        overflow: 'auto',
-                        height: '100%',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word'
-                    }}
-                >
-                    {codeOutput || 'No output yet. Run a file to see output here.'}
-                </pre>
+            <div 
+                tabIndex={0}
+                style={{
+                    flex: 1,
+                    display: activeTab === 'output' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    background: 'var(--terminal-bg, #11111b)',
+                    overflow: 'hidden',
+                    outline: 'none'
+                }}
+            >
+                <OutputTerminal 
+                    content={codeOutput} 
+                    isRunning={isRunning} 
+                    onInput={onOutputInput} 
+                />
+            </div>
+
+            {/* Build tab */}
+            <div 
+                style={{
+                    flex: 1,
+                    display: activeTab === 'build' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    background: 'var(--terminal-bg, #11111b)',
+                    overflow: 'hidden'
+                }}
+            >
+                <OutputTerminal 
+                    content={buildOutput} 
+                    isRunning={isBuilding}
+                />
+            </div>
+
+            {/* Debug tab */}
+            <div 
+                style={{
+                    flex: 1,
+                    display: activeTab === 'debug' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    background: 'var(--terminal-bg, #11111b)',
+                    overflow: 'hidden'
+                }}
+            >
+                <OutputTerminal 
+                    content={debugOutput} 
+                    isRunning={isDebugging}
+                />
             </div>
         </div>
     )
 }
+

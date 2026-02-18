@@ -1,11 +1,13 @@
 ﻿/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, app } from 'electron';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as net from 'net';
+import { binaryManager } from '../services/binary-manager';
+import { RuntimeManager } from '../services/runtime-manager';
 import {
   DebugConfiguration,
   LaunchConfiguration,
@@ -281,33 +283,126 @@ class DebugSessionManager {
       case 'node-terminal':
         // Use Node's built-in inspector protocol
         debuggerPath = process.execPath; // Node.js executable
-        debuggerArgs = ['--inspect-brk=0', configuration.program || ''];
-        // Node is always available since we're running in Electron
+        debuggerArgs = [
+            '--inspect-brk=0', 
+            ...(configuration.runtimeArgs || []),
+            configuration.program || ''
+        ];
         break;
 
       case 'debugpy':
-      case 'python':
-        debuggerPath = 'python';
-        debuggerArgs = ['-m', 'debugpy', '--listen', '5678', '--wait-for-client'];
-        if (configuration.program) {
-          debuggerArgs.push(configuration.program);
+      case 'python': {
+        const port = await this.getAvailablePort();
+        // Use python3 by default on non-windows, python on windows
+        requiredBinary = process.platform === 'win32' ? 'python' : 'python3';
+        
+        // Resolve the actual path to use (may be from common locations or bundled bin)
+        debuggerPath = await this.resolveBinaryPath(requiredBinary);
+
+        // Check bundled binaries as fallback
+        if (debuggerPath === requiredBinary) {
+            const bundled = binaryManager.getBinaryPath(requiredBinary);
+            if (bundled) debuggerPath = bundled;
         }
-        requiredBinary = 'python';
-        installInstructions = 'Python debugging requires Python and debugpy.\nInstall with: pip install debugpy';
-        break;
+
+        console.log(`[Debug] Using resolved python path: ${debuggerPath}`);
+
+        // USE SOCKET MODE: Starts debuggee and listens for DAP client on dynamic port
+        debuggerArgs = [
+            '-Xfrozen_modules=off', 
+            '-m', 'debugpy', 
+            '--listen', `127.0.0.1:${port}`, 
+            '--wait-for-client',
+            configuration.program || '',
+            ...(configuration.args || [])
+        ];
+        
+        // Add environment variable to suppress warnings
+        configuration.env = {
+            ...((configuration.env as Record<string, string>) || {}),
+            'PYDEVD_DISABLE_FILE_VALIDATION': '1',
+            'PYTHONUNBUFFERED': '1'
+        };
+        
+        // Spawn the process first
+        const childProcess = spawn(debuggerPath, debuggerArgs, {
+            cwd: configuration.cwd || workspacePath,
+            env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
+        });
+
+        // Capture early errors and handle spawn failure
+        let earlyError = '';
+        childProcess.on('error', (err) => {
+            console.error(`[Debug][Spawn Error] ${err.message}`);
+            _window.webContents.send('debug:error', { sessionId: 'initializing', error: `Debugger failed to start: ${err.message}` });
+        });
+
+        childProcess.stderr?.on('data', (data) => {
+            earlyError += data.toString();
+            console.error(`[Debug][Early] ${data.toString()}`);
+        });
+
+        adapter.process = childProcess;
+
+        // RETRY LOGIC: debugpy can take a few moments to initialize the socket server
+        const socket = new net.Socket();
+        const maxRetries = 5;
+        let connected = false;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`[Debug] Connection attempt ${attempt} to port ${port}...`);
+                await new Promise<void>((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        socket.destroy();
+                        reject(new Error('Timeout'));
+                    }, 2000);
+
+                    socket.once('connect', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    });
+
+                    socket.once('error', (err) => {
+                        clearTimeout(timeout);
+                        reject(err);
+                    });
+
+                    socket.connect(port, '127.0.0.1');
+                });
+                connected = true;
+                break;
+            } catch (e) {
+                if (attempt === maxRetries) {
+                    const detailedError = earlyError ? `\nDebugger Output: ${earlyError}` : '';
+                    throw new Error(`Failed to connect to Python debugger after ${maxRetries} attempts on port ${port}: ${e instanceof Error ? e.message : String(e)}${detailedError}`);
+                }
+                // Wait before next attempt
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        if (!connected) {
+            throw new Error(`Failed to establish connection to debugpy on port ${port}`);
+        }
+
+        adapter.socket = socket;
+        return adapter;
+      }
 
       case 'lldb':
       case 'rust-lldb':
-        debuggerPath = 'lldb-vscode';
+        // Support both old (lldb-vscode) and new (lldb-dap) names
+        debuggerPath = 'lldb-dap';
         debuggerArgs = [];
-        requiredBinary = 'lldb-vscode';
-        installInstructions = 'LLDB debugging requires lldb-vscode.\nInstall LLVM/LLDB from https://llvm.org/';
+        requiredBinary = 'lldb-dap';
+        installInstructions = 'LLDB debugging requires lldb-dap or lldb-vscode.\nInstall LLVM/LLDB from https://llvm.org/';
         break;
 
       case 'gdb':
       case 'cppdbg':
         debuggerPath = 'gdb';
-        debuggerArgs = ['--interpreter=mi'];
+        debuggerArgs = ['--interpreter=mi', ...(configuration.args || [])];
         requiredBinary = 'gdb';
         installInstructions = 'GDB debugging requires GDB.\nInstall via your system package manager (e.g., apt install gdb)';
         break;
@@ -315,9 +410,23 @@ class DebugSessionManager {
       case 'delve':
       case 'go':
         debuggerPath = 'dlv';
-        debuggerArgs = ['dap', '--listen=127.0.0.1:0'];
+        debuggerArgs = ['dap', '--listen=127.0.0.1:0', ...(configuration.args || [])];
         requiredBinary = 'dlv';
         installInstructions = 'Go debugging requires Delve.\nInstall with: go install github.com/go-delve/delve/cmd/dlv@latest';
+        break;
+
+      case 'java':
+        debuggerPath = 'java';
+        debuggerArgs = ['-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=0', ...(configuration.runtimeArgs || []), configuration.program || ''];
+        requiredBinary = 'java';
+        installInstructions = 'Java debugging requires JDK.\nDownload from https://adoptium.net/';
+        break;
+
+      case 'coreclr':
+        debuggerPath = 'vsdbg';
+        debuggerArgs = ['--interpreter=vscode'];
+        requiredBinary = 'vsdbg';
+        installInstructions = '.NET Debugging requires vsdbg.\nInstall via .NET SDK or download from Microsoft.';
         break;
 
       default:
@@ -328,11 +437,25 @@ class DebugSessionManager {
     if (requiredBinary) {
       const binaryExists = await this.checkBinaryExists(requiredBinary);
       if (!binaryExists) {
-        throw new Error(`Debug adapter not found: '${requiredBinary}' is not installed or not in PATH.\n\n${installInstructions}`);
+        // AUTOMATED INSTALLATION Flow:
+        // Try to see if it's available in bundled binaries first
+        const bundled = binaryManager.getBinaryPath(requiredBinary);
+        if (bundled) {
+            debuggerPath = bundled;
+        } else {
+            // Notify frontend that adapter is missing and offer installation
+            window.webContents.send('debug:adapter-missing', { 
+                type, 
+                requiredBinary, 
+                installInstructions 
+            });
+            throw new Error(`Debug adapter not found: '${requiredBinary}' is not installed.\n\nKalynt is offering to install it via the popup.`);
+        }
+      } else {
+        // Resolve the actual path to use (may be from common locations)
+        debuggerPath = await this.resolveBinaryPath(requiredBinary);
       }
-
-      // Resolve the actual path to use (may be from common locations)
-      debuggerPath = await this.resolveBinaryPath(requiredBinary);
+      
       console.log(`[Debug] Using debugger at: ${debuggerPath}`);
 
       // For Python, also check if debugpy module is installed
@@ -349,6 +472,11 @@ class DebugSessionManager {
     const childProcess = spawn(debuggerPath, debuggerArgs, {
       cwd: configuration.cwd || workspacePath,
       env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
+    });
+
+    childProcess.on('error', (err) => {
+      console.error(`[Debug][Spawn Error] ${err.message}`);
+      _window.webContents.send('debug:error', { sessionId: 'initializing', error: `Debugger failed to start: ${err.message}` });
     });
 
     adapter.process = childProcess;
@@ -404,6 +532,21 @@ class DebugSessionManager {
         '/usr/local/bin/gdb',
       ],
     },
+    'lldb-dap': {
+      windows: [
+        'C:\\Program Files\\LLVM\\bin\\lldb-dap.exe',
+        `${process.env.PROGRAMFILES}\\LLVM\\bin\\lldb-dap.exe`,
+      ],
+      darwin: [
+        '/opt/homebrew/opt/llvm/bin/lldb-dap',
+        '/usr/local/opt/llvm/bin/lldb-dap',
+        '/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap',
+      ],
+      linux: [
+        '/usr/bin/lldb-dap',
+        '/usr/local/bin/lldb-dap',
+      ],
+    },
     'lldb-vscode': {
       windows: [
         'C:\\Program Files\\LLVM\\bin\\lldb-vscode.exe',
@@ -456,8 +599,9 @@ class DebugSessionManager {
   // SECURITY: Allowlist of safe debugger binaries
   private static readonly SAFE_BINARIES = new Set([
     'node', 'python', 'python3',      // Interpreters
-    'lldb-vscode', 'gdb', 'dlv',      // Debuggers
-    'debugpy',                         // Python debug module
+    'lldb-vscode', 'lldb-dap', 'gdb', // Debuggers
+    'dlv', 'vsdbg', 'java', 'javac',  // More Debuggers/Runtimes
+    'debugpy',                        // Python debug module
   ]);
 
   // SECURITY: Allowlist of safe Python modules to check
@@ -480,7 +624,7 @@ class DebugSessionManager {
     'GOPATH', 'GOROOT', 'GOCACHE',
     'CARGO_HOME', 'RUSTUP_HOME',
     // Debug-specific
-    'DEBUG', 'NODE_DEBUG', 'RUST_BACKTRACE', 'RUST_LOG',
+    'DEBUG', 'NODE_DEBUG', 'RUST_BACKTRACE', 'RUST_LOG', 'PYDEVD_DISABLE_FILE_VALIDATION',
     // Windows-specific
     'SYSTEMROOT', 'WINDIR', 'PROGRAMFILES', 'PROGRAMFILES(X86)',
     'COMMONPROGRAMFILES', 'APPDATA', 'LOCALAPPDATA',
@@ -670,56 +814,96 @@ class DebugSessionManager {
   }
 
   /**
-   * Set up communication with debug adapter
+   * Set up communication with debug adapter (process or socket)
    */
   private setupAdapterCommunication(adapter: DebugAdapter, window: BrowserWindow, sessionId: string) {
-    if (!adapter.process) return;
-
-    adapter.process.stdout?.on('data', (data: Buffer) => {
+    const dataHandler = (data: Buffer) => {
       adapter.messageBuffer += data.toString();
       this.processAdapterMessages(adapter, window, sessionId);
-    });
+    };
 
-    adapter.process.stderr?.on('data', (data: Buffer) => {
-      console.error('Debug adapter error:', data.toString());
-      window.webContents.send('debug:output', {
-        type: 'stderr',
-        data: data.toString(),
+    if (adapter.socket) {
+      adapter.socket.on('data', dataHandler);
+      adapter.socket.on('error', (err) => {
+        console.error(`[Debug][${sessionId}] Socket error:`, err);
+        window.webContents.send('debug:error', { sessionId, error: `Socket error: ${err.message}` });
       });
-    });
+      adapter.socket.on('close', () => {
+        console.log(`[Debug][${sessionId}] Socket closed`);
+        window.webContents.send('debug:terminated', { sessionId });
+      });
+    } else if (adapter.process) {
+      adapter.process.stdout?.on('data', dataHandler);
 
-    adapter.process.on('exit', (code) => {
-      console.log('Debug adapter exited with code:', code);
-      window.webContents.send('debug:terminated', { exitCode: code });
+      adapter.process.stderr?.on('data', (data: Buffer) => {
+        console.error('Debug adapter error:', data.toString());
+        window.webContents.send('debug:output', {
+          type: 'stderr',
+          output: data.toString(), // Use 'output' consistently with DAP
+        });
+      });
+
+      adapter.process.on('exit', (code) => {
+        console.log('Debug adapter exited with code:', code);
+        window.webContents.send('debug:terminated', { exitCode: code });
+      });
+    }
+  }
+
+  /**
+   * Helper to find an available TCP port
+   */
+  private async getAvailablePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.unref();
+      server.on('error', reject);
+      server.listen(0, () => {
+        const port = (server.address() as net.AddressInfo).port;
+        server.close(() => {
+          resolve(port);
+        });
+      });
     });
   }
 
   /**
-   * Process messages from debug adapter
+   * Process messages from debug adapter using a robust streaming approach
    */
-  private processAdapterMessages(adapter: DebugAdapter, window: BrowserWindow, sessionId: string) {
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const headerMatch = /Content-Length: (\d+)\r\n\r\n/.exec(adapter.messageBuffer);
-      if (!headerMatch) break;
+  private processAdapterMessages(adapter: DebugAdapter, _window: BrowserWindow, sessionId: string) {
+    while (adapter.messageBuffer.length > 0) {
+      // Find the header end
+      const headerEndIndex = adapter.messageBuffer.indexOf('\r\n\r\n');
+      if (headerEndIndex === -1) break;
 
-      const contentLength = Number.parseInt(headerMatch[1], 10);
-      const headerLength = headerMatch[0].length;
-      const totalLength = headerLength + contentLength;
+      // Extract Content-Length
+      const header = adapter.messageBuffer.substring(0, headerEndIndex);
+      const contentLengthMatch = /Content-Length: (\d+)/i.exec(header);
+      if (!contentLengthMatch) {
+          // Bad header, skip this chunk
+          adapter.messageBuffer = adapter.messageBuffer.substring(headerEndIndex + 4);
+          continue;
+      }
 
-      if (adapter.messageBuffer.length < totalLength) break;
+      const contentLength = parseInt(contentLengthMatch[1], 10);
+      const messageStartIndex = headerEndIndex + 4;
+
+      // Check if we have the full message body
+      if (adapter.messageBuffer.length < messageStartIndex + contentLength) break;
 
       const messageContent = adapter.messageBuffer.substring(
-        headerLength,
-        totalLength
+        messageStartIndex,
+        messageStartIndex + contentLength
       );
-      adapter.messageBuffer = adapter.messageBuffer.substring(totalLength);
+      
+      // Advance buffer
+      adapter.messageBuffer = adapter.messageBuffer.substring(messageStartIndex + contentLength);
 
       try {
         const message = JSON.parse(messageContent);
-        this.handleAdapterMessage(message, window, sessionId);
+        this.handleAdapterMessage(message, _window, sessionId);
       } catch (error) {
-        console.error('Failed to parse DAP message:', error);
+        console.error(`[Debug][${sessionId}] Failed to parse DAP message:`, error);
       }
     }
   }
@@ -1070,7 +1254,7 @@ class DebugSessionManager {
   }
 
   /**
-   * Resolve configuration variables like ${workspaceFolder}
+   * Resolve configuration variables like ${workspaceFolder} and ${env:VAR}
    */
   private resolveConfigurationVariables(
     config: DebugConfiguration,
@@ -1096,14 +1280,23 @@ class DebugSessionManager {
       '${fileDirname}': fileDirname,
       '${relativeFile}': relativeFile,
       '${fileExtname}': fileExtension,
+      '${pathSeparator}': path.sep,
     };
 
     const replaceVariables = (obj: any): any => {
       if (typeof obj === 'string') {
         let result = obj;
+        
+        // Replace standard variables
         for (const [variable, value] of Object.entries(replacements)) {
-          result = result.replace(variable, value);
+          result = result.replaceAll(variable, value);
         }
+
+        // Replace environment variables: ${env:NAME}
+        result = result.replace(/\$\{env:([^}]+)\}/g, (_, name) => {
+            return process.env[name] || '';
+        });
+
         return result;
       } else if (Array.isArray(obj)) {
         return obj.map(replaceVariables);
@@ -1119,10 +1312,23 @@ class DebugSessionManager {
 
     return replaceVariables(resolved);
   }
+
+  /**
+   * Stop all active debug sessions
+   */
+  async stopAllSessions(): Promise<void> {
+    const sessionIds = Array.from(this.sessions.keys());
+    await Promise.all(sessionIds.map(id => this.stopSession(id)));
+  }
 }
 
 // Singleton instance
 const debugSessionManager = new DebugSessionManager();
+
+// Clean up all sessions on app exit
+app.on('before-quit', () => {
+  debugSessionManager.stopAllSessions().catch(console.error);
+});
 
 export function setupDebugHandlers(
   ipc: typeof ipcMain,

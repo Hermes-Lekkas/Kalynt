@@ -6,6 +6,7 @@ import { spawn, ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import fs from 'node:fs'
+import { app } from 'electron'
 
 export interface TaskDefinition {
     id: string
@@ -386,6 +387,17 @@ export class TaskRunnerService extends EventEmitter {
             let shell = true
             const currentPlatform = process.platform
 
+            // ENHANCE PATH
+            const bundledBinPath = app.isPackaged 
+                ? path.join(process.resourcesPath, 'bin')
+                : path.join(app.getAppPath(), 'bin')
+            
+            const pathSeparator = currentPlatform === 'win32' ? ';' : ':'
+            let enhancedPath = process.env.PATH || ''
+            if (fs.existsSync(bundledBinPath)) {
+                enhancedPath = `${bundledBinPath}${pathSeparator}${enhancedPath}`
+            }
+
             // Handle different task types
             switch (resolvedTask.type) {
                 case 'shell':
@@ -414,7 +426,11 @@ export class TaskRunnerService extends EventEmitter {
             // Spawn child process
             const childProcess: ChildProcessWithoutNullStreams = spawn(command, args, {
                 cwd: resolvedTask.cwd || process.cwd(),
-                env: { ...process.env, ...resolvedTask.env },
+                env: { 
+                    ...process.env, 
+                    ...resolvedTask.env,
+                    PATH: enhancedPath
+                },
                 shell: shell,
                 stdio: ['pipe', 'pipe', 'pipe']
             })

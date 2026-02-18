@@ -89,8 +89,8 @@ export interface ChatMessage {
     timestamp: number
     channelId?: string
     encrypted?: boolean
-    toolName?: string
-    toolResult?: string
+    name?: string
+    data?: string
     isError?: boolean
     modelId?: string
     isLoading?: boolean
@@ -483,7 +483,21 @@ export default function UnifiedAgentPanel({
                     setAgentIteration({ current: event.iteration, max: event.maxIterations })
                     break
                 case 'tool-executing':
-                    // Step already added by step-added event
+                    // Just show progress in steps, no chat message yet
+                    break
+                case 'tool-result':
+                    if (currentSessionId) {
+                        const toolMsg: ChatMessage = {
+                            id: crypto.randomUUID(),
+                            role: 'tool',
+                            name: event.toolName,
+                            data: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
+                            content: `Executed ${event.toolName}`,
+                            timestamp: Date.now()
+                        }
+                        setAiMessages(prev => [...prev, toolMsg])
+                        addMessageToSession(currentSessionId, toolMsg)
+                    }
                     break
                 case 'completed':
                     setAgentLoopRunning(false)
@@ -771,6 +785,7 @@ export default function UnifiedAgentPanel({
     const triggerAgentLoop = async (text: string, messages: ChatMessage[], sessionId: string) => {
         // ---- Agent Loop Service (ReAct engine) ----
         setAgentSteps([])
+        setAgentLoopRunning(true)
         agentLoopService.setUseOfflineAI(aiMode === 'offline')
         agentLoopService.setCloudProvider(currentProvider)
         agentLoopService.setWorkspacePath(workspacePath || '')
@@ -778,7 +793,7 @@ export default function UnifiedAgentPanel({
         // Build chat history for context
         const chatHistory = messages.map(m => ({
             role: m.role === 'tool' ? 'assistant' : (m.role || 'user'),
-            content: m.role === 'tool' ? `Tool ${m.toolName} result: ${m.toolResult?.slice(0, 500)}` : m.content
+            content: m.role === 'tool' ? `Tool ${m.name} result: ${m.data?.slice(0, 500) || m.content}` : m.content
         }))
 
         try {
@@ -858,7 +873,7 @@ export default function UnifiedAgentPanel({
         }
 
         if (msg.role === 'tool') {
-            const output = msg.toolResult || ''
+            const output = msg.data || ''
             let isJson = false
             let jsonResult: any = null
 
@@ -875,7 +890,7 @@ export default function UnifiedAgentPanel({
                 <div id={msg.id} className="tool-message">
                     <div className="tool-header">
                         <TerminalIcon size={12} />
-                        <span>{msg.toolName}</span>
+                        <span>{msg.name}</span>
                     </div>
                     <div className="tool-output">
                         {isJson && (jsonResult.stdout !== undefined || jsonResult.stderr !== undefined) ? (
@@ -1126,10 +1141,10 @@ export default function UnifiedAgentPanel({
                                                     <div className="step-content">
                                                         {step.type === 'tool-call' && (
                                                             <div className="step-tool-header">
-                                                                <span className="tool-badge">{step.toolName}</span>
-                                                                {step.toolParams && (
+                                                                <span className="tool-badge">{step.name}</span>
+                                                                {step.params && (
                                                                     <span className="tool-params-summary">
-                                                                        {Object.entries(step.toolParams)
+                                                                        {Object.entries(step.params)
                                                                             .filter(([, v]) => typeof v === 'string' && (v as string).length < 60)
                                                                             .map(([k, v]) => `${k}: ${v}`)
                                                                             .join(', ')
@@ -1140,11 +1155,11 @@ export default function UnifiedAgentPanel({
                                                         )}
                                                         {step.type === 'tool-result' && (
                                                             <div className="step-tool-result">
-                                                                <span className="tool-badge result">{step.toolName}</span>
+                                                                <span className="tool-badge result">{step.name}</span>
                                                                 <pre className="tool-result-pre">{
-                                                                    typeof step.content === 'string'
-                                                                        ? step.content.slice(0, 500)
-                                                                        : JSON.stringify(step.content).slice(0, 500)
+                                                                    typeof step.data === 'string'
+                                                                        ? step.data.slice(0, 500)
+                                                                        : JSON.stringify(step.data).slice(0, 500)
                                                                 }</pre>
                                                                 {step.duration && <span className="step-duration">{step.duration}ms</span>}
                                                             </div>
@@ -1178,17 +1193,26 @@ export default function UnifiedAgentPanel({
 
                                     {/* Real-time Thinking Bubble during generation */}
                                     {(isThinking || thinkingContent) && (
-                                        <div className={`thinking-bubble ${isThinking ? 'active' : ''}`}>
-                                            <button
-                                                className="thinking-toggle"
-                                                onClick={() => setShowThinking(!showThinking)}
-                                            >
-                                                <Brain size={14} className={isThinking ? 'pulse' : ''} />
-                                                <span>Thinking{isThinking ? '...' : ''}</span>
-                                                <ChevronDown size={12} className={showThinking ? 'rotate' : ''} />
-                                            </button>
+                                        <div className={`thinking-bubble-v2 ${isThinking ? 'active' : ''}`}>
+                                            <div className="thinking-header-v2" onClick={() => setShowThinking(!showThinking)}>
+                                                <div className="header-main">
+                                                    <div className="brain-icon-wrapper">
+                                                        <Brain size={14} className={isThinking ? 'animate-pulse' : ''} />
+                                                    </div>
+                                                    <span className="thinking-status">
+                                                        {isThinking ? 'Agent is thinking...' : 'Thought Process'}
+                                                    </span>
+                                                </div>
+                                                <div className="header-actions">
+                                                    <ChevronDown size={14} className={`transform transition-transform duration-200 ${showThinking ? 'rotate-180' : ''}`} />
+                                                </div>
+                                            </div>
                                             {showThinking && thinkingContent && (
-                                                <div className="thinking-content">{thinkingContent}</div>
+                                                <div className="thinking-body-v2">
+                                                    <div className="thinking-scroll-area">
+                                                        {thinkingContent}
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     )}
@@ -1992,6 +2016,85 @@ export default function UnifiedAgentPanel({
                     color: var(--color-text-secondary);
                     white-space: pre-wrap;
                     font-style: italic;
+                }
+
+                /* Premium Thinking Bubble v2 */
+                .thinking-bubble-v2 {
+                    margin: 12px 0;
+                    border-radius: 12px;
+                    border: 1px solid rgba(168, 85, 247, 0.2);
+                    background: rgba(168, 85, 247, 0.03);
+                    overflow: hidden;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    max-width: 95%;
+                }
+
+                .thinking-bubble-v2.active {
+                    border-color: rgba(168, 85, 247, 0.4);
+                    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.1);
+                }
+
+                .thinking-header-v2 {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    user-select: none;
+                    background: rgba(168, 85, 247, 0.05);
+                }
+
+                .thinking-header-v2:hover {
+                    background: rgba(168, 85, 247, 0.08);
+                }
+
+                .header-main {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+
+                .brain-icon-wrapper {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 24px;
+                    height: 24px;
+                    background: rgba(168, 85, 247, 0.15);
+                    color: #a855f7;
+                    border-radius: 6px;
+                }
+
+                .thinking-status {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: #a855f7;
+                    letter-spacing: 0.01em;
+                }
+
+                .thinking-body-v2 {
+                    border-top: 1px solid rgba(168, 85, 247, 0.1);
+                    background: rgba(0, 0, 0, 0.1);
+                }
+
+                .thinking-scroll-area {
+                    padding: 12px 16px;
+                    font-size: 13px;
+                    line-height: 1.6;
+                    color: var(--color-text-secondary);
+                    max-height: 300px;
+                    overflow-y: auto;
+                    font-family: var(--font-mono);
+                    white-space: pre-wrap;
+                }
+
+                .thinking-scroll-area::-webkit-scrollbar {
+                    width: 4px;
+                }
+
+                .thinking-scroll-area::-webkit-scrollbar-thumb {
+                    background: rgba(168, 85, 247, 0.2);
+                    border-radius: 2px;
                 }
 
                 /* Real-time Thinking Bubble */

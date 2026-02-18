@@ -65,7 +65,7 @@ export interface OrganizePayload {
 }
 
 export interface ToolCallPayload {
-    tool: string
+    name: string
     params: Record<string, unknown>
 }
 
@@ -175,9 +175,9 @@ export interface AgentStep {
     id: string
     type: 'thinking' | 'tool-call' | 'tool-result' | 'answer' | 'plan' | 'error'
     content: string
-    toolName?: string
-    toolParams?: Record<string, unknown>
-    toolResult?: unknown
+    name?: string
+    params?: Record<string, unknown>
+    data?: unknown
     timestamp: number
     /** Duration of this step in ms */
     duration?: number
@@ -197,7 +197,7 @@ export interface AgentPlan {
 
 export interface AgentPlanStep {
     description: string
-    tool?: string
+    name?: string
     status: 'pending' | 'in-progress' | 'completed' | 'skipped' | 'failed'
 }
 
@@ -276,6 +276,7 @@ export type AgentLoopEvent =
     | { type: 'step-updated'; stepId: string; updates: Partial<AgentStep> }
     | { type: 'plan-proposed'; plan: AgentPlan }
     | { type: 'tool-executing'; toolName: string; params: Record<string, unknown> }
+    | { type: 'tool-result'; toolName: string; result: unknown; success: boolean }
     | { type: 'tool-complete'; toolName: string; result: unknown; success: boolean }
     | { type: 'iteration'; iteration: number; maxIterations: number }
     | { type: 'completed'; finalMessage: string; steps: AgentStep[] }

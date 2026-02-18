@@ -557,29 +557,70 @@ class AIMEService {
     }
 
     /**
-     * Retrieve relevant context for an LLM prompt
+     * Retrieve relevant context for an LLM prompt.
+     * Uses a hybrid approach: Repo Map for awareness + Targeted snippets for precision.
      */
-    async retrieveContext(query: string): Promise<string> {
-        const symbols = this.search(query)
+    async retrieveContext(query: string, maxFiles: number = 8): Promise<string> {
+        const symbols = this.search(query, 20)
+        if (symbols.length === 0 && this.index.length > 0) {
+            // If no symbols match, try a fallback Repo Map
+            return this.generateRepoMap(1500)
+        }
         if (symbols.length === 0) return 'No relevant context found.'
 
-        let context = '### Relevant Code Context\n\n'
+        let context = '### Codebase Context\n\n'
+        
+        // Add a small repo map for structural awareness
+        const repoMap = this.generateRepoMap(800)
+        if (repoMap) {
+            context += repoMap + '\n---\n\n'
+        }
 
-        // Group by file to reduce redundant reading
-        const files = [...new Set(symbols.map(s => s.filePath))].slice(0, 5)
+        context += '#### Targeted Code Snippets\n\n'
 
-        for (const filePath of files) {
+        // Group by file to reduce redundant reading and keep related code together
+        const filePaths = [...new Set(symbols.map(s => s.filePath))].slice(0, maxFiles)
+
+        for (const filePath of filePaths) {
             const file = this.index.find(f => f.path === filePath)
             if (file) {
-                const relativePath = this.workspacePath ? filePath.replace(this.workspacePath, '') : filePath
+                const relativePath = this.workspacePath ? filePath.replace(this.workspacePath, '').replace(/^[/\\]/, '') : filePath
                 context += `File: ${relativePath}\n\`\`\`\n`
-                // Include a snippet around the first matching symbol in this file
-                const firstSymbol = symbols.find(s => s.filePath === filePath)
-                if (firstSymbol) {
-                    const start = Math.max(0, firstSymbol.line - 10)
-                    const end = Math.min(file.content.split('\n').length, firstSymbol.line + 20)
-                    context += file.content.split('\n').slice(start, end).join('\n')
+                
+                // Collect all symbols for this file that matched the query
+                const fileSymbols = symbols.filter(s => s.filePath === filePath)
+                
+                // Get a merged window of lines to show
+                const lineWindows: Array<{start: number, end: number}> = fileSymbols.map(s => ({
+                    start: Math.max(0, s.line - 15),
+                    end: s.line + 25
+                }))
+                
+                // Merge overlapping windows
+                const mergedWindows: Array<{start: number, end: number}> = []
+                if (lineWindows.length > 0) {
+                    lineWindows.sort((a, b) => a.start - b.start)
+                    let current = lineWindows[0]
+                    for (let i = 1; i < lineWindows.length; i++) {
+                        if (lineWindows[i].start <= current.end) {
+                            current.end = Math.max(current.end, lineWindows[i].end)
+                        } else {
+                            mergedWindows.push(current)
+                            current = lineWindows[i]
+                        }
+                    }
+                    mergedWindows.push(current)
                 }
+
+                const lines = file.content.split('\n')
+                for (const window of mergedWindows) {
+                    const start = window.start
+                    const end = Math.min(lines.length, window.end)
+                    if (start > 0) context += '// ...\n'
+                    context += lines.slice(start, end).join('\n') + '\n'
+                    if (end < lines.length) context += '// ...\n'
+                }
+                
                 context += '\n```\n\n'
             }
         }
@@ -596,28 +637,30 @@ class AIMEService {
     generateRepoMap(maxTokens: number = 3000): string {
         if (this.index.length === 0) return ''
 
-        let map = '### Repository Map\n\n'
-        let estimatedTokens = 10
+        let map = '### Repository Map (Project Skeleton)\n\n'
+        let currentTokens = 10
 
-        // Group symbols by file
-        const fileMap = new Map<string, CodeSymbol[]>()
-        for (const file of this.index) {
+        // Group symbols by file and sort by significance
+        const sortedFiles = [...this.index]
+            .sort((a, b) => b.symbols.length - a.symbols.length)
+
+        for (const file of sortedFiles) {
             const relativePath = this.workspacePath
                 ? file.path.replace(this.workspacePath, '').replace(/^[/\\]/, '')
                 : file.path
 
-            if (file.symbols.length > 0) {
-                fileMap.set(relativePath, file.symbols)
-            }
-        }
+            let fileContent = `${relativePath}:\n`
+            
+            // Prioritize important symbols
+            const priorityOrder = { 'class': 1, 'interface': 2, 'function': 3, 'method': 4, 'variable': 5 }
+            const sortedSymbols = [...file.symbols].sort((a, b) => {
+                const pA = priorityOrder[a.type as keyof typeof priorityOrder] || 99
+                const pB = priorityOrder[b.type as keyof typeof priorityOrder] || 99
+                if (pA !== pB) return pA - pB
+                return a.line - b.line
+            })
 
-        // Sort files by number of symbols (most significant first)
-        const sortedFiles = [...fileMap.entries()]
-            .sort((a, b) => b[1].length - a[1].length)
-
-        for (const [filePath, symbols] of sortedFiles) {
-            const fileHeader = `${filePath}:\n`
-            const symbolLines = symbols.map(s => {
+            for (const symbol of sortedSymbols) {
                 const typePrefixMap: Record<string, string> = {
                     'class': 'class',
                     'interface': 'interface',
@@ -625,17 +668,20 @@ class AIMEService {
                     'function': 'fn',
                     'variable': 'var'
                 }
-                const typePrefix = typePrefixMap[s.type] || 'var'
-                return `  ${typePrefix} ${s.name} (L${s.line})`
-            }).join('\n')
+                const typePrefix = typePrefixMap[symbol.type] || 'var'
+                const line = `  ${typePrefix} ${symbol.name} (L${symbol.line})\n`
+                
+                // Estimate tokens (roughly 4 chars per token)
+                const lineTokens = Math.ceil(line.length / 4)
+                
+                if (currentTokens + lineTokens > maxTokens) break
+                
+                fileContent += line
+                currentTokens += lineTokens
+            }
 
-            const block = fileHeader + symbolLines + '\n\n'
-            const blockTokens = block.split(/\s+/).length
-
-            if (estimatedTokens + blockTokens > maxTokens) break
-
-            map += block
-            estimatedTokens += blockTokens
+            if (currentTokens > maxTokens) break
+            map += fileContent + '\n'
         }
 
         return map

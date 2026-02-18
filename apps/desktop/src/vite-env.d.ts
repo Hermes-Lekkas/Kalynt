@@ -235,7 +235,7 @@ export interface ElectronAPI {
   initDB?: (dbPath: string) => Promise<void>
   dbQuery?: (sql: string, params: unknown[]) => Promise<unknown[]>
   dbRun?: (sql: string, params: unknown[]) => Promise<void>
-  on: (channel: string, callback: (...args: any[]) => void) => void
+  on: (channel: string, callback: (...args: any[]) => void) => (() => void)
 
   // Extension System APIs
   extensions: {

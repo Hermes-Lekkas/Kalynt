@@ -1,7 +1,7 @@
 ﻿/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import Sidebar from './components/Sidebar'
 import Titlebar from './components/Titlebar'
 import MainContent from './components/MainContent'
@@ -9,13 +9,17 @@ import WelcomeScreen from './components/WelcomeScreen'
 import { useAppStore } from './stores/appStore'
 import { useUpdateStore } from './stores/updateStore'
 import { EncryptionProvider } from './hooks/useEncryption'
+import { usePerformanceAcceleration } from './hooks/usePerformanceAcceleration'
 import { NotificationSystem } from './components/NotificationSystem'
 import UpdateModal from './components/UpdateModal'
-import { ExtensionManager } from './components/extensions'
-import UnifiedSettingsPanel from './components/UnifiedSettingsPanel'
-import CollaborationPanel from './components/collaboration'
 import { setModelsDirectory } from './services/modelDownloadService'
 import { logger } from './utils/logger'
+
+// Heavy components loaded on-demand
+const ExtensionManager = lazy(() => import('./components/extensions').then(m => ({ default: m.ExtensionManager })))
+const DebuggerManager = lazy(() => import('./components/extensions').then(m => ({ default: m.DebuggerManager })))
+const UnifiedSettingsPanel = lazy(() => import('./components/UnifiedSettingsPanel'))
+const CollaborationPanel = lazy(() => import('./components/collaboration'))
 
 type Tab = 'editor' | 'tasks' | 'files' | 'history'
 
@@ -25,6 +29,7 @@ import './styles/window-animations.css'
 function App() {
   const { currentSpace, initialize, _hasHydrated, startupStatus, showSettings, setShowSettings } = useAppStore()
   const { initialize: initializeUpdates } = useUpdateStore()
+  usePerformanceAcceleration()
   const isWebMode = !window.electronAPI || (window as any).electronAPI?.platform === 'browser'
   const [isLoading, setIsLoading] = useState(!isWebMode)
   const [isSplashComplete, setIsSplashComplete] = useState(isWebMode)
@@ -201,18 +206,21 @@ function App() {
         `}</style>
         <NotificationSystem />
         <UpdateModal />
-        {showExtensions && (
-          <ExtensionManager onClose={() => setShowExtensions(false)} />
-        )}
-        {showSettings && (
-          <UnifiedSettingsPanel onClose={() => setShowSettings(false)} />
-        )}
-        {showCollaboration && (
-          <CollaborationPanel 
-            onClose={() => setShowCollaboration(false)} 
-            spaceId={currentSpace?.id} 
-          />
-        )}
+        <Suspense fallback={null}>
+          <DebuggerManager />
+          {showExtensions && (
+            <ExtensionManager onClose={() => setShowExtensions(false)} />
+          )}
+          {showSettings && (
+            <UnifiedSettingsPanel onClose={() => setShowSettings(false)} />
+          )}
+          {showCollaboration && (
+            <CollaborationPanel 
+              onClose={() => setShowCollaboration(false)} 
+              spaceId={currentSpace?.id} 
+            />
+          )}
+        </Suspense>
       </div>
     </EncryptionProvider>
   )

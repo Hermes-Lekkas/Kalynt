@@ -14,6 +14,7 @@ import {
     FolderOpen, Wand2, Puzzle
 } from 'lucide-react'
 import { ExtensionManager } from '../extensions'
+import { useAppStore } from '../../stores/appStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { logger } from '../../utils/logger'
 import { validatePath } from '../../utils/path-validator'
@@ -66,6 +67,7 @@ const STORAGE_KEYS = {
 }
 
 export default function IDEWorkspace() {
+    const { setShowSettings } = useAppStore()
     // Workspace state with persistence
     const [workspacePath, setWorkspacePath] = useState<string | null>(() => {
         try {
@@ -141,6 +143,8 @@ export default function IDEWorkspace() {
     // SECURITY FIX: Store cleanup functions to prevent event listener leaks
     const codeListenersCleanupRef = useRef<(() => void)[]>([])
     const [codeOutput, setCodeOutput] = useState<string>('') // For code execution output display
+    const [buildOutput, setBuildOutput] = useState<string>('')
+    const [debugOutput, setDebugOutput] = useState<string>('')
     const [isDebugging, setIsDebugging] = useState(false)
     const debugSessionIdRef = useRef<string | null>(null)
     const [isBuilding, setIsBuilding] = useState(false)
@@ -238,6 +242,26 @@ export default function IDEWorkspace() {
             return true
         }
     })
+
+    const [performanceOptions, setPerformanceOptions] = useState<any>({})
+
+    useEffect(() => {
+        const handleOptimize = (e: Event) => {
+            const detail = (e as CustomEvent).detail
+            setPerformanceOptions(detail)
+        }
+        window.addEventListener('kalynt-monaco-optimize', handleOptimize)
+        
+        // Load from localStorage if present
+        const saved = localStorage.getItem('kalynt-monaco-optimization')
+        if (saved) {
+            try {
+                setPerformanceOptions(JSON.parse(saved))
+            } catch (e) {}
+        }
+
+        return () => window.removeEventListener('kalynt-monaco-optimize', handleOptimize)
+    }, [])
 
     const editorRef = useRef<ICodeEditor | null>(null)
     const secondaryEditorRef = useRef<ICodeEditor | null>(null)
@@ -731,6 +755,12 @@ export default function IDEWorkspace() {
         }
     }
 
+    const handleOutputInput = useCallback((data: string) => {
+        if (executionIdRef.current) {
+            window.electronAPI?.ipcRenderer.invoke('code:write-input', executionIdRef.current, data)
+        }
+    }, [])
+
     const handleDebugCode = useCallback(async () => {
         if (!activeFileObj || !workspacePath || !activeFile) return
 
@@ -741,6 +771,8 @@ export default function IDEWorkspace() {
         if (!showTerminal) {
             setShowTerminal(true)
         }
+
+        setDebugOutput('')
 
         try {
             // Get debug configurations
@@ -861,6 +893,8 @@ export default function IDEWorkspace() {
             setShowTerminal(true)
         }
 
+        setBuildOutput('')
+
         try {
             // Get available tasks
             const tasksResult = await window.electronAPI?.build.getTasks(workspacePath)
@@ -973,8 +1007,11 @@ export default function IDEWorkspace() {
 
     // Build event listeners
     useEffect(() => {
-        const removeOutputListener = window.electronAPI?.build.onOutput((data: { type: string }) => {
-            // Output is automatically routed to terminal
+        const removeOutputListener = window.electronAPI?.build.onOutput((data: any) => {
+            if (data) {
+                const text = data.data || data.output || (typeof data === 'string' ? data : JSON.stringify(data))
+                setBuildOutput(prev => prev + text)
+            }
             if (data.type === 'end') {
                 setIsBuilding(false)
                 buildTaskIdRef.current = null
@@ -1007,27 +1044,36 @@ export default function IDEWorkspace() {
         })
 
         const removeStoppedListener = window.electronAPI?.debug.onStopped(() => {
-            writeToActiveTerminal(`\r\n\x1b[33m⏸ Debugger paused\x1b[0m\r\n`)
+            setDebugOutput(prev => prev + `\r\n\x1b[33m⏸ Debugger paused\x1b[0m\r\n`)
         })
 
         const removeTerminatedListener = window.electronAPI?.debug.onTerminated(() => {
             setIsDebugging(false)
             debugSessionIdRef.current = null
 
-            writeToActiveTerminal(`\r\n\x1b[36m✓ Debug session terminated\x1b[0m\r\n`)
+            setDebugOutput(prev => prev + `\r\n\x1b[36m✓ Debug session terminated\x1b[0m\r\n`)
             addNotification('Debug session ended', 'info')
         })
 
-        const removeOutputListener = window.electronAPI?.debug.onOutput((data: { data?: string }) => {
-            if (data.data) {
-                writeToActiveTerminal(data.data)
+        const removeOutputListener = window.electronAPI?.debug.onOutput((data: any) => {
+            if (data) {
+                // Extract text from 'output' (DAP standard) or 'data' (custom)
+                const text = data.output || data.data || (typeof data === 'string' ? data : JSON.stringify(data))
+                setDebugOutput(prev => prev + text)
             }
         })
 
         const removeErrorListener = window.electronAPI?.debug.onError((data: { error: string }) => {
-            addNotification(`Debug error: ${data.error}`, 'error')
+            const errorText = typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
+            addNotification(`Debug error: ${errorText}`, 'error')
+            setDebugOutput(prev => prev + `\r\n\x1b[31mError: ${errorText}\x1b[0m\r\n`)
             setIsDebugging(false)
             debugSessionIdRef.current = null
+        })
+
+        const removeMissingAdapterListener = window.electronAPI?.debug.onAdapterMissing((data: { type: string, requiredBinary: string, installInstructions: string }) => {
+            addNotification(`Debugger Missing: ${data.requiredBinary}`, 'warning')
+            setDebugOutput(prev => prev + `\r\n\x1b[33mWarning: Debug adapter '${data.requiredBinary}' not found.\x1b[0m\r\n\x1b[36m${data.installInstructions}\x1b[0m\r\n`)
         })
 
         return () => {
@@ -1036,6 +1082,7 @@ export default function IDEWorkspace() {
             removeTerminatedListener?.()
             removeOutputListener?.()
             removeErrorListener?.()
+            removeMissingAdapterListener?.()
         }
     }, [addNotification])
 
@@ -1091,7 +1138,8 @@ export default function IDEWorkspace() {
             gitPull: async () => { if (workspacePath) await globalThis.window.electronAPI?.git.pull(workspacePath) },
             aiChat: () => setAgentOpen(true),
             aiExplain: () => setAgentOpen(true),
-            aiRefactor: () => { } // Handled via Inline AI tool
+            aiRefactor: () => { }, // Handled via Inline AI tool
+            openSettings: () => setShowSettings(true)
         })
         
         // Add extension command
@@ -1109,35 +1157,79 @@ export default function IDEWorkspace() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSaveFile() }
-            if ((e.ctrlKey || e.metaKey) && e.key === 'w') { e.preventDefault(); if (activeFile) handleCloseFile(activeFile) }
-            if ((e.ctrlKey || e.metaKey) && e.key === 'p' && !e.shiftKey) { e.preventDefault(); setPaletteMode('files'); setPaletteOpen(true) }
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') { e.preventDefault(); setPaletteMode('commands'); setPaletteOpen(true) }
-            if (e.key === 'F1') { e.preventDefault(); setPaletteMode('commands'); setPaletteOpen(true) }
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') { e.preventDefault(); setActivePanel('search') }
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'X') { e.preventDefault(); setShowExtensions(true) }
-            if ((e.ctrlKey || e.metaKey) && e.key === '`') { e.preventDefault(); setShowTerminal(prev => !prev) }
+            const isMod = e.ctrlKey || e.metaKey
+            const isShift = e.shiftKey
+            const isAlt = e.altKey
+            const key = e.key.toLowerCase()
+
+            // File Operations
+            if (isMod && key === 's') { e.preventDefault(); handleSaveFile() }
+            if (isMod && key === 'n' && !isShift) { e.preventDefault(); handleNewFile() }
+            if (isMod && key === 'w' && !isShift) { e.preventDefault(); if (activeFile) handleCloseFile(activeFile) }
+            if (isMod && isShift && key === 'w') { e.preventDefault(); setOpenFiles([]); setActiveFile(null) }
+            if (isMod && key === 'o' && !isShift) { e.preventDefault(); handleOpenFolder() }
+
+            // Navigation & UI
+            if (isMod && key === 'p' && !isShift) { e.preventDefault(); setPaletteMode('files'); setPaletteOpen(true) }
+            if (isMod && isShift && key === 'p') { e.preventDefault(); setPaletteMode('commands'); setPaletteOpen(true) }
+            if (key === 'f1') { e.preventDefault(); setPaletteMode('commands'); setPaletteOpen(true) }
+            if (isMod && key === 'b' && !isShift) { e.preventDefault(); setSidebarOpen(prev => !prev) }
+            if (isMod && isShift && key === 'f') { e.preventDefault(); setActivePanel('search') }
+            if (isMod && isShift && key === 'g') { e.preventDefault(); setActivePanel('git') }
+            if (isMod && key === 'g' && !isShift) { e.preventDefault(); editorRef.current?.getAction('editor.action.gotoLine')?.run() }
+            if (isMod && isShift && key === 'x') { e.preventDefault(); setShowExtensions(true) }
+            if (isMod && key === '`') { e.preventDefault(); setShowTerminal(prev => !prev) }
+            if (isMod && key === '\\') { e.preventDefault(); handleToggleSplitEditor() }
+            if (isMod && key === ',') { e.preventDefault(); setShowSettings(true) }
+            
+            // Tab Navigation
+            if (isMod && key === 'tab' && !isShift) {
+                e.preventDefault()
+                if (openFiles.length > 1) {
+                    const currentIndex = openFiles.findIndex(f => f.path === activeFile)
+                    const nextIndex = (currentIndex + 1) % openFiles.length
+                    setActiveFile(openFiles[nextIndex].path)
+                }
+            }
+            if (isMod && isShift && key === 'tab') {
+                e.preventDefault()
+                if (openFiles.length > 1) {
+                    const currentIndex = openFiles.findIndex(f => f.path === activeFile)
+                    const prevIndex = (currentIndex - 1 + openFiles.length) % openFiles.length
+                    setActiveFile(openFiles[prevIndex].path)
+                }
+            }
+            
+            // AI Shortcuts
+            if (isMod && key === 'l') { e.preventDefault(); setAgentOpen(true) }
+            if (isMod && key === 'k' && !isShift) { e.preventDefault(); setAgentOpen(true) }
+            if (isMod && isShift && key === 'a') { e.preventDefault(); setAgentOpen(prev => !prev) }
+
+            // Editing
+            if (isShift && isAlt && key === 'f') { e.preventDefault(); editorRef.current?.getAction('editor.action.formatDocument')?.run() }
+
             // Run/Debug/Build shortcuts
-            if (e.key === 'F5' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+            if (key === 'f5' && !isShift && !isMod) {
                 e.preventDefault()
                 if (isDebugging) handleDebugContinue()
                 else if (isRunning) handleStopCode()
                 else handleRunCode()
             }
-            if (e.shiftKey && e.key === 'F5') { e.preventDefault(); handleStopDebug() }
-            if (e.key === 'F9') { e.preventDefault(); if (isDebugging) handleStopDebug(); else handleDebugCode() }
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'B') { e.preventDefault(); if (isBuilding) handleStopBuild(); else handleBuildCode() }
+            if (isShift && key === 'f5') { e.preventDefault(); handleStopDebug() }
+            if (key === 'f9') { e.preventDefault(); if (isDebugging) handleStopDebug(); else handleDebugCode() }
+            if (isMod && isShift && key === 'b') { e.preventDefault(); if (isBuilding) handleStopBuild(); else handleBuildCode() }
+            
             // Debug step shortcuts (only when debugging)
             if (isDebugging) {
-                if (e.key === 'F10' && !e.shiftKey) { e.preventDefault(); handleDebugStepOver() }
-                if (e.key === 'F11' && !e.shiftKey) { e.preventDefault(); handleDebugStepInto() }
-                if (e.shiftKey && e.key === 'F11') { e.preventDefault(); handleDebugStepOut() }
-                if (e.key === 'F6') { e.preventDefault(); handleDebugPause() }
+                if (key === 'f10' && !isShift) { e.preventDefault(); handleDebugStepOver() }
+                if (key === 'f11' && !isShift) { e.preventDefault(); handleDebugStepInto() }
+                if (isShift && key === 'f11') { e.preventDefault(); handleDebugStepOut() }
+                if (key === 'f6') { e.preventDefault(); handleDebugPause() }
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [activeFile, openFiles, handleSaveFile, handleCloseFile, handleRunCode, handleStopCode, isRunning, handleDebugCode, handleStopDebug, isDebugging, handleBuildCode, handleStopBuild, isBuilding, handleDebugContinue, handleDebugStepOver, handleDebugStepInto, handleDebugStepOut, handleDebugPause])
+    }, [activeFile, openFiles, handleSaveFile, handleNewFile, handleOpenFolder, handleCloseFile, handleRunCode, handleStopCode, isRunning, handleDebugCode, handleStopDebug, isDebugging, handleBuildCode, handleStopBuild, isBuilding, handleDebugContinue, handleDebugStepOver, handleDebugStepInto, handleDebugStepOut, handleDebugPause])
 
     useEffect(() => {
         if (activeFile && pendingLine && editorRef.current) {
@@ -1390,7 +1482,7 @@ export default function IDEWorkspace() {
                                         options={{
                                             fontSize: 14,
                                             fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-                                            minimap: { enabled: minimapEnabled, scale: 1 },
+                                            minimap: { enabled: performanceOptions.minimap?.enabled ?? minimapEnabled, scale: 1 },
                                             scrollBeyondLastLine: false,
                                             automaticLayout: true,
                                             tabSize: 2,
@@ -1403,7 +1495,8 @@ export default function IDEWorkspace() {
                                             smoothScrolling: true,
                                             inlineSuggest: { enabled: true },
                                             quickSuggestions: true,
-                                            suggestOnTriggerCharacters: true
+                                            suggestOnTriggerCharacters: true,
+                                            ...performanceOptions
                                         }}
                                     />
                                 </div>
@@ -1447,7 +1540,7 @@ export default function IDEWorkspace() {
                                                 options={{
                                                     fontSize: 14,
                                                     fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-                                                    minimap: { enabled: minimapEnabled, scale: 1 },
+                                                    minimap: { enabled: performanceOptions.minimap?.enabled ?? minimapEnabled, scale: 1 },
                                                     scrollBeyondLastLine: false,
                                                     automaticLayout: true,
                                                     tabSize: 2,
@@ -1460,7 +1553,8 @@ export default function IDEWorkspace() {
                                                     smoothScrolling: true,
                                                     inlineSuggest: { enabled: true },
                                                     quickSuggestions: true,
-                                                    suggestOnTriggerCharacters: true
+                                                    suggestOnTriggerCharacters: true,
+                                                    ...performanceOptions
                                                 }}
                                             />
                                         </div>
@@ -1494,8 +1588,13 @@ export default function IDEWorkspace() {
                     setTerminalHeight={setTerminalHeight}
                     workspacePath={workspacePath}
                     codeOutput={codeOutput}
+                    buildOutput={buildOutput}
+                    debugOutput={debugOutput}
                     isRunning={isRunning}
+                    isBuilding={isBuilding}
+                    isDebugging={isDebugging}
                     onActiveTerminalChange={setActiveTerminalId}
+                    onOutputInput={handleOutputInput}
                 />
             </main>
 

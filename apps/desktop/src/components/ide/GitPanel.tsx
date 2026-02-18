@@ -284,7 +284,12 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
                 addNotification('Pushed successfully', 'success')
                 await fetchStatus()
             } else {
-                setError(result?.error || 'Push failed')
+                const errorMsg = result?.error || 'Push failed'
+                if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('authentication failed')) {
+                    addNotification('GitHub Authentication Failed. Please check your token in Settings > Security.', 'error')
+                } else {
+                    setError(errorMsg)
+                }
             }
         } catch (err) {
             setError('Failed to push')
@@ -302,7 +307,12 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
                 addNotification('Pulled successfully', 'success')
                 await fetchStatus()
             } else {
-                setError(result?.error || 'Pull failed')
+                const errorMsg = result?.error || 'Pull failed'
+                if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('authentication failed')) {
+                    addNotification('GitHub Authentication Failed. Please check your token in Settings > Security.', 'error')
+                } else {
+                    setError(errorMsg)
+                }
             }
         } catch (err) {
             setError('Failed to pull')

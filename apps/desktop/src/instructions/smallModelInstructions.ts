@@ -34,8 +34,8 @@ const SMALL_MODEL_TOOLS: ToolDefinition[] = [
             { name: 'path', type: 'string', description: 'File path to read', required: true }
         ],
         examples: [
-            '{"tool": "readFile", "params": {"path": "src/index.ts"}}',
-            '{"tool": "readFile", "params": {"path": "package.json"}}'
+            '{"name": "readFile", "params": {"path": "src/index.ts"}}',
+            '{"name": "readFile", "params": {"path": "package.json"}}'
         ]
     },
     {
@@ -45,8 +45,8 @@ const SMALL_MODEL_TOOLS: ToolDefinition[] = [
             { name: 'path', type: 'string', description: 'Directory path', required: true }
         ],
         examples: [
-            '{"tool": "listDirectory", "params": {"path": "src"}}',
-            '{"tool": "listDirectory", "params": {"path": "."}}'
+            '{"name": "listDirectory", "params": {"path": "src"}}',
+            '{"name": "listDirectory", "params": {"path": "."}}'
         ]
     }
 ]
@@ -91,8 +91,8 @@ ${toolsSection}
 
 HOW TO USE TOOLS:
 When you need to read a file or list a directory, respond with ONLY JSON:
-{"tool": "readFile", "params": {"path": "filename.ts"}}
-{"tool": "listDirectory", "params": {"path": "src"}}
+{"name": "readFile", "params": {"path": "filename.ts"}}
+{"name": "listDirectory", "params": {"path": "src"}}
 
 After you use a tool, you will receive the result. Then explain what you found to the user.
 ` : ''}
@@ -109,13 +109,13 @@ User: "hey"
 You: Hello! How can I help you with your code today?
 
 User: "what files are in src?"
-You: {"tool": "listDirectory", "params": {"path": "src"}}
+You: {"name": "listDirectory", "params": {"path": "src"}}
 
 User: "read package.json"
-You: {"tool": "readFile", "params": {"path": "package.json"}}
+You: {"name": "readFile", "params": {"path": "package.json"}}
 
 User: "show me the main.ts file"
-You: {"tool": "readFile", "params": {"path": "main.ts"}}
+You: {"name": "readFile", "params": {"path": "main.ts"}}
 
 User: "can you edit this file?"
 You: I can only read files, not edit them. However, I can suggest what changes you should make. What would you like to modify?

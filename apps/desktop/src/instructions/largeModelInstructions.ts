@@ -68,7 +68,7 @@ You have access to the following tools to interact with the IDE:
 ${toolsDescription}
 
 To call a tool, use action "tool-call" with payload containing "tool" and "params".
-Example: {"action": "tool-call", "target": "file-system", "payload": {"tool": "searchRelevantContext", "params": {"query": "auth logic"}}}
+Example: {"action": "tool-call", "target": "file-system", "payload": {"name": "searchRelevantContext", "params": {"query": "auth logic"}}}
 ` : 'Tool usage is disabled for this session.'}
 
 ## Response Format
@@ -94,7 +94,7 @@ Respond with valid JSON in this structure:
 - **suggest**: { "message": "detailed advice", "category": "bug|performance|security|refactor|improvement" }
 - **edit**: { "content": "code to add", "position": "append|prepend|replace" }
 - **create-task**: { "title": "task description", "status": "todo", "priority": "low|medium|high" }
-- **tool-call**: { "tool": "toolName", "params": { ... } }
+- **tool-call**: { "name": "toolName", "params": { ... } }
 - **comment**: { "content": "comment text", "position": lineNumber }
 - **organize**: { "sections": [{ "title": "...", "content": "..." }] }
 

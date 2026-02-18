@@ -21,11 +21,13 @@
 import { logger } from '../utils/logger'
 import { aiService, AIProvider, AIMessage } from './aiService'
 import { offlineLLMService, ChatMessage as OfflineChatMessage } from './offlineLLMService'
-import { executeTool, getToolCallJsonSchema, getSimplifiedToolSchema, getModelSizeCategory, stopActiveTool, type ToolContext, ideTools } from './ideAgentTools'
+import { executeTool, getToolCallJsonSchema, getSimplifiedToolSchema, getModelSizeCategory, stopActiveTool, type ToolContext } from './ideAgentTools'
 import { aimeService } from './aimeService'
 import { shadowWorkspaceService } from './shadowWorkspaceService'
 import { useModelStore } from '../stores/modelStore'
 import { estimateTokens, truncateToTokens } from '../utils/tokenCounter'
+import { detectModelTier } from '../instructions'
+import { buildAgentLoopSystemPrompt } from '../instructions/agentLoopInstructions'
 import {
     AgentStep,
     AgentPlan,
@@ -39,14 +41,25 @@ type EventListener = (event: AgentLoopEvent) => void
 
 /**
  * Parse tool calls from LLM response.
- * Supports multiple formats: JSON, markdown, XML, Qwen, Hermes.
+ * Standardized on JSON format within ```tool code blocks.
  */
 function parseToolCalls(response: string): Array<{ name: string; params: Record<string, unknown> }> {
     const calls: Array<{ name: string; params: Record<string, unknown> }> = []
     let match: RegExpExecArray | null
 
-    // Strategy 1 (PRIMARY - XML Protocol): <tool_code> XML tags
-    // This is the preferred format for 7B models - no JSON escaping needed
+    // Strategy 1 (Standard): Markdown code block ```tool (JSON inside)
+    const toolBlockPattern = /```tool\s*\n?({[\s\S]*?})\n?```/gi
+    while ((match = toolBlockPattern.exec(response)) !== null) {
+        try {
+            const parsed = JSON.parse(match[1])
+            if (parsed.name && parsed.params) {
+                calls.push({ name: parsed.name, params: parsed.params })
+            }
+        } catch { /* skip invalid JSON */ }
+    }
+    if (calls.length > 0) return calls
+
+    // Strategy 2 (Fallback): XML <tool_code> XML tags
     const toolCodePattern = /<tool_code>([\s\S]*?)<\/tool_code>/gi
     while ((match = toolCodePattern.exec(response)) !== null) {
         try {
@@ -55,89 +68,45 @@ function parseToolCalls(response: string): Array<{ name: string; params: Record<
             if (nameMatch) {
                 const toolName = nameMatch[1].trim()
                 const params: Record<string, unknown> = {}
-                // Extract all XML child tags as parameters (skip <name>)
                 const paramRegex = /<(\w+)>([\s\S]*?)<\/\1>/gi
                 let paramMatch: RegExpExecArray | null
                 while ((paramMatch = paramRegex.exec(content)) !== null) {
                     const tagName = paramMatch[1].toLowerCase()
                     if (tagName !== 'name') {
-                        // Auto-detect booleans and numbers
-                        const val = paramMatch[2]
+                        const val = paramMatch[2].trim()
                         if (val === 'true') params[paramMatch[1]] = true
                         else if (val === 'false') params[paramMatch[1]] = false
-                        else if (/^\d+$/.test(val.trim())) params[paramMatch[1]] = parseInt(val.trim())
+                        else if (/^\d+$/.test(val)) params[paramMatch[1]] = parseInt(val)
                         else params[paramMatch[1]] = val
                     }
                 }
                 calls.push({ name: toolName, params })
             }
-        } catch { /* skip malformed XML */ }
-    }
-    if (calls.length > 0) return calls
-
-    // Strategy 2: Markdown code block ```tool (JSON inside)
-    const toolBlockPattern = /```tool\s*\n?({[\s\S]*?})\n?```/gi
-    while ((match = toolBlockPattern.exec(response)) !== null) {
-        try {
-            const parsed = JSON.parse(match[1])
-            if (parsed.name && parsed.params) calls.push(parsed)
-        } catch { /* skip invalid JSON */ }
-    }
-    if (calls.length > 0) return calls
-
-    // Strategy 3: XML <tool> tags (JSON inside)
-    const xmlPattern = /<tool>\s*({[\s\S]*?})\s*<\/tool>/gi
-    while ((match = xmlPattern.exec(response)) !== null) {
-        try {
-            const parsed = JSON.parse(match[1])
-            if (parsed.name && parsed.params) calls.push(parsed)
         } catch { /* skip */ }
     }
     if (calls.length > 0) return calls
 
-    // Strategy 4: JSON code block ```json
-    const jsonBlockPattern = /```json\s*\n?({[\s\S]*?"name"\s*:[\s\S]*?"params"\s*:[\s\S]*?})\n?```/gi
-    while ((match = jsonBlockPattern.exec(response)) !== null) {
-        try {
-            const parsed = JSON.parse(match[1])
-            if (parsed.name && parsed.params) calls.push(parsed)
-        } catch { /* skip */ }
-    }
-    if (calls.length > 0) return calls
-
-    // Strategy 5: Qwen <tool_call> format
-    const qwenPattern = /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/gi
-    while ((match = qwenPattern.exec(response)) !== null) {
-        try {
-            const parsed = JSON.parse(match[1])
-            if (parsed.name && parsed.params) calls.push(parsed)
-        } catch { /* skip */ }
-    }
-    if (calls.length > 0) return calls
-
-    // Strategy 6: Hermes <function=name> format
-    const hermesPattern = /<function=(\w+)>([\s\S]*?)<\/function>/gi
-    while ((match = hermesPattern.exec(response)) !== null) {
-        try {
-            calls.push({ name: match[1], params: JSON.parse(match[2]) })
-        } catch { /* skip */ }
-    }
-    if (calls.length > 0) return calls
-
-    // Strategy 7: Direct JSON { "name": "...", "params": {...} }
-    const jsonStartPattern = /\{\s*"name"\s*:/g
+    // Strategy 3 (Aggressive Fallback): Find any JSON object that looks like a tool call
+    const jsonStartPattern = /\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"params"\s*:/g
     while ((match = jsonStartPattern.exec(response)) !== null) {
         const jsonCandidate = response.substring(match.index)
-        let endPos = jsonCandidate.lastIndexOf('}')
-        while (endPos > 10) {
-            try {
-                const parsed = JSON.parse(jsonCandidate.substring(0, endPos + 1))
-                if (parsed.name && parsed.params) {
-                    calls.push(parsed)
-                    break
+        let endPos = jsonCandidate.indexOf('}')
+        // Try to find the matching closing brace
+        let braceCount = 0
+        for (let i = 0; i < jsonCandidate.length; i++) {
+            if (jsonCandidate[i] === '{') braceCount++
+            else if (jsonCandidate[i] === '}') {
+                braceCount--
+                if (braceCount === 0) {
+                    try {
+                        const parsed = JSON.parse(jsonCandidate.substring(0, i + 1))
+                        if (parsed.name && parsed.params) {
+                            calls.push({ name: parsed.name, params: parsed.params })
+                            break
+                        }
+                    } catch { /* try next */ }
                 }
-            } catch { /* try next */ }
-            endPos = jsonCandidate.lastIndexOf('}', endPos - 1)
+            }
         }
     }
 
@@ -149,19 +118,19 @@ function parseToolCalls(response: string): Array<{ name: string; params: Record<
  */
 function extractCleanContent(response: string): string {
     return response
-        // Remove thinking tags
+        // Remove thinking tags and their content
         .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-        // Remove XML tool_code blocks (primary XML protocol)
-        .replace(/<tool_code>[\s\S]*?<\/tool_code>/gi, '')
-        // Remove tool blocks
+        // Remove standardized tool code blocks
         .replace(/```tool[\s\S]*?```/gi, '')
-        .replace(/```json\s*\n?\{[\s\S]*?"name"[\s\S]*?\}\n?```/gi, '')
-        .replace(/<tool>[\s\S]*?<\/tool>/gi, '')
-        .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-        .replace(/<function=\w+>[\s\S]*?<\/function>/gi, '')
-        // Remove direct JSON tool calls
-        .replace(/\{\s*"name"\s*:\s*"(?:readFile|writeFile|listDirectory|createFile|createDirectory|delete|executeCode|runFile|runCommand|gitStatus|searchFiles|searchRelevantContext|getFileTree|replaceInFile|insertAtLine|fileStats|fuzzyReplace|gitDiff|gitLog|gitCommit|gitAdd|getDiagnostics)"[\s\S]*?\}/g, '')
+        // Remove loose JSON tool calls ONLY if they are the entire response or at the end
+        // This is tricky - we don't want to remove random JSON in text
+        // But we want to remove the tool call JSON.
+        // If we used grammar, it's mostly in the ```tool block anyway.
+        
+        // Remove other specific formats if they leak
+        .replace(/<tool_code>[\s\S]*?<\/tool_code>/gi, '')
+        
         // Remove special tokens
         .replace(/<\|im_end\|>/g, '')
         .replace(/<\|im_start\|>/g, '')
@@ -173,7 +142,6 @@ function extractCleanContent(response: string): string {
         // Remove role markers
         .replace(/\n?(user|assistant|system)\s*$/gi, '')
         // Clean whitespace
-        .replace(/\n{3,}/g, '\n\n')
         .trim()
 }
 
@@ -204,7 +172,7 @@ function extractPlan(response: string): AgentPlan | null {
                 title: parsed.title,
                 steps: parsed.steps.map((s: any) => ({
                     description: s.description || s,
-                    tool: s.tool,
+                    name: s.tool || s.name,
                     status: 'pending' as const
                 })),
                 status: 'proposed',
@@ -301,7 +269,7 @@ class AgentLoopService {
     async run(
         userMessage: string,
         chatHistory: Array<{ role: string; content: string }> = [],
-        options?: Partial<AgentLoopConfig>
+        options?: Partial<AgentLoopConfig> & { systemPrompt?: string }
     ): Promise<string> {
         if (this.state?.isRunning) {
             throw new Error('Agent loop is already running')
@@ -343,8 +311,8 @@ class AgentLoopService {
                 }
             }
 
-            // 2. Build system prompt
-            const systemPrompt = this.buildSystemPrompt(ragContext, runConfig)
+            // 2. Build system prompt (or use override)
+            const systemPrompt = options?.systemPrompt || this.buildSystemPrompt(ragContext, runConfig)
 
             // 3. Build conversation history
             const contextWindow = this.useOfflineAI 
@@ -417,20 +385,22 @@ class AgentLoopService {
 
                 // Parse tool calls
                 const toolCalls = parseToolCalls(response)
+                const cleanText = extractCleanContent(response)
 
                 if (toolCalls.length === 0) {
                     // No tool calls - this is the final answer
-                    finalResponse = extractCleanContent(response)
+                    finalResponse = cleanText
                     if (finalResponse) {
                         this.addStep({ type: 'answer', content: finalResponse })
                     }
                     break
                 }
 
-                // Add thinking step for the reasoning part of the response
-                const cleanText = extractCleanContent(response)
+                // If we have tool calls AND text, show the text as thinking/explanation
                 if (cleanText) {
                     this.addStep({ type: 'thinking', content: cleanText })
+                } else {
+                    this.addStep({ type: 'thinking', content: `Executing ${toolCalls.length} tool(s)...` })
                 }
 
                 // Execute tool calls sequentially
@@ -440,8 +410,8 @@ class AgentLoopService {
                     this.addStep({
                         type: 'tool-call',
                         content: `Calling ${toolCall.name}`,
-                        toolName: toolCall.name,
-                        toolParams: toolCall.params
+                        name: toolCall.name,
+                        params: toolCall.params
                     })
                     this.emit({ type: 'tool-executing', toolName: toolCall.name, params: toolCall.params })
 
@@ -468,9 +438,16 @@ class AgentLoopService {
                         this.addStep({
                             type: 'tool-result',
                             content: resultStr,
-                            toolName: toolCall.name,
-                            toolResult: result.data ?? result.error,
+                            name: toolCall.name,
+                            data: result.data ?? result.error,
                             duration
+                        })
+
+                        this.emit({
+                            type: 'tool-result',
+                            toolName: toolCall.name,
+                            result: result.data ?? result.error,
+                            success: result.success
                         })
 
                         this.emit({
@@ -515,9 +492,10 @@ class AgentLoopService {
                         this.addStep({
                             type: 'error',
                             content: `Tool ${toolCall.name} error: ${errorMsg}`,
-                            toolName: toolCall.name,
+                            name: toolCall.name,
                             duration: Date.now() - stepStart
                         })
+                        this.emit({ type: 'tool-result', toolName: toolCall.name, result: errorMsg, success: false })
                         this.emit({ type: 'tool-complete', toolName: toolCall.name, result: errorMsg, success: false })
 
                         conversationMessages = [
@@ -556,6 +534,20 @@ class AgentLoopService {
             }
             this.abortController = null
         }
+    }
+
+    /**
+     * Get the conversation history from the last run.
+     * Useful for continuation or background analysis.
+     */
+    getMissionHistory(): Array<{ role: string; content: string }> {
+        return this.state?.steps.map(step => {
+            if (step.type === 'thinking') return { role: 'assistant', content: `<think>\n${step.content}\n</think>` }
+            if (step.type === 'tool-call') return { role: 'assistant', content: `{"name": "${step.toolName}", "params": ${JSON.stringify(step.toolParams)}}` }
+            if (step.type === 'tool-result') return { role: 'user', content: `Tool Result: ${JSON.stringify(step.toolResult)}` }
+            if (step.type === 'answer') return { role: 'assistant', content: step.content }
+            return { role: 'user', content: step.content }
+        }) || []
     }
 
     /**
@@ -601,75 +593,13 @@ class AgentLoopService {
             ? useModelStore.getState().loadedModelId
             : null
 
-        const modelSizeCategory = loadedModelId
-            ? getModelSizeCategory(loadedModelId)
-            : 'large'
+        const tier = detectModelTier(
+            loadedModelId,
+            this.cloudProvider,
+            this.useOfflineAI
+        )
 
-        // Base agent identity + capabilities
-        let prompt = `You are Kalynt, an expert AI coding agent inside a professional IDE.
-You can autonomously read, write, and execute code to complete tasks.
-
-WORKSPACE: ${this.workspacePath || 'Not set'}
-
-## YOUR CAPABILITIES
-You have access to powerful IDE tools. Use them to accomplish tasks step by step.
-Think carefully before acting. Read files before modifying them.
-When editing files, prefer precise edits (replaceInFile, fuzzyReplace) over rewriting entire files.
-
-## CRITICAL RULES
-1. ALWAYS read a file before modifying it.
-2. Use relative paths within the workspace.
-3. When modifying code, use replaceInFile or fuzzyReplace for surgical edits.
-4. NEVER truncate or simplify code. Write complete implementations.
-5. After making changes, verify them by reading the modified file.
-6. If a tool fails, try a different approach.
-7. When done, provide a clear summary of what you did.${modelSizeCategory === 'small' ? '\n8. Keep responses concise. Use only one tool per turn.' : ''}
-
-## TOOL CALLING FORMAT
-${this.useOfflineAI ? `When you need to perform an action, respond with XML tags. This avoids JSON escaping issues:
-
-<tool_code>
-    <name>TOOL_NAME</name>
-    <param1>value1</param1>
-    <param2>value2</param2>
-</tool_code>
-
-Example - reading a file:
-<tool_code>
-    <name>readFile</name>
-    <path>src/main.ts</path>
-</tool_code>
-
-Example - writing a file:
-<tool_code>
-    <name>writeFile</name>
-    <path>src/hello.ts</path>
-    <content>
-console.log("Hello, World!");
-    </content>
-</tool_code>
-
-Example - replacing in a file:
-<tool_code>
-    <name>fuzzyReplace</name>
-    <path>src/main.ts</path>
-    <search>const x = 1;</search>
-    <replace>const x = 42;</replace>
-</tool_code>` : `When you need to perform an action, respond with a JSON object:
-
-\`\`\`tool
-{"name": "TOOL_NAME", "params": {"param1": "value1"}}
-\`\`\``}
-
-Call ONE tool at a time. Wait for the result before calling the next tool.
-
-## AVAILABLE TOOLS
-${ideTools.map(tool => {
-            const params = tool.parameters.map(p =>
-                `  - ${p.name} (${p.type}${p.required ? ', REQUIRED' : ''}): ${p.description}`
-            ).join('\n')
-            return `### ${tool.name}\n${tool.description}\nParameters:\n${params}`
-        }).join('\n\n')}`
+        let prompt = buildAgentLoopSystemPrompt(tier, this.workspacePath, ragContext)
 
         // Add plan mode instructions
         if (config.planMode) {
@@ -681,20 +611,12 @@ Before executing any tools, first create a plan:
 {
   "title": "Brief description of the task",
   "steps": [
-    {"description": "Step 1: What to do", "tool": "toolName"},
-    {"description": "Step 2: What to do next", "tool": "toolName"}
+    {"description": "Step 1: What to do", "name": "toolName"},
+    {"description": "Step 2: What to do next", "name": "toolName"}
   ]
 }
 \`\`\`
 Then execute the plan step by step.`
-        }
-
-        // Add RAG context
-        if (ragContext) {
-            prompt += `
-
-## CODEBASE CONTEXT (from AIME indexing)
-${ragContext.slice(0, config.maxRAGContext)}`
         }
 
         return prompt
@@ -784,10 +706,10 @@ ${ragContext.slice(0, config.maxRAGContext)}`
 
         const modelSize = getModelSizeCategory(loadedModelId)
 
-        // For offline, keep conversation short to fit in context
+        // For offline, keep conversation history within context limits but generous enough for reasoning
         const trimmedMessages: OfflineChatMessage[] = [
             messages[0] as OfflineChatMessage, // system prompt
-            ...messages.slice(-4).map(m => ({
+            ...messages.slice(-10).map(m => ({
                 role: m.role as 'system' | 'user' | 'assistant',
                 content: m.content
             }))
@@ -799,13 +721,24 @@ ${ragContext.slice(0, config.maxRAGContext)}`
             maxTokens: 2048
         }
 
-        // Detect if this might be a tool-using turn
+        // Detect if this might be a tool-using turn or if we should allow natural text
         const lastMsg = messages[messages.length - 1]
+        const lastContent = lastMsg?.content?.toLowerCase() || ''
+        
+        // Conversational triggers - if these are present, DON'T force JSON
+        const isConversational = 
+            lastContent.length < 15 && 
+            (lastContent.includes('hi') || 
+             lastContent.includes('hello') || 
+             lastContent.includes('hey') || 
+             lastContent.includes('how are') ||
+             lastContent.includes('who are'))
+
         const isToolTurn = lastMsg?.content?.includes('Tool ') ||
             lastMsg?.content?.includes('Continue with') ||
             lastMsg?.content?.includes('TOOL_NAME')
 
-        if (isToolTurn || modelSize === 'small') {
+        if ((isToolTurn || modelSize === 'small') && !isConversational) {
             options.jsonSchema = modelSize === 'small'
                 ? getSimplifiedToolSchema()
                 : getToolCallJsonSchema()

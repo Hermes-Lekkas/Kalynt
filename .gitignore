@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-.agent/
+.agents/skills/
 /video
 
 # Build outputs

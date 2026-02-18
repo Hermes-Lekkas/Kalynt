@@ -4,6 +4,8 @@
 
 import { OfflineModel, getModelById } from '../types/offlineModels'
 import { useModelStore } from '../stores/modelStore'
+import { hardwareService } from './hardwareService'
+import { getModelSizeCategory } from './ideAgentTools'
 
 export interface ChatMessage {
     role: 'system' | 'user' | 'assistant'
@@ -226,6 +228,19 @@ class OfflineLLMService {
                 console.warn('[OfflineLLM] Failed to read AIME configuration:', e)
             }
 
+            // Hardware Auto-Detection: Recommend GPU layers if not explicitly set
+            if (!aimeConfig || aimeConfig.gpuLayers === undefined) {
+                try {
+                    const recommendedLayers = await hardwareService.getRecommendedGPULayers(model.sizeBytes / 1024 / 1024)
+                    if (recommendedLayers > 0) {
+                        console.log('[OfflineLLM] Auto-detected hardware: recommending', recommendedLayers, 'GPU layers')
+                        aimeConfig = { ...aimeConfig, gpuLayers: recommendedLayers }
+                    }
+                } catch (e) {
+                    console.warn('[OfflineLLM] Hardware auto-detection failed:', e)
+                }
+            }
+
             const electronAPI = globalThis.window.electronAPI as any
             const result = await electronAPI.loadModel({
                 modelId,
@@ -243,6 +258,20 @@ class OfflineLLMService {
             this.currentModelId = modelId
             store.setLoadedModel(modelId)
             store.setLoading(false)
+
+            // Automatic Speculative Decoding: Load draft model for large models
+            const modelTier = getModelSizeCategory(modelId)
+            if (modelTier === 'large' || modelTier === 'medium') {
+                const downloadedModels = store.downloadedModels
+                const draftCandidate = Object.keys(downloadedModels).find(id =>
+                    (id.includes('1.5b') || id.includes('1b') || id.includes('tiny')) && id !== modelId
+                )
+
+                if (draftCandidate) {
+                    console.log('[OfflineLLM] Auto-speculation: Loading draft model', draftCandidate)
+                    void this.loadDraftModel(draftCandidate)
+                }
+            }
 
             console.log('[OfflineLLM] Model loaded successfully:', model.name)
             return true

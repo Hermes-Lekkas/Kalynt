@@ -22,6 +22,7 @@ import MemberList from './collaboration/MemberList'
 import MemberDetail from './collaboration/MemberDetail'
 import AIMESettings from './AIMESettings'
 import './UnifiedSettingsPanel.css'
+const PerformanceTab = React.lazy(() => import('./PerformanceTab'))
 import {
   X,
   Eye,
@@ -59,7 +60,7 @@ import {
   Wind
 } from 'lucide-react'
 
-type TabId = 'agents' | 'security' | 'members' | 'advanced' | 'credits' | 'support'
+type TabId = 'agents' | 'security' | 'members' | 'advanced' | 'credits' | 'support' | 'performance'
 
 interface SpaceSettings {
   encryptionEnabled: boolean
@@ -173,6 +174,7 @@ export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: ()
       { id: 'members', label: 'Members', icon: <Users size={16} /> }
     ] : []) as Array<{ id: TabId; label: string; icon: React.ReactNode }>,
     { id: 'advanced', label: 'Advanced', icon: <Brain size={16} /> },
+    { id: 'performance', label: 'Performance', icon: <Zap size={16} /> },
     { id: 'credits', label: 'Credits', icon: <Award size={16} /> },
     { id: 'support', label: 'Support', icon: <HelpCircle size={16} /> }
   ]
@@ -249,6 +251,12 @@ export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: ()
             )}
 
             {activeTab === 'credits' && <CreditsTab />}
+
+            {activeTab === 'performance' && (
+              <React.Suspense fallback={<div className="loading-spinner"><Loader2 size={24} className="animate-spin" /></div>}>
+                <PerformanceTab />
+              </React.Suspense>
+            )}
 
             {activeTab === 'support' && <SupportTab />}
           </div>
