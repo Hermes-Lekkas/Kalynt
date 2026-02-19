@@ -58,7 +58,7 @@ We accept Pull Requests (PRs) :
 *   **Native (macOS)**: Swift native helper improvements (`packages/native-macos`).
 *   **Documentation**: Improving guides and tutorials.
 
-**Files marked with `SPDX-License-Identifier: AGPL-3.0-only` are open for contribution.**
+
 
 ## Submission Guidelines
 
