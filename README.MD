@@ -27,7 +27,7 @@
   ### Dashboard
   ![Dashboard](apps/desktop/public/Kalynt_showcase/Dashboard.png)
 
-  ### Autonomous AI Agent (AIME)
+  ### Artificial Intelligence Memory Engine (AIME)
   ![AIME](apps/desktop/public/Kalynt_showcase/AIME.png)
 
   ### Multi-Agent Workflows
