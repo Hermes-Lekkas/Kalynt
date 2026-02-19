@@ -47,7 +47,7 @@ kalynt/
 
 ## What You Can Contribute To
 
-We accept Pull Requests (PRs) for the **Open Source Core**:
+We accept Pull Requests (PRs) :
 
 *   **UI/UX**: React components, CSS styling, Themes (`apps/desktop/src/components`)
 *   **Utilities**: Helper functions, formatters (`apps/desktop/src/utils`)
