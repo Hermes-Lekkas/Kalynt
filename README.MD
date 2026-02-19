@@ -39,7 +39,7 @@
   ### P2P Collaboration & Team Sync
   ![Team & Collaboration](apps/desktop/public/Kalynt_showcase/Team_and_Collaboration.png)
 
-  ### Smart File Explorer
+  ### Smart P2P File Share
   ![Files](apps/desktop/public/Kalynt_showcase/Files.png)
 
   ### Version History & Diff Viewer
