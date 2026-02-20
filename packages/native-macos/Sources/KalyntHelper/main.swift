@@ -1,5 +1,7 @@
 import Foundation
+import Dispatch
 #if os(macOS)
+import CoreServices
 import CoreML
 import NaturalLanguage
 #endif
