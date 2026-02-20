@@ -17,6 +17,42 @@
 
 ---
 
+<div align="center">
+  <img src="apps/desktop/public/Kalynt_showcase/Editor.png" alt="Kalynt Editor" width="100%" />
+</div>
+
+<details>
+  <summary><b>📷 Click to view more screenshots</b></summary>
+
+  ### Dashboard
+  ![Dashboard](apps/desktop/public/Kalynt_showcase/Dashboard.png)
+
+  ### Autonomous AI Agent (AIME)
+  ![AIME](apps/desktop/public/Kalynt_showcase/AIME.png)
+
+  ### Multi-Agent Workflows
+  ![Agents](apps/desktop/public/Kalynt_showcase/Agents.png)
+
+  ### Project Task Board
+  ![Tasks](apps/desktop/public/Kalynt_showcase/Tasks.png)
+
+  ### P2P Collaboration & Team Sync
+  ![Team & Collaboration](apps/desktop/public/Kalynt_showcase/Team_and_Collaboration.png)
+
+  ### Smart File Explorer
+  ![Files](apps/desktop/public/Kalynt_showcase/Files.png)
+
+  ### Version History & Diff Viewer
+  ![History](apps/desktop/public/Kalynt_showcase/History.png)
+
+  ### Comprehensive Settings & Model Manager
+  ![Settings](apps/desktop/public/Kalynt_showcase/Settings.png)
+
+  ### Built-in Language Support
+  ![Built-in Language Support](apps/desktop/public/Kalynt_showcase/Built_in_language_support.png)
+
+</details>
+
 ## Key Features
 
 ### Autonomous AI Agent (AIME)
