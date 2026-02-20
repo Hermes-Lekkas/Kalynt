@@ -16,13 +16,13 @@ struct JSONRPCRequest: Codable {
 }
 
 struct JSONRPCNotification: Codable {
-    let jsonrpc: String = "2.0"
+    var jsonrpc: String = "2.0"
     let method: String
     let params: [String: AnyCodable]?
 }
 
 struct JSONRPCResponse: Codable {
-    let jsonrpc: String = "2.0"
+    var jsonrpc: String = "2.0"
     let id: Int
     let result: [String: AnyCodable]?
     let error: JSONRPCError?
@@ -103,7 +103,7 @@ class FileWatcher {
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
         )
 
-        FSEventStreamScheduleWithRunLoop(stream!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        FSEventStreamSetDispatchQueue(stream!, DispatchQueue.main)
         FSEventStreamStart(stream!)
     }
 
@@ -227,8 +227,8 @@ class KalyntHelper {
                 handle(request: request)
             }
 
-            // RAM: Compact buffer when it's been over-allocated (> 64KB waste)
-            if buffer.count < 1024 && buffer.capacity > 65536 {
+            // RAM: Compact buffer periodically to release over-allocated memory
+            if buffer.count < 1024 {
                 buffer = Data(buffer)
             }
         }
