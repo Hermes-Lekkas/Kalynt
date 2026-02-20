@@ -108,7 +108,7 @@ export default function UpdateButton() {
                     font-size: var(--text-xs);
                     font-weight: var(--font-semibold);
                     background: var(--color-glass);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border: 1px solid var(--color-border);
                     border-radius: var(--radius-pill);
                     cursor: pointer;
                     transition: all var(--transition-base);
@@ -125,7 +125,7 @@ export default function UpdateButton() {
                     background: var(--color-glass-hover);
                     border-color: var(--color-accent);
                     transform: translateY(-1px);
-                    box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+                    box-shadow: 0 0 15px var(--color-glass);
                 }
 
                 .update-button:not(:disabled):active {
@@ -149,40 +149,31 @@ export default function UpdateButton() {
                 }
 
                 .status-available {
-                    border-color: rgba(34, 197, 94, 0.3);
+                    border-color: #22c55e;
                 }
 
                 .status-available .update-text {
-                    background: linear-gradient(135deg, #22c55e, #10b981);
-                    -webkit-background-clip: text;
-                    background-clip: text;
-                    -webkit-text-fill-color: transparent;
+                    color: #22c55e;
                 }
 
                 .status-downloading {
-                    border-color: rgba(59, 130, 246, 0.3);
+                    border-color: var(--color-accent);
                 }
 
                 .status-downloading .update-text {
-                    background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-middle));
-                    -webkit-background-clip: text;
-                    background-clip: text;
-                    -webkit-text-fill-color: transparent;
+                    color: var(--color-accent);
                 }
 
                 .status-downloaded {
-                    border-color: rgba(34, 197, 94, 0.4);
+                    border-color: #10b981;
                 }
 
                 .status-downloaded .update-text {
-                    background: linear-gradient(135deg, #22c55e, #10b981);
-                    -webkit-background-clip: text;
-                    background-clip: text;
-                    -webkit-text-fill-color: transparent;
+                    color: #10b981;
                 }
 
                 .status-error {
-                    border-color: rgba(239, 68, 68, 0.3);
+                    border-color: #ef4444;
                 }
 
                 .status-error .update-text {

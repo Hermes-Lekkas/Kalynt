@@ -254,7 +254,7 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
       <style>{`
         .manager-viewport {
           flex: 1;
-          background: #000;
+          background: var(--color-bg);
           position: relative;
           overflow-y: auto;
           display: flex;
@@ -265,8 +265,8 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
           position: absolute;
           inset: 0;
           background: 
-            radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
-            radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
+            radial-gradient(at 0% 0%, var(--color-glass) 0px, transparent 50%),
+            radial-gradient(at 100% 0%, var(--color-glass) 0px, transparent 50%);
           filter: blur(80px);
           pointer-events: none;
         }
@@ -301,8 +301,8 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
           flex: 1;
           max-width: 480px;
           height: 44px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--color-surface-subtle);
+          border: 1px solid var(--color-border);
           border-radius: 12px;
           display: flex;
           align-items: center;
@@ -312,45 +312,45 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
         }
 
         .search-hub:focus-within {
-          background: rgba(255, 255, 255, 0.05);
-          border-color: rgba(59, 130, 246, 0.4);
-          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+          background: var(--color-surface);
+          border-color: var(--color-accent);
+          box-shadow: 0 0 0 4px var(--color-glass);
         }
 
         .search-hub input {
           flex: 1; background: none; border: none; outline: none;
-          color: white; font-size: 14px; font-weight: 500;
+          color: var(--color-text); font-size: 14px; font-weight: 500;
         }
 
         .search-shortcut {
-          font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.2);
-          background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 4px;
+          font-size: 10px; font-weight: 800; color: var(--color-text-muted);
+          background: var(--color-glass); padding: 2px 6px; border-radius: 4px;
         }
 
         .header-actions { display: flex; gap: 12px; }
 
         .btn-glass {
           display: flex; align-items: center; gap: 8px;
-          padding: 0 16px; height: 40px; background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px;
-          color: rgba(255, 255, 255, 0.6); font-size: 13px; font-weight: 700;
+          padding: 0 16px; height: 40px; background: var(--color-glass);
+          border: 1px solid var(--color-border); border-radius: 12px;
+          color: var(--color-text-secondary); font-size: 13px; font-weight: 700;
           transition: all 0.2s;
         }
-        .btn-glass:hover { background: rgba(255, 255, 255, 0.06); color: white; }
+        .btn-glass:hover { background: var(--color-glass-hover); color: var(--color-text); }
 
         .btn-premium {
           display: flex; align-items: center; gap: 8px;
-          padding: 0 20px; height: 40px; background: white;
-          color: black; border-radius: 12px;
+          padding: 0 20px; height: 40px; background: var(--color-text);
+          color: var(--color-bg); border-radius: 12px;
           font-size: 13px; font-weight: 800;
           transition: all 0.2s;
         }
-        .btn-premium:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255, 255, 255, 0.2); }
+        .btn-premium:hover { transform: translateY(-1px); box-shadow: 0 8px 24px var(--color-glass); }
 
         /* Creation Box */
         .inline-creation-box {
-          background: rgba(59, 130, 246, 0.05);
-          border: 1px solid rgba(59, 130, 246, 0.2);
+          background: var(--color-glass);
+          border: 1px solid var(--color-accent-hover);
           border-radius: 20px;
           padding: 24px;
         }
@@ -358,11 +358,11 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
         .creation-content { display: flex; align-items: center; gap: 20px; }
         .creation-content input {
           flex: 1; background: none; border: none; outline: none;
-          color: white; font-size: 20px; font-weight: 700;
+          color: var(--color-text); font-size: 20px; font-weight: 700;
         }
         .creation-actions { display: flex; gap: 12px; }
-        .btn-cancel { font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.4); padding: 8px 16px; border: none; background: none; cursor: pointer; }
-        .btn-confirm { background: #3b82f6; color: white; font-weight: 800; font-size: 13px; padding: 8px 24px; border-radius: 10px; border: none; cursor: pointer; }
+        .btn-cancel { font-size: 13px; font-weight: 700; color: var(--color-text-muted); padding: 8px 16px; border: none; background: none; cursor: pointer; }
+        .btn-confirm { background: var(--color-accent); color: white; font-weight: 800; font-size: 13px; padding: 8px 24px; border-radius: 10px; border: none; cursor: pointer; }
 
         /* Bento Grid */
         .bento-grid {
@@ -372,8 +372,8 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
         }
 
         .bento-card {
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-surface-subtle);
+          border: 1px solid var(--color-border);
           border-radius: 24px;
           padding: 28px;
           position: relative;
@@ -381,27 +381,27 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
         }
 
         .welcome-hero { grid-column: span 1; display: flex; flex-direction: column; justify-content: center; }
-        .card-bg-glow { position: absolute; top: -20%; right: -20%; width: 100px; height: 100px; background: #3b82f6; filter: blur(60px); opacity: 0.2; }
-        .version-tag { font-size: 10px; font-weight: 800; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
-        .welcome-hero h1 { font-size: 28px; font-weight: 800; color: white; margin-bottom: 8px; letter-spacing: -0.02em; }
-        .welcome-hero p { font-size: 13px; color: rgba(255, 255, 255, 0.4); line-height: 1.5; }
+        .card-bg-glow { position: absolute; top: -20%; right: -20%; width: 100px; height: 100px; background: var(--color-accent); filter: blur(60px); opacity: 0.1; }
+        .version-tag { font-size: 10px; font-weight: 800; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
+        .welcome-hero h1 { font-size: 28px; font-weight: 800; color: var(--color-text); margin-bottom: 8px; letter-spacing: -0.02em; }
+        .welcome-hero p { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
 
         .gradient-text { background: linear-gradient(135deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 
-        .status-header { display: flex; align-items: center; gap: 10px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: rgba(255, 255, 255, 0.3); margin-bottom: 20px; }
+        .status-header { display: flex; align-items: center; gap: 10px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 20px; }
         .stat-rows { display: flex; flex-direction: column; gap: 12px; }
-        .stat-line { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, 0.5); }
-        .stat-line .val { color: white; font-family: monospace; font-size: 11px; }
+        .stat-line { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
+        .stat-line .val { color: var(--color-text); font-family: monospace; font-size: 11px; }
 
-        .quick-join p { font-size: 13px; color: rgba(255, 255, 255, 0.4); margin-bottom: 20px; line-height: 1.5; }
-        .btn-outline-sm { padding: 8px 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; transition: all 0.2s; background: none; cursor: pointer; }
-        .btn-outline-sm:hover { background: rgba(255, 255, 255, 0.05); border-color: white; }
+        .quick-join p { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 20px; line-height: 1.5; }
+        .btn-outline-sm { padding: 8px 16px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text); font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; transition: all 0.2s; background: none; cursor: pointer; }
+        .btn-outline-sm:hover { background: var(--color-glass-hover); border-color: var(--color-text-muted); }
 
         /* Workspaces Grid */
         .workspaces-section { display: flex; flex-direction: column; gap: 24px; }
-        .section-title { display: flex; align-items: center; gap: 16px; color: rgba(255, 255, 255, 0.3); }
+        .section-title { display: flex; align-items: center; gap: 16px; color: var(--color-text-tertiary); }
         .section-title span { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
-        .title-line { flex: 1; height: 1px; background: linear-gradient(to right, rgba(255, 255, 255, 0.05), transparent); }
+        .title-line { flex: 1; height: 1px; background: linear-gradient(to right, var(--color-border), transparent); }
 
         .workspace-grid {
           display: grid;
@@ -409,7 +409,7 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
           gap: 20px;
         }
 
-        .empty-catalog { padding: 60px; text-align: center; color: rgba(255, 255, 255, 0.2); }
+        .empty-catalog { padding: 60px; text-align: center; color: var(--color-text-muted); }
 
         .animate-reveal-up { animation: reveal-up 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
         @keyframes reveal-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -456,8 +456,8 @@ function WorkspaceCard({ space, onClick }: { space: Space, onClick: () => void }
 
       <style>{`
         .workspace-premium-card {
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-surface-subtle);
+          border: 1px solid var(--color-border);
           border-radius: 20px;
           padding: 24px;
           display: flex;
@@ -468,30 +468,30 @@ function WorkspaceCard({ space, onClick }: { space: Space, onClick: () => void }
         }
 
         .workspace-premium-card:hover {
-          background: rgba(255, 255, 255, 0.04);
-          border-color: rgba(59, 130, 246, 0.3);
+          background: var(--color-surface);
+          border-color: var(--color-accent);
           transform: translateY(-4px) scale(1.01);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         }
 
         .card-top { display: flex; justify-content: space-between; align-items: center; }
-        .project-icon { width: 44px; height: 44px; background: rgba(59, 130, 246, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+        .project-icon { width: 44px; height: 44px; background: var(--color-glass); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
 
-        .card-main h3 { font-size: 18px; font-weight: 700; color: white; margin-bottom: 8px; }
+        .card-main h3 { font-size: 18px; font-weight: 700; color: var(--color-text); margin-bottom: 8px; }
         .meta-info { display: flex; gap: 16px; }
-        .meta-item { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; }
+        .meta-item { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--color-text-tertiary); text-transform: uppercase; }
 
-        .card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.03); }
+        .card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid var(--color-border); }
         .tag-cloud { display: flex; gap: 6px; }
-        .type-tag { font-size: 9px; font-weight: 800; color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.05); padding: 2px 8px; border-radius: 6px; text-transform: uppercase; }
+        .type-tag { font-size: 9px; font-weight: 800; color: var(--color-text-muted); background: var(--color-glass); padding: 2px 8px; border-radius: 6px; text-transform: uppercase; }
 
         .launch-btn {
-          display: flex; align-items: center; gap: 8px; color: #3b82f6; font-size: 12px; font-weight: 800; text-transform: uppercase;
+          display: flex; align-items: center; gap: 8px; color: var(--color-accent); font-size: 12px; font-weight: 800; text-transform: uppercase;
           opacity: 0; transform: translateX(-10px); transition: all 0.3s;
         }
         .workspace-premium-card:hover .launch-btn { opacity: 1; transform: translateX(0); }
         
-        .btn-dot { background: none; border: none; color: rgba(255, 255, 255, 0.2); cursor: pointer; }
+        .btn-dot { background: none; border: none; color: var(--color-text-muted); cursor: pointer; }
       `}</style>
     </div>
   )

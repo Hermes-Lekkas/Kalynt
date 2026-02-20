@@ -3,6 +3,7 @@
  */
 
 import React from 'react'
+import { useAppStore } from '../../../stores/appStore'
 import {
     Terminal as TerminalIcon,
     Cpu,
@@ -33,6 +34,7 @@ export const TerminalStatusBar: React.FC<TerminalStatusBarProps> = ({
     commandCount = 0,
     isConnected = false
 }) => {
+    const { theme } = useAppStore()
     const getStatusColor = () => {
         if (isRunning) return '#60a5fa'
         if (lastExitCode === 0) return '#4ade80'
@@ -46,12 +48,12 @@ export const TerminalStatusBar: React.FC<TerminalStatusBarProps> = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '6px 14px',
-            background: 'linear-gradient(90deg, rgba(9, 9, 11, 0.95) 0%, rgba(24, 24, 27, 0.9) 100%)',
+            background: theme === 'light' ? '#f0f0f0' : 'linear-gradient(90deg, rgba(9, 9, 11, 0.95) 0%, rgba(24, 24, 27, 0.9) 100%)',
             backdropFilter: 'blur(8px)',
-            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+            borderTop: `1px solid ${theme === 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.05)'}`,
             fontSize: '11px',
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            color: '#71717a',
+            color: theme === 'light' ? '#666666' : '#71717a',
             gap: '16px',
             userSelect: 'none'
         }}>
@@ -63,9 +65,9 @@ export const TerminalStatusBar: React.FC<TerminalStatusBarProps> = ({
                     alignItems: 'center',
                     gap: '6px',
                     padding: '2px 8px',
-                    background: 'rgba(139, 92, 246, 0.1)',
+                    background: theme === 'light' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(139, 92, 246, 0.1)',
                     borderRadius: '10px',
-                    color: '#a78bfa'
+                    color: theme === 'light' ? '#3b82f6' : '#a78bfa'
                 }}>
                     <TerminalIcon size={10} />
                     <span>{shell || 'shell'}</span>
@@ -130,7 +132,7 @@ export const TerminalStatusBar: React.FC<TerminalStatusBarProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {/* Command Count */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ color: '#a78bfa' }}>{commandCount}</span>
+                    <span style={{ color: theme === 'light' ? '#3b82f6' : '#a78bfa' }}>{commandCount}</span>
                     <span>commands</span>
                 </div>
 

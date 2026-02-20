@@ -6,7 +6,7 @@ import { useAppStore } from '../stores/appStore'
 import { useYDoc, useYArray, useAwareness } from '../hooks/useYjs'
 import { usePermissions } from '../hooks/usePermissions'
 import { encryptionService, EncryptedPayload } from '../services/encryptionService'
-import { aiService, AIProvider } from '../services/aiService'
+import { aiService, AIProvider, PROVIDER_MODELS } from '../services/aiService'
 import { offlineLLMService } from '../services/offlineLLMService'
 import { useModelStore } from '../stores/modelStore'
 import { useAgent } from '../hooks/useAgent'
@@ -118,7 +118,7 @@ export default function UnifiedAgentPanel({
     const [encryptionEnabled, setEncryptionEnabled] = useState(false)
     const [decryptedCache, setDecryptedCache] = useState<Map<string, string>>(new Map())
     const [decryptionErrors, setDecryptionErrors] = useState<Set<string>>(new Set())
-    
+
     const [activeMode, setActiveMode] = useState<PanelMode>('agent')
     const [aiMode, setAiMode] = useState<AIMode>('cloud')
     const [input, setInput] = useState('')
@@ -132,22 +132,22 @@ export default function UnifiedAgentPanel({
     const [showHistory, setShowHistory] = useState(false)
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
     const [editTitle, setEditTitle] = useState('')
-    
+
     const { sessions, currentSessionId, createSession, deleteSession, setCurrentSession, addMessageToSession, renameSession } = useChatStore()
-    
+
     const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
-    const [localFiles, setLocalFiles] = useState<Array<{name: string, path: string}>>([])
+    const [localFiles, setLocalFiles] = useState<Array<{ name: string, path: string }>>([])
     const [showSuggestions, setShowSuggestions] = useState(false)
     const [suggestionType, setSuggestionType] = useState<'user' | 'file'>('user')
     const [suggestionFilter, setSuggestionFilter] = useState('')
     const [suggestionIndex, setSuggestionIndex] = useState(0)
-    
+
     const [aiMessages, setAiMessages] = useState<ChatMessage[]>([])
     const [streamingContent, setStreamingContent] = useState('')
     const [thinkingContent, setThinkingContent] = useState('')
     const [isThinking, setIsThinking] = useState(false)
     const [showThinking, setShowThinking] = useState(false)
-    
+
     const [agentSteps, setAgentSteps] = useState<AgentStep[]>([])
     const [agentLoopRunning, setAgentLoopRunning] = useState(false)
     const [agentIteration, setAgentIteration] = useState<{ current: number; max: number } | null>(null)
@@ -165,7 +165,7 @@ export default function UnifiedAgentPanel({
     const isMountedRef = useRef(true)
     const processedMessagesRef = useRef<Set<string>>(new Set())
     const initializedRef = useRef(false)
-    const userId = useRef((function() {
+    const userId = useRef((function () {
         const key = 'unified-user-id'
         const saved = localStorage.getItem(key)
         if (saved) return saved
@@ -224,7 +224,7 @@ export default function UnifiedAgentPanel({
 
         // We only care about the last message added
         const lastMsg = p2pMessages[p2pMessages.length - 1]
-        
+
         // Skip if already processed, or if it's from us
         if (processedMessagesRef.current.has(lastMsg.id) || lastMsg.senderId === userId.current) {
             return
@@ -238,7 +238,7 @@ export default function UnifiedAgentPanel({
                 content = decryptedCache.get(lastMsg.id)
             } else {
                 // Not decrypted yet, useEffect will re-run when decryptedCache changes
-                return 
+                return
             }
         }
 
@@ -248,10 +248,10 @@ export default function UnifiedAgentPanel({
         const isReplyToUs = lastMsg.replyToSender === userName
 
         if (isMentioned || isReplyToUs) {
-            const message = isMentioned 
+            const message = isMentioned
                 ? `You were mentioned by ${lastMsg.sender || 'someone'} in Team Chat`
                 : `${lastMsg.sender || 'Someone'} replied to your message`
-            
+
             addNotification(message, 'info')
             processedMessagesRef.current.add(lastMsg.id)
         } else {
@@ -270,15 +270,15 @@ export default function UnifiedAgentPanel({
 
         const indexLocalFiles = async () => {
             try {
-                const results: Array<{name: string, path: string}> = []
+                const results: Array<{ name: string, path: string }> = []
                 const ignoreDirs = ['node_modules', '.git', 'dist', 'build', '.next', 'target']
-                
+
                 const scan = async (dir: string) => {
                     const res = await window.electronAPI?.fs.readDir(dir)
                     if (res?.success && res.items) {
                         for (const item of res.items) {
                             if (ignoreDirs.includes(item.name) || item.name.startsWith('.')) continue
-                            
+
                             if (item.isDirectory) {
                                 await scan(item.path)
                             } else {
@@ -287,7 +287,7 @@ export default function UnifiedAgentPanel({
                         }
                     }
                 }
-                
+
                 await scan(workspacePath)
                 setLocalFiles(results)
             } catch (e) {
@@ -304,15 +304,15 @@ export default function UnifiedAgentPanel({
         const local = localFiles.map(f => ({ name: f.name, path: f.path, type: 'local' }))
         return [...p2p, ...local]
     }, [currentSpace?.id, localFiles])
-    
+
     const filteredSuggestions = useMemo(() => {
         if (!showSuggestions) return []
-        
+
         if (suggestionType === 'user') {
             const usersList = Array.from(users.values())
                 .map(u => ({ name: u.user?.name || 'Anonymous', id: u.user?.id }))
                 .filter(u => u.name.toLowerCase().includes(suggestionFilter.toLowerCase()))
-            
+
             // Unique by name for simple tagging
             const unique = new Map()
             usersList.forEach(u => unique.set(u.name, u))
@@ -335,7 +335,7 @@ export default function UnifiedAgentPanel({
                 window.dispatchEvent(new CustomEvent('kalynt-open-p2p-file', { detail: { id: detail.path } }))
             }
         }
-        
+
         window.addEventListener('kalynt-tag-click', handleTagClick)
         return () => window.removeEventListener('kalynt-tag-click', handleTagClick)
     }, [])
@@ -343,18 +343,18 @@ export default function UnifiedAgentPanel({
     // --- Typing Indicator Logic ---
     const handleTyping = (text: string) => {
         setInput(text)
-        
+
         // Detect @ mention trigger
         const cursorPosition = inputRef.current?.selectionStart || 0
         const textBeforeCursor = text.slice(0, cursorPosition)
         const match = textBeforeCursor.match(/@([\w.-]*)$/)
-        
+
         if (match) {
             setShowSuggestions(true)
             const filter = match[1]
             setSuggestionFilter(filter)
             setSuggestionIndex(0)
-            
+
             // Smart switch: if filter contains a dot, likely a file
             if (filter.includes('.')) {
                 setSuggestionType('file')
@@ -367,9 +367,9 @@ export default function UnifiedAgentPanel({
 
         if (activeMode === 'collaboration') {
             setLocalState('isTyping', true)
-            
+
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
-            
+
             typingTimeoutRef.current = setTimeout(() => {
                 setLocalState('isTyping', false)
             }, 2000)
@@ -380,17 +380,17 @@ export default function UnifiedAgentPanel({
         const cursorPosition = inputRef.current?.selectionStart || 0
         const textBeforeCursor = input.slice(0, cursorPosition)
         const textAfterCursor = input.slice(cursorPosition)
-        
+
         // For files, we might want to store the path. 
         // We'll use a special format: @[name](path) that our parser will handle
-        const replacement = suggestionType === 'file' 
+        const replacement = suggestionType === 'file'
             ? `@[${suggestion.name}](${suggestion.type}://${suggestion.path})`
             : `@${suggestion.name}`
 
         const newTextBefore = textBeforeCursor.replace(/@[\w.-]*$/, `${replacement} `)
         setInput(newTextBefore + textAfterCursor)
         setShowSuggestions(false)
-        
+
         // Refocus and set cursor
         setTimeout(() => {
             if (inputRef.current) {
@@ -604,7 +604,7 @@ export default function UnifiedAgentPanel({
                 try {
                     const payload: EncryptedPayload = JSON.parse(msg.content)
                     const decrypted = await encryptionService.decryptToString(payload, roomKey)
-                    
+
                     // Handle structured message format
                     try {
                         const parsed = JSON.parse(decrypted)
@@ -616,7 +616,7 @@ export default function UnifiedAgentPanel({
                     } catch {
                         newCache.set(msg.id, decrypted)
                     }
-                    
+
                     changed = true
                 } catch (_e) {
                     newErrors.add(msg.id)
@@ -649,14 +649,7 @@ export default function UnifiedAgentPanel({
 
     // Get available models for current provider
     const availableCloudModels = useMemo(() => {
-        // We can't import PROVIDER_CONFIG directly as it's not exported
-        // But we know the keys from aiService.ts
-        const models: Record<string, string[]> = {
-            openai: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini', 'gpt-5-preview', 'codex-v6-pro'],
-            anthropic: ['claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-4-5-sonnet-20260215', 'claude-4-5-opus-20260215', 'claude-4-6-opus-latest'],
-            google: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3-flash', 'gemini-3-pro-high']
-        }
-        return models[currentProvider] || []
+        return PROVIDER_MODELS[currentProvider] || []
     }, [currentProvider])
 
     // FIX BUG-011: Auto-select available provider if current is invalid
@@ -670,7 +663,7 @@ export default function UnifiedAgentPanel({
     useEffect(() => {
         if (availableCloudModels.length > 0) {
             // Pick a reasonable default (prefer Ultra/Pro models if available)
-            const defaultModel = availableCloudModels.find(m => m.includes('pro') || m.includes('ultra') || m.includes('sonnet') || m.includes('preview')) 
+            const defaultModel = availableCloudModels.find(m => m.includes('pro') || m.includes('ultra') || m.includes('sonnet') || m.includes('preview'))
                 || availableCloudModels[0]
             setCloudModel(defaultModel)
         }
@@ -729,7 +722,7 @@ export default function UnifiedAgentPanel({
             if (!canChat) return
             let content = text
             let encrypted = false
-            
+
             const replyInfo = replyTo ? {
                 replyToId: replyTo.id,
                 replyToContent: replyTo.content.slice(0, 100),
@@ -800,7 +793,7 @@ export default function UnifiedAgentPanel({
             await agentLoopService.run(text, chatHistory, {
                 trustedMode: toolPermissionManager.isTrustedMode(),
                 autoApproveReadOnly: true,
-                model: aiMode === 'cloud' ? cloudModel : undefined
+                model: aiMode === 'cloud' ? cloudModel : loadedModelId || undefined
             })
         } catch (err) {
             if (isMountedRef.current) {
@@ -834,7 +827,7 @@ export default function UnifiedAgentPanel({
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#x27;')
-            // Removing forward slash sanitization as it breaks markdown parsing and is generally safe in text content
+        // Removing forward slash sanitization as it breaks markdown parsing and is generally safe in text content
     }
 
     const parseMarkdown = (text: string): string => {
@@ -865,8 +858,8 @@ export default function UnifiedAgentPanel({
                 const type = mention.getAttribute('data-type')
                 const path = mention.getAttribute('data-path')
                 if (type && path) {
-                    window.dispatchEvent(new CustomEvent('kalynt-tag-click', { 
-                        detail: { type, path } 
+                    window.dispatchEvent(new CustomEvent('kalynt-tag-click', {
+                        detail: { type, path }
                     }))
                 }
             }
@@ -1021,14 +1014,14 @@ export default function UnifiedAgentPanel({
                         <div className="mode-header">
                             <div className="unified-header-left">
                                 <div className="source-switcher">
-                                    <button 
-                                        className={`src-tab ${!showAutonomous ? 'active' : ''}`} 
+                                    <button
+                                        className={`src-tab ${!showAutonomous ? 'active' : ''}`}
                                         onClick={() => setShowAutonomous(false)}
                                     >
                                         <Bot size={14} /> <span>Chat</span>
                                     </button>
-                                    <button 
-                                        className={`src-tab ${showAutonomous ? 'active' : ''}`} 
+                                    <button
+                                        className={`src-tab ${showAutonomous ? 'active' : ''}`}
                                         onClick={() => setShowAutonomous(true)}
                                     >
                                         <Zap size={14} /> <span>AI Scan</span>
@@ -1036,20 +1029,20 @@ export default function UnifiedAgentPanel({
                                 </div>
                                 <div className="divider-v" />
                                 <div className="ai-source-group">
-                                    <button 
-                                        className={`mode-pill ${(!showAutonomous ? aiMode === 'cloud' : agentAIMode === 'cloud') ? 'active' : ''}`} 
+                                    <button
+                                        className={`mode-pill ${(!showAutonomous ? aiMode === 'cloud' : agentAIMode === 'cloud') ? 'active' : ''}`}
                                         onClick={() => !showAutonomous ? setAiMode('cloud') : setAgentAIMode('cloud')}
                                     >
                                         <Cloud size={12} /> Cloud
                                     </button>
-                                    <button 
-                                        className={`mode-pill ${(!showAutonomous ? aiMode === 'offline' : agentAIMode === 'offline') ? 'active' : ''}`} 
+                                    <button
+                                        className={`mode-pill ${(!showAutonomous ? aiMode === 'offline' : agentAIMode === 'offline') ? 'active' : ''}`}
                                         onClick={() => !showAutonomous ? setAiMode('offline') : setAgentAIMode('offline')}
                                     >
                                         <Monitor size={12} /> Local
                                     </button>
                                 </div>
-                                <button 
+                                <button
                                     className="header-settings-btn"
                                     onClick={() => { setSettingsTab('agents'); setShowSettings(true); }}
                                     title="Configure AI Providers & Models"
@@ -1064,16 +1057,16 @@ export default function UnifiedAgentPanel({
                                 <div className="action-group">
                                     {!showAutonomous ? (
                                         <>
-                                            <button 
-                                                className={`action-icon-btn ${useAgentLoop ? 'active' : ''}`} 
-                                                onClick={() => setUseAgentLoop(!useAgentLoop)} 
+                                            <button
+                                                className={`action-icon-btn ${useAgentLoop ? 'active' : ''}`}
+                                                onClick={() => setUseAgentLoop(!useAgentLoop)}
                                                 title={useAgentLoop ? 'Multi-step Agent Mode' : 'Direct Chat Mode'}
                                             >
                                                 <Play size={14} />
                                             </button>
-                                            <button 
-                                                className={`action-icon-btn ${showHistory ? 'active' : ''}`} 
-                                                onClick={() => setShowHistory(!showHistory)} 
+                                            <button
+                                                className={`action-icon-btn ${showHistory ? 'active' : ''}`}
+                                                onClick={() => setShowHistory(!showHistory)}
                                                 title="Previous Chats"
                                             >
                                                 <History size={14} />
@@ -1081,16 +1074,16 @@ export default function UnifiedAgentPanel({
                                         </>
                                     ) : (
                                         <>
-                                            <button 
-                                                className={`status-toggle-btn ${agent.config.enabled ? 'active' : ''}`} 
+                                            <button
+                                                className={`status-toggle-btn ${agent.config.enabled ? 'active' : ''}`}
                                                 onClick={agent.toggleEnabled}
                                                 title={agent.canRun ? 'Toggle Autonomous Monitoring' : 'Configure AI to enable agent'}
                                             >
                                                 <div className="status-indicator" />
                                                 <span>{agent.config.enabled ? 'RUNNING' : 'STANDBY'}</span>
                                             </button>
-                                            <button 
-                                                className={`action-icon-btn ${showLog ? 'active' : ''}`} 
+                                            <button
+                                                className={`action-icon-btn ${showLog ? 'active' : ''}`}
                                                 onClick={() => setShowLog(!showLog)}
                                                 title="Show Agent Logs"
                                             >
@@ -1372,9 +1365,9 @@ export default function UnifiedAgentPanel({
                                     } else if (e.key === 'Escape') {
                                         setShowSuggestions(false)
                                     }
-                                } else if (e.key === 'Enter' && !e.shiftKey) { 
-                                    e.preventDefault(); 
-                                    handleSend(); 
+                                } else if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSend();
                                 }
                             }}
                             rows={1}
@@ -1401,11 +1394,11 @@ export default function UnifiedAgentPanel({
                     <div className="history-panel" onClick={e => e.stopPropagation()}>
                         <div className="history-header">
                             <h3><History size={16} /> Previous Chats</h3>
-                            <button className="new-chat-btn" onClick={() => { 
-                                createSession(); 
+                            <button className="new-chat-btn" onClick={() => {
+                                createSession();
                                 setAiMessages([]);
                                 setAgentSteps([]);
-                                setShowHistory(false); 
+                                setShowHistory(false);
                             }}>
                                 <Plus size={14} /> New Chat
                             </button>
@@ -1415,18 +1408,18 @@ export default function UnifiedAgentPanel({
                                 <div className="history-empty">No previous chats</div>
                             ) : (
                                 sessions.map(session => (
-                                    <div 
-                                        key={session.id} 
+                                    <div
+                                        key={session.id}
                                         className={`history-item ${currentSessionId === session.id ? 'active' : ''}`}
-                                        onClick={() => { 
-                                            setCurrentSession(session.id); 
+                                        onClick={() => {
+                                            setCurrentSession(session.id);
                                             setAgentSteps([]);
-                                            setShowHistory(false); 
+                                            setShowHistory(false);
                                         }}
                                     >
                                         <div className="history-item-main">
                                             {editingSessionId === session.id ? (
-                                                <input 
+                                                <input
                                                     className="history-rename-input"
                                                     autoFocus
                                                     value={editTitle}
@@ -1446,15 +1439,15 @@ export default function UnifiedAgentPanel({
                                             </span>
                                         </div>
                                         <div className="history-actions">
-                                            <button 
-                                                className="hist-action-btn" 
+                                            <button
+                                                className="hist-action-btn"
                                                 title="Rename"
                                                 onClick={(e) => { e.stopPropagation(); setEditingSessionId(session.id); setEditTitle(session.title); }}
                                             >
                                                 <CornerUpLeft size={12} style={{ transform: 'rotate(90deg)' }} />
                                             </button>
-                                            <button 
-                                                className="hist-action-btn danger" 
+                                            <button
+                                                className="hist-action-btn danger"
                                                 title="Delete"
                                                 onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
                                             >
@@ -1516,7 +1509,7 @@ export default function UnifiedAgentPanel({
                 .new-chat-btn {
                     padding: 4px 8px;
                     background: var(--color-accent);
-                    color: #000;
+                    color: var(--color-bg);
                     border: none;
                     border-radius: 6px;
                     font-size: 11px;
@@ -1546,12 +1539,12 @@ export default function UnifiedAgentPanel({
                 }
 
                 .history-item:hover {
-                    background: rgba(255, 255, 255, 0.03);
+                    background: var(--color-glass-hover);
                 }
 
                 .history-item.active {
-                    background: rgba(59, 130, 246, 0.08);
-                    border-color: rgba(59, 130, 246, 0.2);
+                    background: var(--color-glass-active);
+                    border-color: var(--color-accent-hover);
                 }
 
                 .history-item-main {
@@ -1593,15 +1586,15 @@ export default function UnifiedAgentPanel({
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: rgba(255, 255, 255, 0.05);
-                    border: none;
+                    background: var(--color-surface-elevated);
+                    border: 1px solid var(--color-border);
                     border-radius: 4px;
                     color: var(--color-text-tertiary);
                     cursor: pointer;
                 }
 
                 .hist-action-btn:hover {
-                    background: rgba(255, 255, 255, 0.1);
+                    background: var(--color-glass);
                     color: var(--color-text);
                 }
 
@@ -1664,14 +1657,14 @@ export default function UnifiedAgentPanel({
                 }
         
                 .tab-btn:hover { color: var(--color-text-secondary); background: var(--color-surface-elevated); }
-                .tab-btn.active { color: var(--color-accent); background: rgba(59, 130, 246, 0.1); }
+                .tab-btn.active { color: var(--color-accent); background: var(--color-glass); }
         
                 .badge-count {
                     position: absolute;
                     top: 2px;
                     right: 2px;
                     background: var(--color-accent);
-                    color: #000;
+                    color: var(--color-bg);
                     font-size: 9px;
                     font-weight: 700;
                     min-width: 14px;
@@ -1737,7 +1730,7 @@ export default function UnifiedAgentPanel({
                 .message-bubble.own {
                     align-self: flex-end;
                     background: var(--color-accent);
-                    color: #000;
+                    color: var(--color-bg);
                     border-color: transparent;
                 }
         
@@ -1775,30 +1768,31 @@ export default function UnifiedAgentPanel({
                 }
 
                 .reply-action-btn:hover {
-                    background: rgba(255, 255, 255, 0.1);
+                    background: var(--color-glass);
                     color: var(--color-text-secondary);
                 }
 
                 .message-bubble.own .reply-action-btn {
-                    color: rgba(0, 0, 0, 0.5);
+                    color: var(--color-bg);
+                    opacity: 0.5;
                 }
 
                 .message-bubble.own .reply-action-btn:hover {
                     background: rgba(0, 0, 0, 0.1);
-                    color: rgba(0, 0, 0, 0.8);
+                    opacity: 1;
                 }
 
                 .message-time { font-size: 9px; opacity: 0.6; }
 
                 .mention {
-                    background: rgba(59, 130, 246, 0.15);
+                    background: var(--color-glass);
                     color: var(--color-accent);
                     padding: 0 4px;
                     border-radius: 4px;
                     font-weight: 600;
                 }
 
-                .mention.user { color: #60a5fa; }
+                .mention.user { color: var(--color-accent-hover); }
                 .mention.file { 
                     color: var(--color-success); 
                     background: rgba(34, 197, 94, 0.1);
@@ -1808,7 +1802,7 @@ export default function UnifiedAgentPanel({
                     gap: 2px;
                 }
                 .mention.file:hover { background: rgba(34, 197, 94, 0.2); text-decoration: underline; }
-                .mention.file.p2p { color: var(--color-accent); background: rgba(59, 130, 246, 0.1); }
+                .mention.file.p2p { color: var(--color-accent); background: var(--color-glass); }
 
                 .suggestion-info {
                     display: flex;
@@ -1826,7 +1820,7 @@ export default function UnifiedAgentPanel({
                 }
 
                 .reply-quote {
-                    background: rgba(0, 0, 0, 0.15);
+                    background: var(--color-glass);
                     border-left: 2px solid var(--color-accent);
                     padding: 4px 8px;
                     border-radius: 4px;
@@ -1970,7 +1964,7 @@ export default function UnifiedAgentPanel({
 
                 .tool-header {
                     padding: 4px 8px;
-                    background: rgba(59, 130, 246, 0.15);
+                    background: var(--color-glass-active);
                     color: var(--color-accent);
                     font-size: 11px;
                     font-weight: 600;
@@ -2250,8 +2244,8 @@ export default function UnifiedAgentPanel({
 
                 .source-switcher {
                     display: flex;
-                    background: rgba(255, 255, 255, 0.03);
-                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    background: var(--color-surface-subtle);
+                    border: 1px solid var(--color-border);
                     border-radius: 8px;
                     padding: 2px;
                 }
@@ -2263,7 +2257,7 @@ export default function UnifiedAgentPanel({
                     padding: 3px 8px;
                     font-size: 10px;
                     font-weight: 600;
-                    color: rgba(255, 255, 255, 0.4);
+                    color: var(--color-text-tertiary);
                     border-radius: 6px;
                     border: none;
                     background: transparent;
@@ -2271,11 +2265,11 @@ export default function UnifiedAgentPanel({
                     transition: all 0.2s ease;
                 }
 
-                .src-tab:hover { color: rgba(255, 255, 255, 0.6); }
+                .src-tab:hover { color: var(--color-text-secondary); }
                 .src-tab.active { 
-                    background: rgba(255, 255, 255, 0.08); 
-                    color: #fff; 
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                    background: var(--color-surface-elevated); 
+                    color: var(--color-text); 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }
 
                 .ai-source-group {
@@ -2291,17 +2285,17 @@ export default function UnifiedAgentPanel({
                     align-items: center;
                     justify-content: center;
                     border-radius: 8px;
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    background: rgba(255, 255, 255, 0.03);
-                    color: rgba(255, 255, 255, 0.4);
+                    border: 1px solid var(--color-border);
+                    background: var(--color-surface-subtle);
+                    color: var(--color-text-tertiary);
                     cursor: pointer;
                     transition: all 0.2s ease;
                 }
 
                 .header-settings-btn:hover {
-                    background: rgba(255, 255, 255, 0.08);
-                    color: rgba(255, 255, 255, 0.8);
-                    border-color: rgba(255, 255, 255, 0.15);
+                    background: var(--color-glass);
+                    color: var(--color-text);
+                    border-color: var(--color-text-muted);
                 }
 
                 .mode-pill {
@@ -2311,7 +2305,7 @@ export default function UnifiedAgentPanel({
                     padding: 2px 6px;
                     font-size: 9px;
                     font-weight: 600;
-                    color: rgba(255, 255, 255, 0.3);
+                    color: var(--color-text-tertiary);
                     letter-spacing: 0.01em;
                     border-radius: 4px;
                     border: 1px solid transparent;
@@ -2321,15 +2315,15 @@ export default function UnifiedAgentPanel({
                 }
 
                 .mode-pill.active {
-                    color: #3b82f6;
-                    background: rgba(59, 130, 246, 0.08);
-                    border-color: rgba(59, 130, 246, 0.2);
+                    color: var(--color-accent);
+                    background: var(--color-glass);
+                    border-color: var(--color-accent-hover);
                 }
 
                 .divider-v {
                     width: 1px;
                     height: 28px;
-                    background: rgba(255, 255, 255, 0.08);
+                    background: var(--color-border);
                 }
 
                 .cloud-config {
@@ -2339,10 +2333,10 @@ export default function UnifiedAgentPanel({
                 }
 
                 .minimal-select {
-                    background: rgba(255, 255, 255, 0.04);
-                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    background: var(--color-surface-subtle);
+                    border: 1px solid var(--color-border);
                     border-radius: 6px;
-                    color: rgba(255, 255, 255, 0.7);
+                    color: var(--color-text-secondary);
                     font-size: 10px;
                     font-weight: 600;
                     padding: 3px 6px;
@@ -2351,7 +2345,7 @@ export default function UnifiedAgentPanel({
                     appearance: none;
                 }
 
-                .minimal-select:hover { border-color: rgba(255, 255, 255, 0.15); }
+                .minimal-select:hover { border-color: var(--color-text-muted); }
                 .minimal-select.model-sel { padding: 4px 10px; }
 
                 .model-selector-btn {
@@ -2359,10 +2353,10 @@ export default function UnifiedAgentPanel({
                     align-items: center;
                     gap: 8px;
                     padding: 5px 10px;
-                    background: rgba(59, 130, 246, 0.05);
-                    border: 1px solid rgba(59, 130, 246, 0.15);
+                    background: var(--color-glass);
+                    border: 1px solid var(--color-border);
                     border-radius: 8px;
-                    color: #60a5fa;
+                    color: var(--color-accent);
                     font-size: 11px;
                     font-weight: 600;
                     cursor: pointer;
@@ -2377,8 +2371,8 @@ export default function UnifiedAgentPanel({
                 }
 
                 .model-selector-btn:hover {
-                    background: rgba(59, 130, 246, 0.1);
-                    border-color: rgba(59, 130, 246, 0.3);
+                    background: var(--color-glass-hover);
+                    border-color: var(--color-accent);
                     transform: translateY(-1px);
                 }
 
@@ -2397,20 +2391,20 @@ export default function UnifiedAgentPanel({
                     border-radius: 6px;
                     border: 1px solid transparent;
                     background: transparent;
-                    color: rgba(255, 255, 255, 0.4);
+                    color: var(--color-text-tertiary);
                     cursor: pointer;
                     transition: all 0.2s ease;
                 }
 
                 .action-icon-btn:hover {
-                    background: rgba(255, 255, 255, 0.05);
-                    color: rgba(255, 255, 255, 0.8);
+                    background: var(--color-glass);
+                    color: var(--color-text);
                 }
 
                 .action-icon-btn.active {
-                    color: #3b82f6;
-                    background: rgba(59, 130, 246, 0.1);
-                    border-color: rgba(59, 130, 246, 0.1);
+                    color: var(--color-accent);
+                    background: var(--color-glass);
+                    border-color: var(--color-accent-hover);
                 }
 
                 .status-toggle-btn {
@@ -2418,10 +2412,10 @@ export default function UnifiedAgentPanel({
                     align-items: center;
                     gap: 8px;
                     padding: 4px 10px;
-                    background: rgba(255, 255, 255, 0.03);
-                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    background: var(--color-surface-subtle);
+                    border: 1px solid var(--color-border);
                     border-radius: 20px;
-                    color: rgba(255, 255, 255, 0.4);
+                    color: var(--color-text-tertiary);
                     font-size: 9px;
                     font-weight: 800;
                     letter-spacing: 0.05em;
@@ -2439,7 +2433,7 @@ export default function UnifiedAgentPanel({
                     width: 6px;
                     height: 6px;
                     border-radius: 50%;
-                    background: rgba(255, 255, 255, 0.2);
+                    background: var(--color-text-muted);
                     transition: all 0.3s ease;
                 }
 
@@ -2450,7 +2444,7 @@ export default function UnifiedAgentPanel({
 
                 .mini-badge {
                     background: var(--color-error);
-                    color: #fff;
+                    color: white;
                     font-size: 9px;
                     font-weight: 700;
                     padding: 1px 4px;
@@ -2459,8 +2453,8 @@ export default function UnifiedAgentPanel({
                 }
 
                 .status-bar { padding: 4px; text-align: center; font-size: 10px; font-weight: 600; }
-                .status-bar.loading { background: var(--color-accent); color: #000; }
-                .status-bar.error { background: var(--color-error); color: #fff; }
+                .status-bar.loading { background: var(--color-accent); color: var(--color-bg); }
+                .status-bar.error { background: var(--color-error); color: white; }
                 .status-bar.note { background: var(--color-bg-secondary); color: var(--color-text-secondary); margin-bottom: 8px; font-weight: normal; font-style: italic; }
 
 

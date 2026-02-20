@@ -10,7 +10,7 @@
 .activity-bar {
     width: 48px;
     background: var(--color-surface);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    border-right: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -32,6 +32,7 @@
     cursor: pointer;
     opacity: 0.5;
     transition: all var(--transition-base);
+    color: var(--color-text);
 }
 
 .activity-btn:hover {
@@ -54,10 +55,10 @@
 
 .ide-right-sidebar {
     width: 350px;
-    border-left: 1px solid #3c3c3c;
+    border-left: 1px solid var(--color-border);
     flex-shrink: 0;
     overflow: hidden;
-    background: #252526;
+    background: var(--color-surface);
 }
 
 .ide-main {
@@ -103,9 +104,9 @@
     justify-content: space-between;
     height: 48px;
     padding: 0 16px;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--color-surface-subtle);
     backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--color-border);
     position: relative;
     z-index: 20;
 }
@@ -132,10 +133,10 @@
 
 /* Glass Panels & Badges */
 .glass-panel {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--color-glass);
+    border: 1px solid var(--color-border);
     border-radius: 8px;
-    padding: 4px;
+    padding: 2px;
     display: flex;
     align-items: center;
     gap: 2px;
@@ -146,8 +147,8 @@
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--color-glass);
+    border: 1px solid var(--color-border);
     border-radius: 4px;
 }
 
@@ -172,20 +173,20 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 6px 12px;
+    padding: 4px 10px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--color-text-secondary);
     background: transparent;
     border: 1px solid transparent;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    height: 32px;
+    height: 28px;
     white-space: nowrap;
 }
 
 .toolbar-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--color-glass-hover);
     color: var(--color-text);
 }
 
@@ -200,8 +201,8 @@
 
 .icon-only-btn {
     padding: 4px;
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
     flex-shrink: 0;
 }
 
@@ -212,8 +213,8 @@
 
 /* Command Cluster Specifics */
 .command-cluster {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--color-border);
 }
 
 .action-btn.run-btn {
@@ -221,7 +222,8 @@
     /* bright green */
     background: rgba(74, 222, 128, 0.1);
     border: 1px solid rgba(74, 222, 128, 0.2);
-    padding-right: 14px;
+    padding-right: 12px;
+    padding-left: 8px;
 }
 
 .action-btn.run-btn:hover:not(:disabled) {
@@ -247,6 +249,7 @@
     /* orange */
     background: rgba(251, 146, 60, 0.1);
     border: 1px solid rgba(251, 146, 60, 0.2);
+    padding: 0 6px;
 }
 
 .action-btn.debug-btn:hover:not(:disabled) {
@@ -281,6 +284,7 @@
     /* blue */
     background: rgba(96, 165, 250, 0.1);
     border: 1px solid rgba(96, 165, 250, 0.2);
+    padding: 0 6px;
 }
 
 .action-btn.build-btn:hover:not(:disabled) {
@@ -312,18 +316,18 @@
 
 .divider-vertical {
     width: 1px;
-    height: 20px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 0 4px;
+    height: 14px;
+    background: var(--color-border);
+    margin: 0 2px;
 }
 
 /* Tool Buttons (Right) */
 /* Tool Buttons (Right) */
 .tool-btn.active {
-    color: #60a5fa;
-    text-shadow: 0 0 10px rgba(96, 165, 250, 0.5);
-    background: linear-gradient(to bottom, transparent, rgba(96, 165, 250, 0.05));
-    box-shadow: 0 1px 0 0 #60a5fa;
+    color: var(--color-accent);
+    text-shadow: 0 0 10px var(--color-glass);
+    background: var(--color-glass);
+    box-shadow: 0 1px 0 0 var(--color-accent);
 }
 
 .dropdown-container {
@@ -336,13 +340,13 @@
     top: calc(100% + 8px);
     right: 0;
     width: 260px;
-    background: rgba(15, 15, 15, 0.9);
+    background: var(--color-surface);
     backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--color-border);
     border-radius: 12px;
     padding: 6px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2),
+        inset 0 0 0 1px var(--color-glass);
     z-index: 1000;
     animation: dropdownSlideIn 0.2s cubic-bezier(0, 0, 0.2, 1);
     transform-origin: top right;
@@ -368,7 +372,7 @@
 
 .dropdown-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--color-border-subtle);
     margin: 6px 4px;
 }
 
@@ -388,7 +392,7 @@
 }
 
 .dropdown-item:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--color-glass);
     color: var(--color-text);
 }
 
@@ -418,7 +422,7 @@
 
 .item-shortcut {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--color-text-tertiary);
     padding-left: 12px;
 }
 
@@ -447,10 +451,10 @@
     display: flex;
     align-items: center;
     padding: 0 12px;
-    background: rgba(0, 0, 0, 0.2);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--color-surface-subtle);
+    border-bottom: 1px solid var(--color-border);
     font-size: 12px;
-    color: var(--color-text-secondary);
+    color: var(--color-text-tertiary);
     transition: opacity 0.3s ease;
     white-space: nowrap;
     overflow: hidden;
@@ -477,7 +481,7 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--color-border);
 }
 
 .editor-divider:hover,
@@ -508,13 +512,13 @@
 
 .sidebar-resizer.right {
     cursor: col-resize;
-    border-left: 1px solid rgba(255, 255, 255, 0.05);
+    border-left: 1px solid var(--color-border);
 }
 
 .file-tabs {
     display: flex;
     background: var(--color-surface);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--color-border);
     overflow-x: auto;
 }
 
@@ -524,9 +528,9 @@
     gap: 8px;
     padding: 8px 16px;
     font-size: 13px;
-    color: var(--color-text-secondary);
+    color: var(--color-text-tertiary);
     background: transparent;
-    border-right: 1px solid rgba(255, 255, 255, 0.03);
+    border-right: 1px solid var(--color-border-subtle);
     border-top-left-radius: var(--radius-md);
     border-top-right-radius: var(--radius-md);
     cursor: pointer;
@@ -540,7 +544,7 @@
 
 .file-tab.active {
     background: var(--color-bg);
-    color: var(--color-accent-light);
+    color: var(--color-accent);
     border-bottom: 2px solid var(--color-accent);
     margin-bottom: -1px;
 }
@@ -559,7 +563,7 @@
     font-size: 14px;
     background: transparent;
     border: none;
-    color: #858585;
+    color: var(--color-text-muted);
     border-radius: 3px;
     cursor: pointer;
     opacity: 0;
@@ -570,8 +574,8 @@
 }
 
 .tab-close:hover {
-    background: #3c3c3c;
-    color: #ffffff;
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
 }
 
 .editor-container {
@@ -585,13 +589,13 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #808080;
+    color: var(--color-text-muted);
     text-align: center;
 }
 
 .welcome-screen h2 {
     font-size: 24px;
-    color: #cccccc;
+    color: var(--color-text-secondary);
     margin-bottom: 8px;
 }
 
@@ -599,7 +603,7 @@
     margin-top: 24px;
     padding: 12px 24px;
     font-size: 14px;
-    background: #0e639c;
+    background: var(--color-accent);
     color: white;
     border: none;
     border-radius: 6px;
@@ -607,13 +611,13 @@
 }
 
 .welcome-btn:hover {
-    background: #1177bb;
+    background: var(--color-accent-hover);
 }
 
 .shortcuts {
     margin-top: 32px;
     font-size: 12px;
-    color: #666;
+    color: var(--color-text-tertiary);
 }
 
 .shortcuts p {
@@ -622,10 +626,11 @@
 
 .shortcuts kbd {
     padding: 2px 6px;
-    background: #333;
-    border: 1px solid #444;
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
     border-radius: 3px;
     font-family: monospace;
+    color: var(--color-text);
 }
 
 .terminal-panel {
@@ -661,7 +666,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -669,11 +674,11 @@
 }
 
 .dialog {
-    background: var(--color-glass);
+    background: var(--color-surface);
     backdrop-filter: blur(var(--backdrop-blur));
     padding: var(--space-6);
     border-radius: var(--radius-xl);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--color-border);
     width: 400px;
     box-shadow: var(--shadow-lg);
 }
@@ -715,7 +720,7 @@
     padding: 8px 20px;
     background: var(--color-glass);
     color: var(--color-text);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-pill);
     cursor: pointer;
     transition: all var(--transition-base);
@@ -785,7 +790,7 @@
 }
 
 .debug-toolbar-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--color-glass);
     color: var(--color-text);
 }
 

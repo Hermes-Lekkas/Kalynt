@@ -9,11 +9,18 @@ Kalynt is a monorepo managed by NPM Workspaces.
 ```text
 kalynt/
 ├── apps/
-│   └── desktop/          # The main Electron application
+│   └── desktop/              # The main Electron application
+│       ├── electron/         # Main process services & IPC
+│       │   └── services/     # Hardware, Runtime, Performance Acceleration
+│       └── src/              # Renderer (React UI, services, stores)
+│           ├── components/   # UI components (ide/, collaboration/, extensions/)
+│           ├── services/     # 28 renderer-side services
+│           └── stores/       # 6 Zustand stores
 ├── packages/
-│   ├── crdt/             # Shared CRDT logic (Yjs wrappers)
-│   ├── networking/       # P2P Networking layer
-│   └── shared/           # Common types and utilities
+│   ├── crdt/                 # Shared CRDT logic (Yjs wrappers)
+│   ├── networking/           # P2P Networking layer
+│   ├── shared/               # Common types and utilities
+│   └── native-macos/         # Swift native helper (FSEvents, CoreML, memory)
 └── ...
 ```
 
@@ -23,6 +30,7 @@ kalynt/
     *   Node.js >= 18.0.0
     *   Python 3.10+ (for native module builds)
     *   C++ Build Tools
+    *   Swift 5.9+ (for macOS native helper, optional)
 
 2.  **Setup**:
     ```bash
@@ -44,7 +52,10 @@ We accept Pull Requests (PRs) for the **Open Source Core**:
 *   **UI/UX**: React components, CSS styling, Themes (`apps/desktop/src/components`)
 *   **Utilities**: Helper functions, formatters (`apps/desktop/src/utils`)
 *   **Language Support**: Adding support for new languages in the execution engine.
-*   **Networking**: Improvements to P2P reliability in `@kalynt/networking`.
+*   **Networking**: Improvements to P2P reliability in `packages/networking`.
+*   **Performance**: Memory optimization, lazy loading, build acceleration (`electron/services/Performance_Acceleration`).
+*   **Security**: Path sanitization, CSP improvements, audit logging.
+*   **Native (macOS)**: Swift native helper improvements (`packages/native-macos`).
 *   **Documentation**: Improving guides and tutorials.
 
 **Files marked with `SPDX-License-Identifier: AGPL-3.0-only` are open for contribution.**

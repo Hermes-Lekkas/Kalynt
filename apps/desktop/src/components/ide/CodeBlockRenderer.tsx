@@ -2,8 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState } from 'react'
+import { useAppStore } from '../../stores/appStore'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { vscDarkPlus, prism } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Check, Copy, Zap } from 'lucide-react'
 
 interface CodeBlockProps {
@@ -19,6 +20,7 @@ export default function CodeBlockRenderer({
     onApply,
     onCopy
 }: CodeBlockProps) {
+    const { theme } = useAppStore()
     const [copied, setCopied] = useState(false)
     const [applied, setApplied] = useState(false)
 
@@ -66,13 +68,13 @@ export default function CodeBlockRenderer({
             {/* SECURITY FIX: Replace dangerouslySetInnerHTML with react-syntax-highlighter */}
             <SyntaxHighlighter
                 language={language || 'typescript'}
-                style={vscDarkPlus}
+                style={theme === 'light' ? prism : vscDarkPlus}
                 customStyle={{
                     margin: 0,
                     padding: '12px 16px',
                     fontSize: '13px',
                     lineHeight: '1.5',
-                    background: '#1a1a1a',
+                    background: theme === 'light' ? '#f8f8f8' : '#1a1a1a',
                     borderRadius: '0 0 8px 8px'
                 }}
                 codeTagProps={{
@@ -89,8 +91,8 @@ export default function CodeBlockRenderer({
           margin: 8px 0;
           border-radius: 8px;
           overflow: hidden;
-          background: #1a1a1a;
-          border: 1px solid var(--color-border, #3c3c3c);
+          background: ${theme === 'light' ? '#f8f8f8' : '#1a1a1a'};
+          border: 1px solid var(--color-border);
         }
 
         .code-header {
@@ -98,14 +100,14 @@ export default function CodeBlockRenderer({
           align-items: center;
           justify-content: space-between;
           padding: 6px 12px;
-          background: rgba(255, 255, 255, 0.05);
-          border-bottom: 1px solid var(--color-border, #3c3c3c);
+          background: var(--color-surface-subtle);
+          border-bottom: 1px solid var(--color-border-subtle);
         }
 
         .code-language {
           font-size: 11px;
           font-weight: 500;
-          color: var(--color-text-muted, #888);
+          color: var(--color-text-tertiary);
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
@@ -118,9 +120,9 @@ export default function CodeBlockRenderer({
         .code-action {
           padding: 3px 8px;
           background: transparent;
-          border: 1px solid var(--color-border, #3c3c3c);
+          border: 1px solid var(--color-border);
           border-radius: 4px;
-          color: var(--color-text-muted, #888);
+          color: var(--color-text-tertiary);
           font-size: 11px;
           cursor: pointer;
           transition: all 0.2s;
@@ -129,18 +131,18 @@ export default function CodeBlockRenderer({
         }
 
         .code-action:hover {
-          background: var(--color-surface, #252526);
-          color: var(--color-text, #ccc);
+          background: var(--color-glass);
+          color: var(--color-text);
         }
 
         .code-action.apply {
-          border-color: var(--color-accent, #0e639c);
-          color: var(--color-accent, #0e639c);
+          border-color: var(--color-accent);
+          color: var(--color-accent);
         }
 
         .code-action.apply:hover {
-          background: var(--color-accent, #0e639c);
-          color: white;
+          background: var(--color-accent);
+          color: var(--color-bg);
         }
 
         .code-action.success {

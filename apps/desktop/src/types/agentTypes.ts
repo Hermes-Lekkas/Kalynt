@@ -277,7 +277,6 @@ export type AgentLoopEvent =
     | { type: 'plan-proposed'; plan: AgentPlan }
     | { type: 'tool-executing'; toolName: string; params: Record<string, unknown> }
     | { type: 'tool-result'; toolName: string; result: unknown; success: boolean }
-    | { type: 'tool-complete'; toolName: string; result: unknown; success: boolean }
     | { type: 'iteration'; iteration: number; maxIterations: number }
     | { type: 'completed'; finalMessage: string; steps: AgentStep[] }
     | { type: 'error'; error: string }

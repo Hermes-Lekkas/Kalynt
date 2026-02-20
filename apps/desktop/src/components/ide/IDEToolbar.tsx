@@ -10,7 +10,6 @@ import {
     TerminalSquare,
     Bot,
     MoreVertical,
-    ChevronDown,
     Check,
     Columns2,
     Command,
@@ -136,7 +135,7 @@ export const IDEToolbar: React.FC<IDEToolbarProps> = ({
                         title={isRunning ? "Stop Execution" : "Run Code (F5)"}
                         disabled={!activeFileObj && !isRunning}
                     >
-                        {isRunning ? <Square size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+                        {isRunning ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
                         <span>{isRunning ? 'Stop' : 'Run'}</span>
                     </button>
 
@@ -148,8 +147,10 @@ export const IDEToolbar: React.FC<IDEToolbarProps> = ({
                         title={isDebugging ? "Stop Debugging" : "Debug (F9)"}
                         disabled={!activeFileObj && !isDebugging}
                     >
-                        <Bug size={16} />
+                        <Bug size={14} />
                     </button>
+
+                    <div className="divider-vertical" />
 
                     <button
                         className={`toolbar-btn action-btn build-btn ${isBuilding ? 'building' : ''}`}
@@ -157,11 +158,7 @@ export const IDEToolbar: React.FC<IDEToolbarProps> = ({
                         title={isBuilding ? "Stop Build" : "Build Project (Ctrl+Shift+B)"}
                         disabled={isBuilding}
                     >
-                        <Hammer size={16} />
-                    </button>
-
-                    <button className="toolbar-btn icon-only-btn dropdown-trigger">
-                        <ChevronDown size={14} />
+                        <Hammer size={14} />
                     </button>
                 </div>
 

@@ -205,7 +205,7 @@ export default function IDEWorkspace() {
     // Command Palette state
     const [paletteOpen, setPaletteOpen] = useState(false)
     const [paletteMode, setPaletteMode] = useState<'commands' | 'files'>('commands')
-    
+
     // Extension Manager state
     const [showExtensions, setShowExtensions] = useState(false)
     const [unsavedDialog, setUnsavedDialog] = useState<{ isOpen: boolean, filePath: string | null }>({ isOpen: false, filePath: null })
@@ -251,13 +251,13 @@ export default function IDEWorkspace() {
             setPerformanceOptions(detail)
         }
         window.addEventListener('kalynt-monaco-optimize', handleOptimize)
-        
+
         // Load from localStorage if present
         const saved = localStorage.getItem('kalynt-monaco-optimization')
         if (saved) {
             try {
                 setPerformanceOptions(JSON.parse(saved))
-            } catch (e) {}
+            } catch (e) { }
         }
 
         return () => window.removeEventListener('kalynt-monaco-optimize', handleOptimize)
@@ -652,6 +652,20 @@ export default function IDEWorkspace() {
             }
             return remaining
         })
+
+        // RAM Optimization: Explicitly dispose the Monaco text model to free its buffer
+        if (monacoRef.current) {
+            try {
+                const uri = monacoRef.current.Uri.file(filePath)
+                const model = monacoRef.current.editor.getModel(uri)
+                if (model) {
+                    model.dispose()
+                    logger.ide.debug(`Disposed Monaco model for ${filePath} to free RAM`)
+                }
+            } catch (e) {
+                console.warn('Failed to dispose monaco model', e)
+            }
+        }
     }, [activeFile])
 
     const handleCloseFile = useCallback((filePath: string, e?: React.MouseEvent) => {
@@ -1115,7 +1129,7 @@ export default function IDEWorkspace() {
     const handleShowExtensions = useCallback(() => {
         setShowExtensions(true)
     }, [])
-    
+
     const ideCommands = useMemo<IDECommand[]>(() => {
         const baseCommands = createDefaultCommands({
             newFile: handleNewFile,
@@ -1141,7 +1155,7 @@ export default function IDEWorkspace() {
             aiRefactor: () => { }, // Handled via Inline AI tool
             openSettings: () => setShowSettings(true)
         })
-        
+
         // Add extension command
         const extensionCommand: IDECommand = {
             id: 'view.extensions',
@@ -1151,7 +1165,7 @@ export default function IDEWorkspace() {
             icon: <Puzzle size={16} />,
             action: handleShowExtensions
         }
-        
+
         return [...baseCommands, extensionCommand]
     }, [activeFile, workspacePath, handleNewFile, handleSaveFile, handleCloseFile, handleRunCode, handleDebugCode, handleBuildCode, agentOpen, handleShowExtensions])
 
@@ -1181,7 +1195,7 @@ export default function IDEWorkspace() {
             if (isMod && key === '`') { e.preventDefault(); setShowTerminal(prev => !prev) }
             if (isMod && key === '\\') { e.preventDefault(); handleToggleSplitEditor() }
             if (isMod && key === ',') { e.preventDefault(); setShowSettings(true) }
-            
+
             // Tab Navigation
             if (isMod && key === 'tab' && !isShift) {
                 e.preventDefault()
@@ -1199,7 +1213,7 @@ export default function IDEWorkspace() {
                     setActiveFile(openFiles[prevIndex].path)
                 }
             }
-            
+
             // AI Shortcuts
             if (isMod && key === 'l') { e.preventDefault(); setAgentOpen(true) }
             if (isMod && key === 'k' && !isShift) { e.preventDefault(); setAgentOpen(true) }
@@ -1218,7 +1232,7 @@ export default function IDEWorkspace() {
             if (isShift && key === 'f5') { e.preventDefault(); handleStopDebug() }
             if (key === 'f9') { e.preventDefault(); if (isDebugging) handleStopDebug(); else handleDebugCode() }
             if (isMod && isShift && key === 'b') { e.preventDefault(); if (isBuilding) handleStopBuild(); else handleBuildCode() }
-            
+
             // Debug step shortcuts (only when debugging)
             if (isDebugging) {
                 if (key === 'f10' && !isShift) { e.preventDefault(); handleDebugStepOver() }
@@ -1477,7 +1491,7 @@ export default function IDEWorkspace() {
                                         language={activeFileObj.language}
                                         value={activeFileObj.content}
                                         onChange={handleEditorChange}
-                                        theme="vs-dark"
+                                        theme={useAppStore.getState().theme === 'light' ? 'light' : 'vs-dark'}
                                         onMount={handleEditorDidMount}
                                         options={{
                                             fontSize: 14,
@@ -1535,7 +1549,7 @@ export default function IDEWorkspace() {
                                                 language={secondaryFileObj.language}
                                                 value={secondaryFileObj.content}
                                                 onChange={handleSecondaryEditorChange}
-                                                theme="vs-dark"
+                                                theme={useAppStore.getState().theme === 'light' ? 'light' : 'vs-dark'}
                                                 onMount={handleSecondaryEditorDidMount}
                                                 options={{
                                                     fontSize: 14,

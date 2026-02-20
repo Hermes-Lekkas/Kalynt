@@ -47,10 +47,8 @@ const PROVIDER_CONFIG = {
         models: {
             chat: 'gpt-4o-mini',
             chatPro: 'gpt-4o',
-            chatUltra: 'gpt-5-preview',
             thinking: 'o3-mini',
             thinkingPro: 'o1',
-            codex: 'codex-v6-pro',
             image: 'dall-e-3'
         }
     },
@@ -59,9 +57,8 @@ const PROVIDER_CONFIG = {
         contextWindow: 200000,
         models: {
             chat: 'claude-3-5-haiku-latest',
-            chatPro: 'claude-4-5-sonnet-20260215',
-            chatUltra: 'claude-4-5-opus-20260215',
-            chatMax: 'claude-4-6-opus-latest'
+            chatPro: 'claude-3-5-sonnet-latest',
+            chatUltra: 'claude-3-opus-latest'
         }
     },
     google: {
@@ -69,10 +66,20 @@ const PROVIDER_CONFIG = {
         contextWindow: 1000000,
         models: {
             chat: 'gemini-1.5-flash',
-            chatPro: 'gemini-3-flash',
-            chatUltra: 'gemini-3-pro-high'
+            chatPro: 'gemini-1.5-pro',
+            chatUltra: 'gemini-2.0-flash'
         }
     }
+}
+
+/**
+ * Exported model lists per provider for UI dropdowns.
+ * Single source of truth — do NOT duplicate these elsewhere.
+ */
+export const PROVIDER_MODELS: Record<AIProvider, string[]> = {
+    openai: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini'],
+    anthropic: ['claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-3-opus-latest'],
+    google: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
 }
 
 class AIService {
@@ -216,7 +223,7 @@ class AIService {
         if (requestId) {
             this.abortControllers.get(requestId)?.abort()
         } else {
-            
+
             this.abortControllers.forEach(controller => controller.abort())
             this.abortControllers.clear()
         }
@@ -364,7 +371,7 @@ class AIService {
                 if (json.type === 'content_block_delta') {
                     const token = json.delta?.text || ''
                     const thought = json.delta?.thought || ''
-                    
+
                     if (thought) {
                         // For the UI to detect thinking, we wrap it in tags
                         // Since multiple deltas come, we only add tags if it's the first time
@@ -373,7 +380,7 @@ class AIService {
                         const wrappedThought = `<thinking>${thought}</thinking>`
                         callbacks.onToken(wrappedThought)
                     }
-                    
+
                     if (token) {
                         content += token
                         callbacks.onToken(token)

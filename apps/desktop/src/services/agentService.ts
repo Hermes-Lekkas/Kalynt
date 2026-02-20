@@ -4,11 +4,11 @@
 
 import * as Y from 'yjs'
 import { aiService, AIProvider, AIMessage } from './aiService'
-import { offlineLLMService, ChatMessage as OfflineChatMessage } from './offlineLLMService'
+import { offlineLLMService } from './offlineLLMService'
 import { EditorMode } from '../config/editorModes'
 import { executeTool, ToolContext, stopActiveTool } from './ideAgentTools'
 import { logger } from '../utils/logger'
-import { getInstructionsForModel, detectModelTier, InstructionConfig } from '../instructions'
+import { getInstructionsForModel, InstructionConfig } from '../instructions'
 import { useModelStore } from '../stores/modelStore'
 import { aimeService } from './aimeService'
 import { agentLoopService } from './agentLoopService'
@@ -51,6 +51,7 @@ class AgentService {
 
     private editorObserver: ((event: Y.YTextEvent) => void) | null = null
     private tasksObserver: ((event: Y.YArrayEvent<any>) => void) | null = null
+    private abortController: AbortController | null = null
 
     setCallbacks(
         onStateChange: StateCallback,
@@ -328,13 +329,6 @@ class AgentService {
             ? useModelStore.getState().loadedModelId
             : null
 
-        // Detect model tier for instruction selection
-        const tier = detectModelTier(
-            loadedModelId,
-            this.provider,
-            this.useOfflineAI
-        )
-
         // Build instruction config
         const instructionConfig: InstructionConfig = {
             mode: this.currentMode,
@@ -373,35 +367,60 @@ class AgentService {
         this.setState('thinking')
         this.addActivity('analysis', 'Analyzing workspace...')
 
-        // Configure the loop service with current settings
-        agentLoopService.setWorkspacePath(this.workspacePath)
-        agentLoopService.setUseOfflineAI(this.useOfflineAI)
-        if (!this.useOfflineAI) {
-            agentLoopService.setCloudProvider(this.provider)
-        }
-
         try {
-            // Specialized background prompt for generating JSON suggestions
+            // Build the suggestion-specific prompt (no tool loop needed)
             const systemPrompt = this.buildPrompt(context)
-            
-            // The instruction is the user's current situation
             const instruction = `Current Mode: ${this.currentMode}\nWorkspace: ${this.workspacePath}\n\nAnalyze the context and provide suggestions.`
 
-            const result = await agentLoopService.run(instruction, this.missionHistory, {
-                maxIterations: 2, // Keep background analysis very short
-                trustedMode: true,
-                useRAG: true,
-                autoApproveReadOnly: true,
-                systemPrompt // OVERRIDE the default tool loop prompt
-            })
+            // Direct LLM call — bypass the ReAct tool loop for background analysis.
+            // The analyze() method only needs JSON suggestions, not tool execution.
+            let result = ''
 
-            // Update local history from the loop
-            this.missionHistory = agentLoopService.getMissionHistory()
+            if (this.useOfflineAI) {
+                // Offline: use generateStream with no-op token handler
+                const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+                    { role: 'system', content: systemPrompt },
+                    ...this.missionHistory.slice(-6).map(m => ({
+                        role: m.role as 'system' | 'user' | 'assistant',
+                        content: m.content
+                    })),
+                    { role: 'user', content: instruction }
+                ]
+                result = await offlineLLMService.generateStream(messages, () => { }, {
+                    temperature: 0.3,
+                    maxTokens: 2048
+                })
+            } else {
+                // Cloud: use non-streaming chat() for simplicity and speed
+                const messages: AIMessage[] = [
+                    { role: 'system', content: systemPrompt },
+                    ...this.missionHistory.slice(-6).map(m => ({
+                        role: m.role as 'system' | 'user' | 'assistant',
+                        content: m.content
+                    })),
+                    { role: 'user', content: instruction }
+                ]
+                const response = await aiService.chat(messages, this.provider, {
+                    temperature: 0.3,
+                    maxTokens: 2048
+                })
+                if (response.error) {
+                    throw new Error(response.error)
+                }
+                result = response.content
+            }
+
+            // Keep history short — only the latest analyze round
+            this.missionHistory = [
+                ...this.missionHistory.slice(-4),
+                { role: 'user', content: instruction },
+                { role: 'assistant', content: result }
+            ]
 
             const parsed = this.parseResponse(result)
 
             if (parsed.suggestions.length === 0) {
-                // Check if the loop result itself is a useful suggestion even if not in JSON suggestions list
+                // Check if the result itself is a useful suggestion
                 if (result && result.length > 20 && !result.includes('Error:')) {
                     this.addActivity('suggestion', result)
                 }

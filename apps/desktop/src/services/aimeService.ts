@@ -22,8 +22,7 @@ export interface IndexedFile {
     path: string
     lastModified: number
     symbols: CodeSymbol[]
-    content: string
-    tokenCount: number
+    // Removed `content` and `tokenCount` to save RAM
 }
 
 class AIMEService {
@@ -32,7 +31,7 @@ class AIMEService {
     private isIndexing = false
     private workspacePath: string | null = null
     private avgdl = 0 // Average document length for BM25
-    
+
     // Web Worker for off-thread indexing
     private worker: Worker | null = null
     private workerCallbacks = new Map<string, (data: any) => void>()
@@ -84,7 +83,7 @@ class AIMEService {
             const transaction = db.transaction(['aime-index'], 'readonly')
             const store = transaction.objectStore('aime-index')
             const request = store.get(path)
-            
+
             return new Promise((resolve) => {
                 request.onsuccess = () => {
                     resolve(request.result?.index || null)
@@ -102,7 +101,7 @@ class AIMEService {
     private initWorker(): Worker | null {
         if (this.worker) return this.worker
         if (!this.useWorker) return null
-        
+
         try {
             this.worker = new AIMEWorker()
             this.worker!.onmessage = (event) => this.handleWorkerMessage(event.data)
@@ -117,7 +116,7 @@ class AIMEService {
             return null
         }
     }
-    
+
     /**
      * Handle messages from the Web Worker
      */
@@ -127,9 +126,9 @@ class AIMEService {
                 logger.agent.info('AIME Worker: Indexing started', { totalFiles: data.totalFiles })
                 break
             case 'indexingProgress':
-                logger.agent.debug('AIME Worker: Progress', { 
-                    processed: data.processed, 
-                    total: data.total 
+                logger.agent.debug('AIME Worker: Progress', {
+                    processed: data.processed,
+                    total: data.total
                 })
                 break
             case 'indexingComplete': {
@@ -144,6 +143,13 @@ class AIMEService {
                 if (completeCallback) {
                     completeCallback(data)
                     this.workerCallbacks.delete('indexComplete')
+                }
+
+                // RAM Optimization: Destroy the worker's V8 isolate immediately after indexing
+                if (this.worker) {
+                    this.worker.terminate()
+                    this.worker = null
+                    logger.agent.debug('AIME Worker: Terminated to free V8 isolate memory')
                 }
                 break
             }
@@ -160,25 +166,25 @@ class AIMEService {
                 break
         }
     }
-    
+
     /**
      * Send message to worker with callback
      */
     private async sendToWorker(type: string, payload: any, callbackKey: string): Promise<any> {
         const worker = this.initWorker()
         if (!worker) throw new Error('Worker not available')
-        
+
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this.workerCallbacks.delete(callbackKey)
                 reject(new Error('Worker timeout'))
             }, 60000) // 60s timeout
-            
+
             this.workerCallbacks.set(callbackKey, (data: any) => {
                 clearTimeout(timeout)
                 resolve(data)
             })
-            
+
             worker.postMessage({ type, ...payload })
         })
     }
@@ -200,12 +206,12 @@ class AIMEService {
                 this.index = cachedIndex
                 this.buildSearchIndex()
                 logger.agent.info('AIME: Loaded index from cache', { files: this.index.length })
-                
+
                 // Trigger fast incremental re-index for changed files
                 this.isIndexing = false // Temporarily unlock
                 await this.reindexChanged()
                 this.isIndexing = true // Re-lock for potential full index logic below if needed
-                
+
                 // If we have enough files, we consider it "done" for now
                 if (this.index.length > 0) {
                     this.isIndexing = false
@@ -214,7 +220,7 @@ class AIMEService {
             }
 
             this.index = []
-            
+
             // 2. Full index logic follows...
             // Try Web Worker first
             if (this.useWorker) {
@@ -228,7 +234,7 @@ class AIMEService {
                     }
                 }
             }
-            
+
             // Fall back to main thread
             await treeSitterService.init()
             await this.scanDirectory(path)
@@ -244,7 +250,7 @@ class AIMEService {
             this.isIndexing = false
         }
     }
-    
+
     /**
      * Collect files to index
      */
@@ -271,17 +277,17 @@ class AIMEService {
                 }
             }
         }
-        
+
         return files
     }
-    
+
     /**
      * Load file contents for worker
      */
     private async loadFileContents(filePaths: string[], workspacePath: string): Promise<any[]> {
         const electronAPI = globalThis.window.electronAPI
         const files: any[] = []
-        
+
         for (const path of filePaths) {
             try {
                 const res = await electronAPI?.fs.readFile(path)
@@ -296,18 +302,18 @@ class AIMEService {
                 console.warn(`[AIME] Failed to load file: ${path}`, error)
             }
         }
-        
+
         return files
     }
-    
+
     /**
      * Index files using Web Worker, then sync worker-parsed results to main thread
      */
     private async indexWithWorker(files: any[]): Promise<void> {
         logger.agent.info('AIME: Delegating indexing to Web Worker', { fileCount: files.length })
-        
+
         const result = await this.sendToWorker('indexWorkspace', { files }, 'indexComplete')
-        
+
         if (result?.indexData) {
             for (const entry of result.indexData) {
                 const symbols: CodeSymbol[] = (entry.symbols || []).map((s: any) => ({
@@ -320,15 +326,13 @@ class AIMEService {
                 this.index.push({
                     path: entry.path,
                     lastModified: Date.now(),
-                    symbols,
-                    content: entry.content,
-                    tokenCount: this.tokenize(entry.content).length
+                    symbols
                 })
             }
             this.buildSearchIndex()
             await this.saveIndex()
         }
-        
+
         logger.agent.info('AIME: Worker indexing completed and synced to main thread', {
             files: this.index.length,
             symbols: this.getTotalSymbolCount()
@@ -368,14 +372,11 @@ class AIMEService {
 
             const stats = await electronAPI.fs.stat(filePath)
             const symbols = await this.extractSymbols(res.content, filePath)
-            const tokens = this.tokenize(res.content)
 
             this.index.push({
                 path: filePath,
                 lastModified: stats?.mtime || Date.now(),
-                symbols,
-                content: res.content,
-                tokenCount: tokens.length
+                symbols
             })
         } catch (error) {
             console.error(`[AIME] Failed to index file: ${filePath}`, error)
@@ -466,18 +467,24 @@ class AIMEService {
             includeScore: true
         })
 
-        // Calculate average document length for BM25
-        const totalTokens = this.index.reduce((acc, f) => acc + f.tokenCount, 0)
-        this.avgdl = this.index.length > 0 ? totalTokens / this.index.length : 0
+        // Calculate average document length for BM25 (Approximated from symbols to save RAM)
+        const totalSymbols = this.index.reduce((acc, f) => acc + f.symbols.length, 0)
+        this.avgdl = this.index.length > 0 ? totalSymbols / this.index.length : 0
     }
 
     private tokenize(text: string): string[] {
         return text.toLowerCase().split(/[^a-z0-9_]+/).filter(t => t.length > 2)
     }
 
-    private calculateBM25(query: string, file: IndexedFile): number {
+    private async calculateBM25(query: string, file: IndexedFile): Promise<number> {
+        const electronAPI = globalThis.window.electronAPI
+        if (!electronAPI) return 0
+
+        const res = await electronAPI.fs.readFile(file.path)
+        if (!res?.success || !res.content) return 0
+
         const tokens = this.tokenize(query)
-        const fileTokens = this.tokenize(file.content)
+        const fileTokens = this.tokenize(res.content)
         const k1 = 1.2
         const b = 0.75
         let score = 0
@@ -491,12 +498,13 @@ class AIMEService {
             const f_q = docFreqs[q] || 0
             if (f_q === 0) continue
 
-            // Simplified IDF: ln((N - n_q + 0.5) / (n_q + 0.5) + 1)
-            // Since we don't pre-calculate n_q for all tokens, we use a heuristic or just freq
-            const n_q = this.index.filter(f => f.content.toLowerCase().includes(q)).length
+            // Approximated IDF based on symbols instead of full content retention
+            const n_q = this.index.filter(f => f.symbols.some(s => s.name.toLowerCase().includes(q) || s.content.toLowerCase().includes(q))).length
             const idf = Math.log((this.index.length - n_q + 0.5) / (n_q + 0.5) + 1)
 
-            score += idf * (f_q * (k1 + 1)) / (f_q + k1 * (1 - b + b * (file.tokenCount / this.avgdl)))
+            // Approximate token count based on file structure
+            const approximateTokenCount = fileTokens.length
+            score += idf * (f_q * (k1 + 1)) / (f_q + k1 * (1 - b + b * (approximateTokenCount / (this.avgdl * 10)))) // Adjust avgdl scale
         }
 
         return score
@@ -511,11 +519,11 @@ class AIMEService {
      */
     async searchWithWorker(query: string, limit = 10): Promise<any[]> {
         if (!this.useWorker || !this.worker) return []
-        
+
         try {
-            const results = await this.sendToWorker('search', { 
-                query, 
-                maxResults: limit 
+            const results = await this.sendToWorker('search', {
+                query,
+                maxResults: limit
             }, `search:${query}`)
             return results || []
         } catch (error) {
@@ -527,17 +535,17 @@ class AIMEService {
     /**
      * Search for relevant symbols/files based on a query
      */
-    search(query: string, limit = 10): CodeSymbol[] {
+    async search(query: string, limit = 10): Promise<CodeSymbol[]> {
         if (!this.fuse) return []
 
         // 1. Get fuzzy matches for symbols
         const fuseResults = this.fuse.search(query)
 
         // 2. Calculate BM25 for files containing these symbols
-        const scoredSymbols = fuseResults.map(res => {
+        const scoredSymbolsPromises = fuseResults.map(async (res) => {
             const symbol = res.item
             const file = this.index.find(f => f.path === symbol.filePath)
-            const bm25 = file ? this.calculateBM25(query, file) : 0
+            const bm25 = file ? await this.calculateBM25(query, file) : 0
 
             // Normalize scores (Fuse score is 0-1 where 0 is perfect, BM25 is typically > 0 where higher is better)
             // We want a combined score where HIGHER is better
@@ -548,6 +556,8 @@ class AIMEService {
 
             return { symbol, score: combinedScore }
         })
+
+        const scoredSymbols = await Promise.all(scoredSymbolsPromises)
 
         // Sort by combined score descending
         return scoredSymbols
@@ -561,7 +571,7 @@ class AIMEService {
      * Uses a hybrid approach: Repo Map for awareness + Targeted snippets for precision.
      */
     async retrieveContext(query: string, maxFiles: number = 8): Promise<string> {
-        const symbols = this.search(query, 20)
+        const symbols = await this.search(query, 20)
         if (symbols.length === 0 && this.index.length > 0) {
             // If no symbols match, try a fallback Repo Map
             return this.generateRepoMap(1500)
@@ -569,7 +579,7 @@ class AIMEService {
         if (symbols.length === 0) return 'No relevant context found.'
 
         let context = '### Codebase Context\n\n'
-        
+
         // Add a small repo map for structural awareness
         const repoMap = this.generateRepoMap(800)
         if (repoMap) {
@@ -584,20 +594,27 @@ class AIMEService {
         for (const filePath of filePaths) {
             const file = this.index.find(f => f.path === filePath)
             if (file) {
+                // Fetch content on demand to save RAM
+                const electronAPI = globalThis.window.electronAPI
+                if (!electronAPI) continue
+
+                const fileRef = await electronAPI.fs.readFile(file.path)
+                if (!fileRef?.success || !fileRef.content) continue
+
                 const relativePath = this.workspacePath ? filePath.replace(this.workspacePath, '').replace(/^[/\\]/, '') : filePath
                 context += `File: ${relativePath}\n\`\`\`\n`
-                
+
                 // Collect all symbols for this file that matched the query
                 const fileSymbols = symbols.filter(s => s.filePath === filePath)
-                
+
                 // Get a merged window of lines to show
-                const lineWindows: Array<{start: number, end: number}> = fileSymbols.map(s => ({
+                const lineWindows: Array<{ start: number, end: number }> = fileSymbols.map(s => ({
                     start: Math.max(0, s.line - 15),
                     end: s.line + 25
                 }))
-                
+
                 // Merge overlapping windows
-                const mergedWindows: Array<{start: number, end: number}> = []
+                const mergedWindows: Array<{ start: number, end: number }> = []
                 if (lineWindows.length > 0) {
                     lineWindows.sort((a, b) => a.start - b.start)
                     let current = lineWindows[0]
@@ -612,7 +629,7 @@ class AIMEService {
                     mergedWindows.push(current)
                 }
 
-                const lines = file.content.split('\n')
+                const lines = fileRef.content.split('\n')
                 for (const window of mergedWindows) {
                     const start = window.start
                     const end = Math.min(lines.length, window.end)
@@ -620,7 +637,7 @@ class AIMEService {
                     context += lines.slice(start, end).join('\n') + '\n'
                     if (end < lines.length) context += '// ...\n'
                 }
-                
+
                 context += '\n```\n\n'
             }
         }
@@ -650,7 +667,7 @@ class AIMEService {
                 : file.path
 
             let fileContent = `${relativePath}:\n`
-            
+
             // Prioritize important symbols
             const priorityOrder = { 'class': 1, 'interface': 2, 'function': 3, 'method': 4, 'variable': 5 }
             const sortedSymbols = [...file.symbols].sort((a, b) => {
@@ -670,12 +687,12 @@ class AIMEService {
                 }
                 const typePrefix = typePrefixMap[symbol.type] || 'var'
                 const line = `  ${typePrefix} ${symbol.name} (L${symbol.line})\n`
-                
+
                 // Estimate tokens (roughly 4 chars per token)
                 const lineTokens = Math.ceil(line.length / 4)
-                
+
                 if (currentTokens + lineTokens > maxTokens) break
-                
+
                 fileContent += line
                 currentTokens += lineTokens
             }
@@ -731,9 +748,7 @@ class AIMEService {
                         this.index[i] = {
                             ...file,
                             lastModified: stats.mtime,
-                            symbols,
-                            content: res.content,
-                            tokenCount: this.tokenize(res.content).length
+                            symbols
                         }
                         updated++
                     }

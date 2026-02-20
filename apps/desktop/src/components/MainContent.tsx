@@ -1,14 +1,16 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useAppStore } from '../stores/appStore'
-import Editor from './Editor'
-import TaskBoard from './TaskBoard'
-import VersionPanel from './VersionPanel'
-import FilesPanel from './FilesPanel'
 import ResourceMonitor from './ResourceMonitor'
-import { Users, Shield } from 'lucide-react'
+
+// RAM Optimization: Lazy-load tab panels — only the active tab's component is loaded.
+// This defers Editor (~Monaco), TaskBoard, VersionPanel (~DiffEditor), FilesPanel trees.
+const Editor = lazy(() => import('./Editor'))
+const TaskBoard = lazy(() => import('./TaskBoard'))
+const VersionPanel = lazy(() => import('./VersionPanel'))
+const FilesPanel = lazy(() => import('./FilesPanel'))
 
 type Tab = 'editor' | 'tasks' | 'files' | 'history'
 
@@ -17,7 +19,7 @@ interface MainContentProps {
   onShowCollaboration?: () => void
 }
 
-export default function MainContent({ activeTab, onShowCollaboration }: MainContentProps) {
+export default function MainContent({ activeTab }: MainContentProps) {
   const { currentSpace } = useAppStore()
 
   const [resourceVisibility, setResourceVisibility] = useState({
@@ -54,11 +56,6 @@ export default function MainContent({ activeTab, onShowCollaboration }: MainCont
         <div className="space-identity">
           <div className="space-status-dot active" />
           <h1 className="space-title">{currentSpace.name}</h1>
-          <div className="v-sep" />
-          <div className="security-tag">
-            <Shield size={10} />
-            <span>Encrypted Node</span>
-          </div>
         </div>
 
         <div className="monitor-container">
@@ -67,24 +64,16 @@ export default function MainContent({ activeTab, onShowCollaboration }: MainCont
             onToggle={handleToggleResource}
           />
         </div>
-
-        <div className="header-actions">
-          <button
-            className="btn-action-circle"
-            onClick={() => onShowCollaboration?.()}
-            title="Collaboration"
-          >
-            <Users size={16} />
-          </button>
-        </div>
       </header>
 
       <div className="content-area">
         <div className="view-wrapper animate-tab-switch" key={activeTab}>
-          {activeTab === 'editor' && <Editor />}
-          {activeTab === 'tasks' && <TaskBoard />}
-          {activeTab === 'history' && <VersionPanel />}
-          {activeTab === 'files' && <FilesPanel />}
+          <Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>Loading...</div>}>
+            {activeTab === 'editor' && <Editor />}
+            {activeTab === 'tasks' && <TaskBoard />}
+            {activeTab === 'history' && <VersionPanel />}
+            {activeTab === 'files' && <FilesPanel />}
+          </Suspense>
         </div>
       </div>
 
@@ -94,7 +83,7 @@ export default function MainContent({ activeTab, onShowCollaboration }: MainCont
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          background: #000;
+          background: var(--color-bg);
           position: relative;
         }
 
@@ -121,8 +110,8 @@ export default function MainContent({ activeTab, onShowCollaboration }: MainCont
           align-items: center;
           justify-content: space-between;
           padding: 0 32px;
-          background: rgba(255, 255, 255, 0.01);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-bg);
+          border-bottom: 1px solid var(--color-border);
           z-index: 100;
         }
 
@@ -145,64 +134,17 @@ export default function MainContent({ activeTab, onShowCollaboration }: MainCont
           font-size: 15px;
           font-weight: 800;
           letter-spacing: -0.01em;
-          color: white;
+          color: var(--color-text);
           max-width: 240px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
 
-        .v-sep {
-          width: 1px;
-          height: 16px;
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .security-tag {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          border-radius: 6px;
-          font-size: 10px;
-          font-weight: 800;
-          text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.4);
-        }
-
         .monitor-container {
           flex: 2;
           display: flex;
           justify-content: center;
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          flex: 1;
-          justify-content: flex-end;
-        }
-
-        .btn-action-circle {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          color: rgba(255, 255, 255, 0.4);
-          transition: all 0.2s;
-        }
-
-        .btn-action-circle:hover {
-          background: rgba(255, 255, 255, 0.05);
-          color: white;
-          transform: scale(1.05);
         }
 
         .content-area {

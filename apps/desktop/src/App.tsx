@@ -27,7 +27,7 @@ import { StartupLayout } from './components/StartupLayout'
 import './styles/window-animations.css'
 
 function App() {
-  const { currentSpace, initialize, _hasHydrated, startupStatus, showSettings, setShowSettings } = useAppStore()
+  const { currentSpace, initialize, _hasHydrated, startupStatus, showSettings, setShowSettings, theme } = useAppStore()
   const { initialize: initializeUpdates } = useUpdateStore()
   usePerformanceAcceleration()
   const isWebMode = !window.electronAPI || (window as any).electronAPI?.platform === 'browser'
@@ -163,9 +163,9 @@ function App() {
 
   return (
     <EncryptionProvider spaceId={currentSpace?.id ?? null}>
-      <div className={`app ${isMinimizing ? 'genie-minimizing' : ''}`}>
-        <Titlebar 
-          activeTab={activeTab} 
+      <div className={`app ${theme === 'light' ? 'light-mode' : 'dark-mode'} ${isMinimizing ? 'genie-minimizing' : ''}`}>
+        <Titlebar
+          activeTab={activeTab}
           onTabChange={setActiveTab}
           onShowExtensions={() => setShowExtensions(true)}
           onShowCollaboration={() => setShowCollaboration(true)}
@@ -174,9 +174,9 @@ function App() {
           <Sidebar />
           <main className="main">
             {showWorkspace ? (
-              <MainContent 
-                activeTab={activeTab} 
-                onShowCollaboration={() => setShowCollaboration(true)} 
+              <MainContent
+                activeTab={activeTab}
+                onShowCollaboration={() => setShowCollaboration(true)}
               />
             ) : (
               <WelcomeScreen onShowCollaboration={() => setShowCollaboration(true)} />
@@ -215,9 +215,9 @@ function App() {
             <UnifiedSettingsPanel onClose={() => setShowSettings(false)} />
           )}
           {showCollaboration && (
-            <CollaborationPanel 
-              onClose={() => setShowCollaboration(false)} 
-              spaceId={currentSpace?.id} 
+            <CollaborationPanel
+              onClose={() => setShowCollaboration(false)}
+              spaceId={currentSpace?.id}
             />
           )}
         </Suspense>

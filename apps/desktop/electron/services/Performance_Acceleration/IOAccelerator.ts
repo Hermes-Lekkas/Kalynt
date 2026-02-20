@@ -5,6 +5,33 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { nativeHelperService } from '../native-helper-service'
 
+class LRUCache<K, V> {
+    private map = new Map<K, V>()
+
+    constructor(private capacity: number) { }
+
+    get(key: K): V | undefined {
+        if (!this.map.has(key)) return undefined
+        const val = this.map.get(key)!
+        this.map.delete(key)
+        this.map.set(key, val)
+        return val
+    }
+
+    set(key: K, value: V) {
+        if (this.map.has(key)) {
+            this.map.delete(key)
+        } else if (this.map.size >= this.capacity) {
+            this.map.delete(this.map.keys().next().value!)
+        }
+        this.map.set(key, value)
+    }
+
+    clear() {
+        this.map.clear()
+    }
+}
+
 /**
  * IOAccelerator
  * 
@@ -13,8 +40,8 @@ import { nativeHelperService } from '../native-helper-service'
  */
 export class IOAccelerator {
     private isNativeSupported: boolean = false
-    private indexCache: Map<string, string[]> = new Map()
-    private fileMetadataCache: Map<string, fs.Stats> = new Map()
+    private indexCache = new LRUCache<string, string[]>(50) // Cache for 50 directory scans
+    private fileMetadataCache = new LRUCache<string, fs.Stats>(500) // 500 file stats max
 
     constructor() {
         this.isNativeSupported = nativeHelperService.isAvailable()
@@ -46,10 +73,10 @@ export class IOAccelerator {
 
     private async recursiveReaddir(dirPath: string, fileList: string[]) {
         const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
-        
+
         for (const entry of entries) {
             const fullPath = path.join(dirPath, entry.name)
-            
+
             // Skip common ignored directories to save time
             if (entry.isDirectory()) {
                 if (['node_modules', '.git', '.next', 'dist', 'build', 'release'].includes(entry.name)) continue
@@ -68,7 +95,7 @@ export class IOAccelerator {
         if (this.isNativeSupported) {
             return nativeHelperService.request('fs:search', { pattern, path: rootDir })
         }
-        
+
         // Implementation for ripgrep search would go here if we were to bundle it
         // For now, we return empty or use a slower JS-based search
         return []
@@ -80,7 +107,7 @@ export class IOAccelerator {
      */
     public async prewarmCache(dirPath: string) {
         const files = this.indexCache.get(dirPath) || await this.scanDirectory(dirPath)
-        
+
         // Process in batches to avoid overwhelming the loop
         const batchSize = 100
         for (let i = 0; i < files.length; i += batchSize) {
@@ -94,7 +121,7 @@ export class IOAccelerator {
                 }
             }))
         }
-        
+
         console.log(`[IOAccelerator] Pre-warmed cache for ${files.length} files in ${dirPath}`)
     }
 
@@ -109,7 +136,7 @@ export class IOAccelerator {
                     callback(data.event, data.path)
                 }
             })
-            
+
             nativeHelperService.request('fs:watch', { path: dirPath })
                 .catch(e => console.error('[IOAccelerator] Failed to setup native watcher:', e))
         } else {

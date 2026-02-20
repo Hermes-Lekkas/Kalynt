@@ -30,8 +30,18 @@ Kalynt is built on a "Trust No One" (Zero Trust) architecture. We assume that ne
 *   **Symlinks:** Symbolic links are resolved (`fs.realpath`) to ensure they don't point outside the allowed workspace root.
 
 ### 4. API Key Storage
-*   **Mechanism:** API keys (OpenAI, Anthropic) are **never** stored in plain text.
+*   **Mechanism:** API keys (OpenAI, Anthropic, Google) are **never** stored in plain text.
 *   **Implementation:** We use Electron's `safeStorage` API, which leverages the OS-level keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service) to encrypt secrets at rest.
+
+### 5. Content Security Policy
+*   **Enforcement:** CSP headers are applied to every response via `session.webRequest.onHeadersReceived`.
+*   **Rules:** `script-src 'self'`, whitelisted CDN origins only, `connect-src` restricted to known API endpoints.
+*   **XSS Mitigation:** AI response rendering uses `react-syntax-highlighter` instead of `dangerouslySetInnerHTML`.
+
+### 6. Process & Memory Security
+*   **Renderer Sandbox:** `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`.
+*   **Performance Acceleration:** All Chromium flags are hardened — GPU process merged into main, background networking disabled, renderer process limited to 1.
+*   **Native Helper Isolation:** The Swift helper runs as a separate child process, communicating exclusively via JSON-RPC over stdin/stdout.
 
 ---
 

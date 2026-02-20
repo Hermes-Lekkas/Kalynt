@@ -194,7 +194,7 @@ export default function Editor() {
         .premium-editor-container {
           flex: 1;
           display: flex;
-          background: #000;
+          background: var(--color-bg);
           height: 100%;
         }
 
@@ -213,63 +213,64 @@ export default function Editor() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          background: rgba(255, 255, 255, 0.01);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-surface-subtle);
+          border-bottom: 1px solid var(--color-border);
         }
 
         .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 12px; }
 
         .mode-pill {
           display: flex; align-items: center; gap: 10px;
-          padding: 4px 12px 4px 6px; background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 100px;
+          padding: 4px 12px 4px 6px; background: var(--color-surface-elevated);
+          border: 1px solid var(--color-border); border-radius: 100px;
           cursor: pointer; position: relative;
         }
 
         .mode-icon-box {
           width: 24px; height: 24px; border-radius: 50%;
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--color-glass);
           display: flex; align-items: center; justify-content: center; font-size: 14px;
         }
 
-        .mode-label { font-size: 12px; font-weight: 700; color: white; }
+        .mode-label { font-size: 12px; font-weight: 700; color: var(--color-text); }
 
         .mode-popover {
           position: absolute; top: calc(100% + 8px); left: 0;
-          width: 260px; background: #0a0a0a; border: 1px solid rgba(255, 255, 255, 0.1);
+          width: 260px; background: var(--color-surface); border: 1px solid var(--color-border);
           border-radius: 16px; padding: 8px; z-index: 1000;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
         }
 
         .popover-item {
           width: 100%; display: flex; align-items: center; gap: 12px;
           padding: 10px; border-radius: 10px; text-align: left;
           transition: all 0.2s;
+          color: var(--color-text);
         }
-        .popover-item:hover { background: rgba(255, 255, 255, 0.05); }
-        .popover-item.active { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+        .popover-item:hover { background: var(--color-glass-hover); }
+        .popover-item.active { background: var(--color-glass-active); color: var(--color-accent); }
 
         .i-name { display: block; font-size: 13px; font-weight: 700; }
-        .i-desc { font-size: 10px; color: rgba(255, 255, 255, 0.3); }
+        .i-desc { font-size: 10px; color: var(--color-text-tertiary); }
 
-        .divider-v { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.06); }
+        .divider-v { width: 1px; height: 16px; background: var(--color-border); }
 
         .sync-badge-premium {
           display: flex; align-items: center; gap: 8px;
-          padding: 4px 12px; background: rgba(255, 255, 255, 0.02);
-          border-radius: 100px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.4);
+          padding: 4px 12px; background: var(--color-glass);
+          border-radius: 100px; font-size: 11px; font-weight: 700; color: var(--color-text-tertiary);
         }
 
-        .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); }
+        .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); }
         .sync-dot.online { background: #10b981; box-shadow: 0 0 8px #10b981; }
 
         .btn-agent-toggle {
           display: flex; align-items: center; gap: 8px;
-          padding: 0 16px; height: 32px; background: rgba(59, 130, 246, 0.1);
-          border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 100px;
-          color: #3b82f6; font-size: 11px; font-weight: 800; text-transform: uppercase;
+          padding: 0 16px; height: 32px; background: var(--color-glass);
+          border: 1px solid var(--color-accent-hover); border-radius: 100px;
+          color: var(--color-accent); font-size: 11px; font-weight: 800; text-transform: uppercase;
         }
-        .btn-agent-toggle.active { background: #3b82f6; color: white; }
+        .btn-agent-toggle.active { background: var(--color-accent); color: white; }
 
         /* Canvas */
         .editor-canvas {
@@ -278,11 +279,11 @@ export default function Editor() {
 
         .editor-surface {
           width: 100%; max-width: 800px; min-height: 100%;
-          font-size: 16px; line-height: 1.8; color: rgba(255, 255, 255, 0.8);
+          font-size: 16px; line-height: 1.8; color: var(--color-text);
           outline: none; white-space: pre-wrap;
         }
 
-        .editor-surface:empty::before { content: attr(data-placeholder); color: rgba(255, 255, 255, 0.1); }
+        .editor-surface:empty::before { content: attr(data-placeholder); color: var(--color-text-muted); }
 
         .read-only-banner {
           display: flex; align-items: center; gap: 8px;
@@ -294,16 +295,16 @@ export default function Editor() {
         /* Footer */
         .editor-statusbar {
           height: 36px; padding: 0 24px; display: flex; align-items: center; gap: 24px;
-          background: rgba(255, 255, 255, 0.01); border-top: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-surface-subtle); border-top: 1px solid var(--color-border);
         }
 
-        .status-item { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; }
+        .status-item { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 800; color: var(--color-text-tertiary); text-transform: uppercase; }
         .status-spacer { flex: 1; }
 
         /* Resizer */
-        .agent-dock { border-left: 1px solid rgba(255, 255, 255, 0.05); overflow: hidden; }
+        .agent-dock { border-left: 1px solid var(--color-border); overflow: hidden; background: var(--color-bg); }
         .agent-resizer-line { width: 4px; cursor: col-resize; background: transparent; transition: all 0.3s; z-index: 100; margin-left: -2px; }
-        .agent-resizer-line:hover, .agent-resizer-line.active { background: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+        .agent-resizer-line:hover, .agent-resizer-line.active { background: var(--color-accent); box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
       `}</style>
     </div>
   )

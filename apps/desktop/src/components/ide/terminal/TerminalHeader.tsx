@@ -3,6 +3,7 @@
  */
 
 import React, { useState } from 'react'
+import { useAppStore } from '../../../stores/appStore'
 import { TerminalTab } from './types'
 import {
     Plus,
@@ -44,6 +45,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
     onSplitVertical,
     onOpenPalette
 }) => {
+    const { theme } = useAppStore()
     const [editingTabId, setEditingTabId] = useState<string | null>(null)
     const [editValue, setEditValue] = useState('')
 
@@ -63,9 +65,9 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
         <div style={{
             display: 'flex',
             alignItems: 'center',
-            background: 'linear-gradient(180deg, rgba(24, 24, 27, 0.95) 0%, rgba(0, 0, 0, 0.98) 100%)',
+            background: theme === 'light' ? '#ffffff' : 'linear-gradient(180deg, rgba(24, 24, 27, 0.95) 0%, rgba(0, 0, 0, 0.98) 100%)',
             backdropFilter: 'blur(12px)',
-            borderBottom: '1px solid rgba(139, 92, 246, 0.15)',
+            borderBottom: `1px solid ${theme === 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(139, 92, 246, 0.15)'}`,
             padding: '0 12px',
             height: '44px',
             userSelect: 'none',
@@ -91,20 +93,22 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                             padding: '8px 14px',
                             cursor: 'pointer',
                             background: activeTabId === tab.id
-                                ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%)'
-                                : 'rgba(255, 255, 255, 0.03)',
-                            color: activeTabId === tab.id ? '#e4e4e7' : '#71717a',
+                                ? (theme === 'light' ? 'rgba(59, 130, 246, 0.1)' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%)')
+                                : (theme === 'light' ? 'transparent' : 'rgba(255, 255, 255, 0.03)'),
+                            color: activeTabId === tab.id 
+                                ? (theme === 'light' ? '#1a1a1a' : '#e4e4e7') 
+                                : (theme === 'light' ? '#4b5563' : '#71717a'),
                             borderRadius: '10px',
                             border: activeTabId === tab.id
-                                ? '1px solid rgba(139, 92, 246, 0.4)'
-                                : '1px solid rgba(255, 255, 255, 0.05)',
+                                ? `1px solid ${theme === 'light' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(139, 92, 246, 0.4)'}`
+                                : `1px solid ${theme === 'light' ? 'transparent' : 'rgba(255, 255, 255, 0.05)'}`,
                             fontSize: '12px',
                             fontWeight: 500,
                             minWidth: '100px',
                             maxWidth: '180px',
                             transition: 'all 0.2s ease',
                             gap: '8px',
-                            boxShadow: activeTabId === tab.id
+                            boxShadow: activeTabId === tab.id && theme !== 'light'
                                 ? '0 2px 8px rgba(139, 92, 246, 0.15)'
                                 : 'none'
                         }}
@@ -169,7 +173,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
             <div style={{
                 width: '1px',
                 height: '20px',
-                background: 'rgba(255, 255, 255, 0.08)',
+                background: theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.08)',
                 borderRadius: '1px'
             }} />
 
@@ -179,11 +183,11 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                 <button
                     onClick={onAddTab}
                     style={{
-                        background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%)',
-                        border: '1px solid rgba(139, 92, 246, 0.3)',
+                        background: theme === 'light' ? '#e5e7eb' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%)',
+                        border: `1px solid ${theme === 'light' ? '#d1d5db' : 'rgba(139, 92, 246, 0.3)'}`,
                         borderRadius: '8px',
                         cursor: 'pointer',
-                        color: '#a78bfa',
+                        color: theme === 'light' ? '#374151' : '#a78bfa',
                         padding: '6px 10px',
                         display: 'flex',
                         alignItems: 'center',
@@ -194,8 +198,8 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         transition: 'all 0.2s ease'
                     }}
                     title="New Terminal (Ctrl+Shift+T)"
-                    onMouseOver={(e) => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.3)'}
-                    onMouseOut={(e) => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%)'}
+                    onMouseOver={(e) => e.currentTarget.style.background = theme === 'light' ? '#d1d5db' : 'rgba(139, 92, 246, 0.3)'}
+                    onMouseOut={(e) => e.currentTarget.style.background = theme === 'light' ? '#e5e7eb' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%)'}
                 >
                     <Plus size={14} />
                 </button>
@@ -209,7 +213,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                             border: 'none',
                             borderRadius: '6px',
                             cursor: 'pointer',
-                            color: '#71717a',
+                            color: theme === 'light' ? '#666666' : '#71717a',
                             padding: '6px',
                             display: 'flex',
                             alignItems: 'center',
@@ -218,7 +222,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         }}
                         title="Split Right"
                         onMouseOver={(e) => e.currentTarget.style.color = '#60a5fa'}
-                        onMouseOut={(e) => e.currentTarget.style.color = '#71717a'}
+                        onMouseOut={(e) => e.currentTarget.style.color = theme === 'light' ? '#666666' : '#71717a'}
                     >
                         <SplitSquareHorizontal size={16} />
                     </button>
@@ -233,7 +237,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                             border: 'none',
                             borderRadius: '6px',
                             cursor: 'pointer',
-                            color: '#71717a',
+                            color: theme === 'light' ? '#666666' : '#71717a',
                             padding: '6px',
                             display: 'flex',
                             alignItems: 'center',
@@ -242,7 +246,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         }}
                         title="Split Down"
                         onMouseOver={(e) => e.currentTarget.style.color = '#60a5fa'}
-                        onMouseOut={(e) => e.currentTarget.style.color = '#71717a'}
+                        onMouseOut={(e) => e.currentTarget.style.color = theme === 'light' ? '#666666' : '#71717a'}
                     >
                         <SplitSquareVertical size={16} />
                     </button>
@@ -257,7 +261,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                             border: 'none',
                             borderRadius: '6px',
                             cursor: 'pointer',
-                            color: '#71717a',
+                            color: theme === 'light' ? '#666666' : '#71717a',
                             padding: '6px',
                             display: 'flex',
                             alignItems: 'center',
@@ -266,7 +270,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         }}
                         title="Command Palette (Ctrl+Shift+P)"
                         onMouseOver={(e) => e.currentTarget.style.color = '#a78bfa'}
-                        onMouseOut={(e) => e.currentTarget.style.color = '#71717a'}
+                        onMouseOut={(e) => e.currentTarget.style.color = theme === 'light' ? '#666666' : '#71717a'}
                     >
                         <Command size={16} />
                     </button>
@@ -280,7 +284,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
-                        color: searchVisible ? '#60a5fa' : '#71717a',
+                        color: searchVisible ? '#60a5fa' : (theme === 'light' ? '#666666' : '#71717a'),
                         padding: '6px',
                         display: 'flex',
                         alignItems: 'center',
@@ -289,7 +293,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                     }}
                     title="Search (Ctrl+Shift+F)"
                     onMouseOver={(e) => e.currentTarget.style.color = '#60a5fa'}
-                    onMouseOut={(e) => e.currentTarget.style.color = searchVisible ? '#60a5fa' : '#71717a'}
+                    onMouseOut={(e) => e.currentTarget.style.color = searchVisible ? '#60a5fa' : (theme === 'light' ? '#666666' : '#71717a')}
                 >
                     <Search size={16} />
                 </button>
@@ -302,7 +306,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
-                        color: '#71717a',
+                        color: theme === 'light' ? '#666666' : '#71717a',
                         padding: '6px',
                         display: 'flex',
                         alignItems: 'center',
@@ -311,7 +315,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
                     }}
                     title="Clear Terminal (Ctrl+K)"
                     onMouseOver={(e) => e.currentTarget.style.color = '#f87171'}
-                    onMouseOut={(e) => e.currentTarget.style.color = '#71717a'}
+                    onMouseOut={(e) => e.currentTarget.style.color = theme === 'light' ? '#666666' : '#71717a'}
                 >
                     <Trash2 size={16} />
                 </button>

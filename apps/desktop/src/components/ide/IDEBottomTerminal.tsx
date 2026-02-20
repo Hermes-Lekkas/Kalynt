@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react'
 import Terminal from './Terminal'
 import { OutputTerminal } from './terminal/OutputTerminal'
+import { useAppStore } from '../../stores/appStore'
 
 interface IDEBottomTerminalProps {
     showTerminal: boolean
@@ -34,6 +35,7 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
     onActiveTerminalChange,
     onOutputInput
 }) => {
+    const { theme } = useAppStore()
     const [activeTab, setActiveTab] = useState<'terminal' | 'output' | 'build' | 'debug'>('terminal')
 
     // Switch to output tab when code starts running
@@ -89,20 +91,21 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
             {/* Tab bar */}
             <div style={{
                 display: 'flex',
-                background: 'var(--panel-header-bg, #1e1e2e)',
-                borderBottom: '1px solid var(--border-color, #313244)',
+                background: theme === 'light' ? '#ffffff' : 'var(--panel-header-bg, #1e1e2e)',
+                borderBottom: `1px solid ${theme === 'light' ? '#e5e7eb' : 'var(--border-color, #313244)'}`,
                 padding: '0 8px'
             }}>
                 <button
                     onClick={() => setActiveTab('terminal')}
                     style={{
                         padding: '6px 12px',
-                        background: activeTab === 'terminal' ? 'var(--bg-active, #45475a)' : 'transparent',
+                        background: activeTab === 'terminal' ? (theme === 'light' ? '#ffffff' : 'var(--bg-active, #45475a)') : 'transparent',
                         border: 'none',
-                        color: activeTab === 'terminal' ? 'var(--text-primary, #cdd6f4)' : 'var(--text-secondary, #a6adc8)',
+                        color: activeTab === 'terminal' ? (theme === 'light' ? '#111827' : 'var(--text-primary, #cdd6f4)') : (theme === 'light' ? '#6b7280' : 'var(--text-secondary, #a6adc8)'),
                         cursor: 'pointer',
-                        borderBottom: activeTab === 'terminal' ? '2px solid var(--accent, #89b4fa)' : '2px solid transparent',
-                        fontSize: '12px'
+                        borderBottom: activeTab === 'terminal' ? `2px solid ${theme === 'light' ? '#3b82f6' : 'var(--accent, #89b4fa)'}` : '2px solid transparent',
+                        fontSize: '12px',
+                        fontWeight: activeTab === 'terminal' ? 600 : 400
                     }}
                 >
                     Terminal
@@ -111,55 +114,58 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
                     onClick={() => setActiveTab('output')}
                     style={{
                         padding: '6px 12px',
-                        background: activeTab === 'output' ? 'var(--bg-active, #45475a)' : 'transparent',
+                        background: activeTab === 'output' ? (theme === 'light' ? '#ffffff' : 'var(--bg-active, #45475a)') : 'transparent',
                         border: 'none',
-                        color: activeTab === 'output' ? 'var(--text-primary, #cdd6f4)' : 'var(--text-secondary, #a6adc8)',
+                        color: activeTab === 'output' ? (theme === 'light' ? '#111827' : 'var(--text-primary, #cdd6f4)') : (theme === 'light' ? '#6b7280' : 'var(--text-secondary, #a6adc8)'),
                         cursor: 'pointer',
-                        borderBottom: activeTab === 'output' ? '2px solid var(--accent, #89b4fa)' : '2px solid transparent',
+                        borderBottom: activeTab === 'output' ? `2px solid ${theme === 'light' ? '#3b82f6' : 'var(--accent, #89b4fa)'}` : '2px solid transparent',
                         fontSize: '12px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '4px',
+                        fontWeight: activeTab === 'output' ? 600 : 400
                     }}
                 >
                     Output
-                    {isRunning && <span style={{ color: 'var(--success, #a6e3a1)' }}>{"\u25CF"}</span>}
+                    {isRunning && <span style={{ color: '#10b981' }}>{"\u25CF"}</span>}
                 </button>
                 <button
                     onClick={() => setActiveTab('build')}
                     style={{
                         padding: '6px 12px',
-                        background: activeTab === 'build' ? 'var(--bg-active, #45475a)' : 'transparent',
+                        background: activeTab === 'build' ? (theme === 'light' ? '#ffffff' : 'var(--bg-active, #45475a)') : 'transparent',
                         border: 'none',
-                        color: activeTab === 'build' ? 'var(--text-primary, #cdd6f4)' : 'var(--text-secondary, #a6adc8)',
+                        color: activeTab === 'build' ? (theme === 'light' ? '#111827' : 'var(--text-primary, #cdd6f4)') : (theme === 'light' ? '#6b7280' : 'var(--text-secondary, #a6adc8)'),
                         cursor: 'pointer',
-                        borderBottom: activeTab === 'build' ? '2px solid var(--accent, #89b4fa)' : '2px solid transparent',
+                        borderBottom: activeTab === 'build' ? `2px solid ${theme === 'light' ? '#3b82f6' : 'var(--accent, #89b4fa)'}` : '2px solid transparent',
                         fontSize: '12px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '4px',
+                        fontWeight: activeTab === 'build' ? 600 : 400
                     }}
                 >
                     Build
-                    {isBuilding && <span style={{ color: 'var(--warning, #f9e2af)' }}>{"\u25CF"}</span>}
+                    {isBuilding && <span style={{ color: '#f59e0b' }}>{"\u25CF"}</span>}
                 </button>
                 <button
                     onClick={() => setActiveTab('debug')}
                     style={{
                         padding: '6px 12px',
-                        background: activeTab === 'debug' ? 'var(--bg-active, #45475a)' : 'transparent',
+                        background: activeTab === 'debug' ? (theme === 'light' ? '#ffffff' : 'var(--bg-active, #45475a)') : 'transparent',
                         border: 'none',
-                        color: activeTab === 'debug' ? 'var(--text-primary, #cdd6f4)' : 'var(--text-secondary, #a6adc8)',
+                        color: activeTab === 'debug' ? (theme === 'light' ? '#111827' : 'var(--text-primary, #cdd6f4)') : (theme === 'light' ? '#6b7280' : 'var(--text-secondary, #a6adc8)'),
                         cursor: 'pointer',
-                        borderBottom: activeTab === 'debug' ? '2px solid var(--accent, #89b4fa)' : '2px solid transparent',
+                        borderBottom: activeTab === 'debug' ? `2px solid ${theme === 'light' ? '#3b82f6' : 'var(--accent, #89b4fa)'}` : '2px solid transparent',
                         fontSize: '12px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '4px',
+                        fontWeight: activeTab === 'debug' ? 600 : 400
                     }}
                 >
                     Debug
-                    {isDebugging && <span style={{ color: 'var(--error, #f38ba8)' }}>{"\u25CF"}</span>}
+                    {isDebugging && <span style={{ color: '#ef4444' }}>{"\u25CF"}</span>}
                 </button>
             </div>
 
@@ -175,7 +181,7 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
                     flex: 1,
                     display: activeTab === 'output' ? 'flex' : 'none',
                     flexDirection: 'column',
-                    background: 'var(--terminal-bg, #11111b)',
+                    background: theme === 'light' ? '#ffffff' : '#11111b',
                     overflow: 'hidden',
                     outline: 'none'
                 }}
@@ -193,7 +199,7 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
                     flex: 1,
                     display: activeTab === 'build' ? 'flex' : 'none',
                     flexDirection: 'column',
-                    background: 'var(--terminal-bg, #11111b)',
+                    background: theme === 'light' ? '#ffffff' : '#11111b',
                     overflow: 'hidden'
                 }}
             >
@@ -209,7 +215,7 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
                     flex: 1,
                     display: activeTab === 'debug' ? 'flex' : 'none',
                     flexDirection: 'column',
-                    background: 'var(--terminal-bg, #11111b)',
+                    background: theme === 'light' ? '#ffffff' : '#11111b',
                     overflow: 'hidden'
                 }}
             >

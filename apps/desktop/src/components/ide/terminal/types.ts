@@ -74,6 +74,29 @@ export const DEFAULT_THEME: TerminalTheme = {
     brightWhite: '#f4f4f5'
 }
 
+export const LIGHT_THEME: TerminalTheme = {
+    background: '#ffffff',
+    foreground: '#1a1a1a',
+    cursor: '#3b82f6',
+    selection: 'rgba(59, 130, 246, 0.2)',
+    black: '#000000',
+    red: '#e11d48',
+    green: '#16a34a',
+    yellow: '#d97706',
+    blue: '#2563eb',
+    magenta: '#9333ea',
+    cyan: '#0891b2',
+    white: '#e5e5e5',
+    brightBlack: '#525252',
+    brightRed: '#f43f5e',
+    brightGreen: '#22c55e',
+    brightYellow: '#f59e0b',
+    brightBlue: '#3b82f6',
+    brightMagenta: '#a855f7',
+    brightCyan: '#06b6d4',
+    brightWhite: '#ffffff'
+}
+
 export interface TerminalState {
     xterm: Terminal | null
     fitAddon: FitAddon | null

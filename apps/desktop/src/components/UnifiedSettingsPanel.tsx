@@ -57,10 +57,15 @@ import {
   Layout,
   Layers,
   Palette,
-  Wind
+  Wind,
+  Settings as SettingsIcon,
+  Sun,
+  Moon,
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react'
 
-type TabId = 'agents' | 'security' | 'members' | 'advanced' | 'credits' | 'support' | 'performance'
+type TabId = 'general' | 'agents' | 'security' | 'members' | 'advanced' | 'credits' | 'support' | 'performance'
 
 interface SpaceSettings {
   encryptionEnabled: boolean
@@ -70,10 +75,10 @@ interface SpaceSettings {
 }
 
 export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: () => void }) {
-  const { currentSpace, apiKeys, setAPIKey, removeAPIKey, settingsTab, setSettingsTab } = useAppStore()
+  const { currentSpace, apiKeys, setAPIKey, removeAPIKey, settingsTab, setSettingsTab, theme, setTheme } = useAppStore()
   const { getMyRole, getMembers } = useMemberStore()
 
-  const [activeTab, setActiveTab] = useState<TabId>('agents')
+  const [activeTab, setActiveTab] = useState<TabId>('general')
 
   useEffect(() => {
     if (settingsTab) {
@@ -168,6 +173,7 @@ export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: ()
   }
 
   const tabs: Array<{ id: TabId; label: string; icon: React.ReactNode }> = [
+    { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'agents', label: 'Agents', icon: <Zap size={16} /> },
     ...(currentSpace ? [
       { id: 'security', label: 'Security', icon: <Lock size={16} /> },
@@ -214,6 +220,10 @@ export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: ()
 
           {/* Content Area */}
           <div className="settings-content">
+            {activeTab === 'general' && (
+              <GeneralTab theme={theme} setTheme={setTheme} />
+            )}
+
             {activeTab === 'agents' && (
               <AgentsTab apiKeys={apiKeys} setAPIKey={setAPIKey} removeAPIKey={removeAPIKey} />
             )}
@@ -884,8 +894,106 @@ function CreditsTab() {
           ))}
         </div>
 
-        <div className="made-with-love mt-8" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
+        <div className="made-with-love mt-8" style={{ borderTop: '1px solid var(--color-border-subtle)', paddingTop: '16px' }}>
           <span style={{ opacity: 0.6 }}>Architected & Developed with passion for the global developer community.</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GeneralTab({ theme, setTheme }: any) {
+  const [aiEnabled, setAiEnabled] = useState(() => {
+    return localStorage.getItem('kalynt-ai-ghost-text') !== 'false'
+  })
+
+  const toggleAI = () => {
+    const newState = !aiEnabled
+    setAiEnabled(newState)
+    localStorage.setItem('kalynt-ai-ghost-text', String(newState))
+    // Notify Monaco editors to update their providers
+    window.dispatchEvent(new CustomEvent('kalynt-ai-settings-changed', { detail: { enabled: newState } }))
+  }
+
+  return (
+    <div className="tab-content animate-fadeIn">
+      <div className="tab-header-hero">
+         <div className="hero-icon-box">
+            <Layout size={24} className="text-blue-400" />
+         </div>
+         <div className="hero-text">
+            <h3>Environment & Interface</h3>
+            <p>Customize your workspace appearance and core editor behaviors.</p>
+         </div>
+      </div>
+
+      <div className="settings-section">
+        <h3><Palette size={16} /> Appearance</h3>
+        <p className="section-desc">Choose between light and dark themes for the entire IDE.</p>
+        
+        <div className="theme-selector-grid">
+          <button 
+            className={`theme-card ${theme === 'dark' ? 'active' : ''}`}
+            onClick={() => setTheme('dark')}
+          >
+            <div className="theme-preview dark">
+              <div className="preview-titlebar" />
+              <div className="preview-body">
+                <div className="preview-sidebar" />
+                <div className="preview-content">
+                  <div className="preview-line blue" />
+                  <div className="preview-line purple" />
+                  <div className="preview-line short" />
+                </div>
+              </div>
+            </div>
+            <div className="theme-info">
+              <div className="theme-text">
+                <Moon size={14} />
+                <span>Deep Dark</span>
+              </div>
+              {theme === 'dark' && <CheckCircle2 size={14} className="active-check" />}
+            </div>
+          </button>
+
+          <button 
+            className={`theme-card ${theme === 'light' ? 'active' : ''}`}
+            onClick={() => setTheme('light')}
+          >
+            <div className="theme-preview light">
+              <div className="preview-titlebar" />
+              <div className="preview-body">
+                <div className="preview-sidebar" />
+                <div className="preview-content">
+                  <div className="preview-line blue" />
+                  <div className="preview-line purple" />
+                  <div className="preview-line short" />
+                </div>
+              </div>
+            </div>
+            <div className="theme-info">
+              <div className="theme-text">
+                <Sun size={14} />
+                <span>Polar Light</span>
+              </div>
+              {theme === 'light' && <CheckCircle2 size={14} className="active-check" />}
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h3><Sparkles size={16} /> Intelligent Assistance</h3>
+        <p className="section-desc">Configure how AI assists you during development.</p>
+
+        <div className="setting-card-compact">
+          <div className="setting-info">
+            <div className="setting-label">AI Inline Completions (Ghost Text)</div>
+            <div className="setting-description">Show real-time code suggestions as you type using active models.</div>
+          </div>
+          <div className={`toggle-switch ${aiEnabled ? 'active' : ''}`} onClick={toggleAI}>
+            <div className="toggle-knob" />
+          </div>
         </div>
       </div>
     </div>

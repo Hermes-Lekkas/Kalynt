@@ -188,8 +188,8 @@ Return ONLY a JSON array of strings, for example:
           height: 100%;
           display: flex;
           flex-direction: column;
-          background: #000;
-          color: white;
+          background: var(--color-bg);
+          color: var(--color-text);
         }
 
         .board-header {
@@ -197,12 +197,12 @@ Return ONLY a JSON array of strings, for example:
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: rgba(255, 255, 255, 0.02);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-surface-subtle);
+          border-bottom: 1px solid var(--color-border);
         }
 
         .header-info h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-        .subtitle { font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; letter-spacing: 0.05em; }
+        .subtitle { font-size: 11px; font-weight: 700; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
 
         .btn-premium-action {
           display: flex;
@@ -210,15 +210,15 @@ Return ONLY a JSON array of strings, for example:
           gap: 8px;
           padding: 0 16px;
           height: 36px;
-          background: white;
-          color: black;
+          background: var(--color-text);
+          color: var(--color-bg);
           border-radius: 10px;
           font-size: 13px;
           font-weight: 700;
           transition: all 0.2s;
         }
 
-        .btn-premium-action:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2); }
+        .btn-premium-action:hover { transform: translateY(-1px); box-shadow: 0 4px 15px var(--color-glass); }
 
         .board-container {
           flex: 1;
@@ -232,8 +232,8 @@ Return ONLY a JSON array of strings, for example:
           flex: 1;
           min-width: 320px;
           max-width: 400px;
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          background: var(--color-surface-subtle);
+          border: 1px solid var(--color-border);
           border-radius: 20px;
           display: flex;
           flex-direction: column;
@@ -245,8 +245,8 @@ Return ONLY a JSON array of strings, for example:
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: rgba(255, 255, 255, 0.01);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+          background: var(--color-surface-elevated);
+          border-bottom: 1px solid var(--color-border-subtle);
         }
 
         .col-title {
@@ -259,11 +259,11 @@ Return ONLY a JSON array of strings, for example:
         
         .col-count {
           padding: 2px 8px;
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--color-glass);
           border-radius: 6px;
           font-size: 10px;
           font-weight: 800;
-          color: rgba(255, 255, 255, 0.4);
+          color: var(--color-text-tertiary);
         }
 
         .btn-add-subtle {
@@ -273,11 +273,11 @@ Return ONLY a JSON array of strings, for example:
           display: flex;
           align-items: center;
           justify-content: center;
-          color: rgba(255, 255, 255, 0.2);
+          color: var(--color-text-muted);
           transition: all 0.2s;
         }
 
-        .btn-add-subtle:hover { background: rgba(255, 255, 255, 0.05); color: white; }
+        .btn-add-subtle:hover { background: var(--color-glass); color: var(--color-text); }
 
         .column-scroll {
           flex: 1;
@@ -332,18 +332,20 @@ function TaskCard({ task, onClick, onDragStart, isDragging }: any) {
 
       <style>{`
         .task-card-premium {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
           border-radius: 14px;
           padding: 16px;
           cursor: grab;
           transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+          color: var(--color-text);
         }
 
         .task-card-premium:hover {
-          background: rgba(255, 255, 255, 0.05);
-          border-color: rgba(59, 130, 246, 0.3);
+          background: var(--color-surface-elevated);
+          border-color: var(--color-accent);
           transform: translateY(-2px) scale(1.01);
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
         }
 
         .task-card-premium.dragging { opacity: 0.4; cursor: grabbing; }
@@ -368,29 +370,29 @@ function TaskCard({ task, onClick, onDragStart, isDragging }: any) {
 
         .card-user {
           width: 18px; height: 18px;
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--color-glass);
           border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
-          color: rgba(255, 255, 255, 0.3);
+          color: var(--color-text-tertiary);
         }
 
-        .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 6px; line-height: 1.4; }
-        .card-desc { font-size: 12px; color: rgba(255, 255, 255, 0.4); line-height: 1.5; margin-bottom: 12px; }
+        .card-title { font-size: 14px; font-weight: 700; color: var(--color-text); margin-bottom: 6px; line-height: 1.4; }
+        .card-desc { font-size: 12px; color: var(--color-text-tertiary); line-height: 1.5; margin-bottom: 12px; }
 
         .card-footer {
           display: flex;
           justify-content: space-between;
           align-items: center;
           padding-top: 12px;
-          border-top: 1px solid rgba(255, 255, 255, 0.03);
+          border-top: 1px solid var(--color-border-subtle);
         }
 
         .tag-strip { display: flex; gap: 4px; }
-        .mini-tag { font-size: 10px; font-weight: 700; color: #3b82f6; opacity: 0.8; }
+        .mini-tag { font-size: 10px; font-weight: 700; color: var(--color-accent); opacity: 0.8; }
 
         .subtask-badge {
           display: flex; align-items: center; gap: 6px;
-          font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3);
+          font-size: 10px; font-weight: 800; color: var(--color-text-tertiary);
         }
       `}</style>
     </div>
@@ -493,7 +495,7 @@ function TaskModal({ task, onClose, onSave, onDelete, onAiBreakdown, isAiLoading
         .premium-modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.8);
+          background: rgba(0, 0, 0, 0.4);
           backdrop-filter: blur(12px);
           display: flex; align-items: center; justify-content: center;
           z-index: 10000;
@@ -501,23 +503,24 @@ function TaskModal({ task, onClose, onSave, onDelete, onAiBreakdown, isAiLoading
 
         .premium-modal {
           width: 560px;
-          background: #0a0a0a;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
           border-radius: 24px;
           display: flex; flex-direction: column;
-          box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 30px 60px rgba(0, 0, 0, 0.2);
           overflow: hidden;
+          color: var(--color-text);
         }
 
         .modal-top {
           padding: 24px 32px;
           display: flex; justify-content: space-between; align-items: center;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          border-bottom: 1px solid var(--color-border-subtle);
         }
 
         .title-field {
           background: none; border: none; outline: none;
-          font-size: 20px; font-weight: 800; color: white;
+          font-size: 20px; font-weight: 800; color: var(--color-text);
           width: 100%;
         }
 
@@ -528,14 +531,14 @@ function TaskModal({ task, onClose, onSave, onDelete, onAiBreakdown, isAiLoading
         }
 
         .field-group { display: flex; flex-direction: column; gap: 8px; }
-        .field-group label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: rgba(255, 255, 255, 0.3); letter-spacing: 0.05em; }
+        .field-group label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--color-text-tertiary); letter-spacing: 0.05em; }
         
         .field-group textarea, .field-group select, .field-group input {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: var(--color-surface-subtle);
+          border: 1px solid var(--color-border);
           border-radius: 12px;
           padding: 12px;
-          color: white; font-size: 14px; outline: none;
+          color: var(--color-text); font-size: 14px; outline: none;
         }
 
         .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -544,43 +547,43 @@ function TaskModal({ task, onClose, onSave, onDelete, onAiBreakdown, isAiLoading
         
         .btn-ai-magic {
           display: flex; align-items: center; gap: 8px;
-          padding: 6px 14px; background: rgba(59, 130, 246, 0.1);
-          border: 1px solid rgba(59, 130, 246, 0.2);
-          border-radius: 100px; color: #3b82f6; font-size: 11px; font-weight: 700;
+          padding: 6px 14px; background: var(--color-glass);
+          border: 1px solid var(--color-accent-hover);
+          border-radius: 100px; color: var(--color-accent); font-size: 11px; font-weight: 700;
         }
 
         .sub-list { display: flex; flex-direction: column; gap: 8px; }
         
         .sub-item {
           display: flex; align-items: center; gap: 12px;
-          padding: 10px 14px; background: rgba(255, 255, 255, 0.02);
+          padding: 10px 14px; background: var(--color-surface-subtle);
           border-radius: 12px; font-size: 13px;
         }
 
         .sub-check {
           width: 18px; height: 18px; border-radius: 6px;
-          border: 2px solid rgba(255, 255, 255, 0.1);
-          display: flex; align-items: center; justify-content: center; color: white;
+          border: 2px solid var(--color-border);
+          display: flex; align-items: center; justify-content: center; color: var(--color-text);
         }
-        .sub-check.active { background: #10b981; border-color: #10b981; }
+        .sub-check.active { background: #10b981; border-color: #10b981; color: white; }
 
         .completed { text-decoration: line-through; opacity: 0.4; }
 
         .add-sub-input {
-          background: none; border: none; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          padding: 8px 0; color: white; font-size: 13px; outline: none;
+          background: none; border: none; border-bottom: 1px solid var(--color-border-subtle);
+          padding: 8px 0; color: var(--color-text); font-size: 13px; outline: none;
         }
 
         .modal-footer-premium {
           padding: 24px 32px;
-          background: rgba(255, 255, 255, 0.02);
+          background: var(--color-surface-subtle);
           display: flex; justify-content: space-between; align-items: center;
         }
 
         .btn-purge { color: #ef4444; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
         .footer-actions { display: flex; gap: 12px; }
-        .btn-glass { padding: 10px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.6); }
-        .btn-solid { padding: 10px 24px; background: white; color: black; border-radius: 12px; font-size: 13px; font-weight: 800; }
+        .btn-glass { padding: 10px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; color: var(--color-text-tertiary); }
+        .btn-solid { padding: 10px 24px; background: var(--color-text); color: var(--color-bg); border-radius: 12px; font-size: 13px; font-weight: 800; }
       `}</style>
     </div>
   )

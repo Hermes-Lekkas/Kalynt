@@ -127,6 +127,29 @@
     --header-height: 48px;
 }
 
+/* Light Mode Overrides */
+.light-mode {
+    --color-bg: #fdfdfd;
+    --color-surface: #ffffff;
+    --color-surface-subtle: #f7f7f7;
+    --color-surface-elevated: #ffffff;
+    --color-border: #e2e2e2;
+    --color-border-subtle: #f0f0f0;
+
+    --color-text: #1a1a1a;
+    --color-text-secondary: #4a4a4a;
+    --color-text-tertiary: #717171;
+    --color-text-muted: #a1a1a1;
+
+    --color-glass: rgba(59, 130, 246, 0.04);
+    --color-glass-hover: rgba(59, 130, 246, 0.08);
+
+    --color-gray-950: #f5f5f5;
+    --color-gray-900: #ededed;
+    --color-gray-800: #e5e5e5;
+    --color-gray-700: #d4d4d4;
+}
+
 /* Reset */
 *,
 *::before,

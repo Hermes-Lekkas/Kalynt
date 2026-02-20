@@ -9,7 +9,7 @@ export default function PerformanceTab() {
   const [isTesting, setIsTesting] = useState(false)
   const [result, setResult] = useState<DiagnosticResult | null>(null)
   const [progress, setProgress] = useState(0)
-  
+
   // RAM Graph State
   const [ramHistory, setRamHistory] = useState<number[]>(new Array(30).fill(0))
   const [currentRSS, setCurrentRSS] = useState(0)
@@ -36,31 +36,30 @@ export default function PerformanceTab() {
   const runDiagnostic = async () => {
     setIsTesting(true)
     setProgress(10)
-    
+
     try {
       // Small delays to simulate test phases and keep UI responsive
       setProgress(20)
       const cpu = await performanceDiagnosticService.runCPUBenchmark()
       setProgress(50)
-      
+
       const ipc = await performanceDiagnosticService.measureIPCLatency()
       setProgress(70)
-      
+
       const disk = await performanceDiagnosticService.measureDiskSpeed()
       setProgress(90)
-      
+
       const bootTime = await window.electronAPI.ipcRenderer.invoke('performance:get-boot-time')
-      
+
       const diagnosticResult: DiagnosticResult = {
         bootTime: bootTime || 0,
         ipcLatency: Math.round(ipc * 100) / 100,
         diskReadSpeed: Math.round(disk.read * 10) / 10,
         diskWriteSpeed: Math.round(disk.write * 10) / 10,
         cpuScore: cpu,
-        ramScore: Math.round(window.electronAPI.platform === 'darwin' ? 98 : 88),
         timestamp: Date.now()
       }
-      
+
       setResult(diagnosticResult)
       setProgress(100)
     } catch (e) {
@@ -82,22 +81,22 @@ export default function PerformanceTab() {
   return (
     <div className="tab-content performance-tab animate-fadeIn">
       <div className="tab-header-hero">
-         <div className="hero-icon-box">
-            <Activity size={24} className="text-blue-400" />
-         </div>
-         <div className="hero-text">
-            <h3>System Performance</h3>
-            <p>Diagnostic tools to measure Kalynt's responsiveness and hardware efficiency on your machine.</p>
-         </div>
+        <div className="hero-icon-box">
+          <Activity size={24} className="text-blue-400" />
+        </div>
+        <div className="hero-text">
+          <h3>System Performance</h3>
+          <p>Diagnostic tools to measure Kalynt's responsiveness and hardware efficiency on your machine.</p>
+        </div>
       </div>
 
       <div className="performance-grid">
         <section className="diagnostic-section glass-panel-dark">
           <div className="section-header-compact">
-             <Layers size={14} />
-             <span>Real-time RAM Consumption</span>
+            <Layers size={14} />
+            <span>Real-time RAM Consumption</span>
           </div>
-          
+
           <div className="ram-graph-container">
             <svg viewBox="0 0 300 60" preserveAspectRatio="none" className="ram-graph-svg">
               <defs>
@@ -129,13 +128,13 @@ export default function PerformanceTab() {
             </svg>
             <div className="ram-value-overlay">
               <span className="current-val">{currentRSS} MB</span>
-              <span className="label">RSS MEMORY</span>
+              <span className="label">TOTAL MEMORY</span>
             </div>
           </div>
 
           <div className="section-header-compact" style={{ marginTop: '24px' }}>
-             <Gauge size={14} />
-             <span>Core Diagnostics</span>
+            <Gauge size={14} />
+            <span>Core Diagnostics</span>
           </div>
 
           <div className="diagnostic-dashboard">
@@ -146,7 +145,7 @@ export default function PerformanceTab() {
                 <span className="value">{result ? `${result.bootTime}ms` : '--'}</span>
               </div>
             </div>
-            
+
             <div className="metric-card">
               <div className="metric-icon"><RefreshCw size={18} /></div>
               <div className="metric-data">
@@ -173,7 +172,7 @@ export default function PerformanceTab() {
           </div>
 
           <div className="diagnostic-actions">
-            <button 
+            <button
               className={`btn-run-diagnostic ${isTesting ? 'loading' : ''}`}
               onClick={runDiagnostic}
               disabled={isTesting}
@@ -196,18 +195,18 @@ export default function PerformanceTab() {
         {result && (
           <section className="result-section animate-reveal-up">
             <div className="system-score-card">
-               <div className="score-header">
-                  <Check size={20} className="text-green-400" />
-                  <h4>Diagnostics Complete</h4>
-               </div>
-               <div className="rating-badge" style={{ backgroundColor: `${getRating(result).color}20`, color: getRating(result).color }}>
-                  {getRating(result).label}
-               </div>
-               <p className="rating-desc">
-                  {getRating(result).label === 'ELITE' 
-                    ? 'Your system is perfectly optimized for large language models and high-speed indexing.' 
-                    : 'System performance is healthy for standard development tasks.'}
-               </p>
+              <div className="score-header">
+                <Check size={20} className="text-green-400" />
+                <h4>Diagnostics Complete</h4>
+              </div>
+              <div className="rating-badge" style={{ backgroundColor: `${getRating(result).color}20`, color: getRating(result).color }}>
+                {getRating(result).label}
+              </div>
+              <p className="rating-desc">
+                {getRating(result).label === 'ELITE'
+                  ? 'Your system is perfectly optimized for large language models and high-speed indexing.'
+                  : 'System performance is healthy for standard development tasks.'}
+              </p>
             </div>
           </section>
         )}

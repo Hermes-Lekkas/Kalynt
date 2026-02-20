@@ -2,10 +2,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React from 'react'
+import { useAppStore } from '../stores/appStore'
 import { useNotificationStore, Notification } from '../stores/notificationStore'
 import { X, Info, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react'
 
 export const NotificationSystem: React.FC = () => {
+    const { } = useAppStore()
     const { notifications, removeNotification } = useNotificationStore()
 
     if (notifications.length === 0) return null
@@ -31,15 +33,15 @@ export const NotificationSystem: React.FC = () => {
                     pointer-events: auto;
                     min-width: 320px;
                     max-width: 450px;
-                    background: rgba(10, 10, 12, 0.85);
+                    background: var(--color-surface);
                     backdrop-filter: blur(20px) saturate(180%);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border: 1px solid var(--color-border);
                     border-radius: 16px;
                     padding: 16px;
                     display: flex;
                     align-items: flex-start;
                     gap: 14px;
-                    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+                    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1), inset 0 0 0 1px var(--color-glass);
                     animation: slideInNotification 0.5s cubic-bezier(0.16, 1, 0.3, 1);
                     position: relative;
                     overflow: hidden;
@@ -72,7 +74,7 @@ export const NotificationSystem: React.FC = () => {
                     margin-top: 2px;
                     flex-shrink: 0;
                     padding: 8px;
-                    background: rgba(255, 255, 255, 0.05);
+                    background: var(--color-surface-subtle);
                     border-radius: 10px;
                 }
 
@@ -81,14 +83,14 @@ export const NotificationSystem: React.FC = () => {
                     font-size: 13px;
                     font-weight: 500;
                     line-height: 1.5;
-                    color: rgba(255, 255, 255, 0.9);
+                    color: var(--color-text);
                     padding-top: 4px;
                 }
 
                 .notification-close {
                     background: transparent;
                     border: none;
-                    color: rgba(255, 255, 255, 0.3);
+                    color: var(--color-text-tertiary);
                     cursor: pointer;
                     padding: 4px;
                     border-radius: 8px;
@@ -100,8 +102,8 @@ export const NotificationSystem: React.FC = () => {
                 }
 
                 .notification-close:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                    color: #fff;
+                    background: var(--color-glass);
+                    color: var(--color-text);
                 }
 
                 /* Type-specific styles */

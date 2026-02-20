@@ -83,8 +83,11 @@ class FileWatcher {
             let watcher = Unmanaged<FileWatcher>.fromOpaque(contextInfo!).takeUnretainedValue()
             let paths = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as! [String]
 
-            for i in 0..<numEvents {
-                watcher.callback(paths[i], eventFlags[i])
+            // RAM: Wrap callback dispatch in autoreleasepool to prevent ARC object accumulation
+            autoreleasepool {
+                for i in 0..<numEvents {
+                    watcher.callback(paths[i], eventFlags[i])
+                }
             }
         }
 
@@ -94,7 +97,7 @@ class FileWatcher {
             &context,
             paths,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.1, // Reduced latency for better responsiveness
+            0.3, // RAM: Increased from 0.1s to 0.3s — reduces callback frequency & ARC pressure
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
         )
 
@@ -122,6 +125,7 @@ class InferenceEngine {
         let modelURL = URL(fileURLWithPath: path)
         // In a real implementation, we'd use MLModel.compileModel(at:) then MLModel(contentsOf:)
         // For now, we stub the logic
+        _ = modelURL
         return true
         #else
         return false
@@ -136,6 +140,11 @@ class InferenceEngine {
         return "Not supported"
         #endif
     }
+
+    /// RAM: Release the CoreML model to free memory when idle
+    func unloadModel() {
+        model = nil
+    }
 }
 
 // MARK: - Helper Core
@@ -145,26 +154,81 @@ class KalyntHelper {
     private var inferenceEngine: InferenceEngine?
     private var buffer = Data()
 
+    // RAM: Cache hardware stats to avoid spawning system_profiler repeatedly
+    private var cachedHardwareStats: [String: Any]?
+    private var hardwareStatsCacheTime: Date = .distantPast
+    private let hardwareStatsCacheTTL: TimeInterval = 30.0 // 30-second cache
+
+    // RAM: Memory pressure monitoring (macOS-specific)
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+
     func start() {
+        // RAM: Set up macOS memory pressure handler
+        setupMemoryPressureMonitoring()
+
         FileHandle.standardInput.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty { return }
             self.buffer.append(data)
             self.processBuffer()
         }
-        
+
         RunLoop.current.run()
     }
 
-    private func processBuffer() {
-        while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(0...newlineIndex)
+    /// RAM: Monitor system memory pressure and release caches when under pressure
+    private func setupMemoryPressureMonitoring() {
+        memoryPressureSource = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .main
+        )
+        memoryPressureSource?.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            let event = self.memoryPressureSource?.data ?? []
 
-            guard let request = try? JSONDecoder().decode(JSONRPCRequest.self, from: lineData) else {
-                continue
+            if event.contains(.critical) {
+                // Critical: Release everything non-essential
+                self.releaseAllCaches()
+                self.inferenceEngine?.unloadModel()
+                self.inferenceEngine = nil
+            } else if event.contains(.warning) {
+                // Warning: Release caches only
+                self.releaseAllCaches()
             }
-            handle(request: request)
+        }
+        memoryPressureSource?.resume()
+    }
+
+    /// RAM: Release all cached data and compact buffers
+    private func releaseAllCaches() {
+        cachedHardwareStats = nil
+        hardwareStatsCacheTime = .distantPast
+
+        // Compact the Data buffer to release over-allocated capacity
+        if buffer.isEmpty {
+            buffer = Data()
+        } else {
+            buffer = Data(buffer) // Reallocates to exact size
+        }
+    }
+
+    private func processBuffer() {
+        // RAM: Wrap processing in autoreleasepool to release intermediate objects immediately
+        autoreleasepool {
+            while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                let lineData = buffer.prefix(upTo: newlineIndex)
+                buffer.removeSubrange(0...newlineIndex)
+
+                guard let request = try? JSONDecoder().decode(JSONRPCRequest.self, from: lineData) else {
+                    continue
+                }
+                handle(request: request)
+            }
+
+            // RAM: Compact buffer when it's been over-allocated (> 64KB waste)
+            if buffer.count < 1024 && buffer.capacity > 65536 {
+                buffer = Data(buffer)
+            }
         }
     }
 
@@ -182,6 +246,12 @@ class KalyntHelper {
             loadLLM(id: id, params: request.params)
         case "llm-predict":
             predictLLM(id: id, params: request.params)
+        case "llm-unload":
+            // RAM: Allow Electron to explicitly unload the LLM when not needed
+            unloadLLM(id: id)
+        case "memory-trim":
+            // RAM: Allow Electron to request memory compaction
+            trimMemory(id: id)
         case "ping":
             sendResult(id: id, result: ["pong": true])
         default:
@@ -190,19 +260,33 @@ class KalyntHelper {
     }
 
     private func getHardwareStats(id: Int) {
+        // RAM: Return cached stats if still fresh (avoids spawning system_profiler)
+        if let cached = cachedHardwareStats,
+           Date().timeIntervalSince(hardwareStatsCacheTime) < hardwareStatsCacheTTL {
+            sendResult(id: id, result: cached)
+            return
+        }
+
         var stats: [String: Any] = [:]
         #if os(macOS)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        process.arguments = ["SPDisplaysDataType", "-json"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        try? process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            stats["gpu"] = json
+        autoreleasepool {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+            process.arguments = ["SPDisplaysDataType", "-json"]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            try? process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                stats["gpu"] = json
+            }
         }
         #endif
+
+        // RAM: Cache the result
+        cachedHardwareStats = stats
+        hardwareStatsCacheTime = Date()
+
         sendResult(id: id, result: stats)
     }
 
@@ -212,21 +296,21 @@ class KalyntHelper {
             sendError(id: id, message: "Missing path or watcherId parameter")
             return
         }
-        
+
         // Stop existing if any
         watchers[watcherId]?.stop()
-        
+
         let watcher = FileWatcher(path: path) { [weak self] path, flags in
             self?.sendNotification(method: "file-changed", params: [
-                "path": path, 
+                "path": path,
                 "flags": Int(flags),
                 "watcherId": watcherId
             ])
         }
-        
+
         watchers[watcherId] = watcher
         watcher.start()
-        
+
         sendResult(id: id, result: ["status": "watching", "path": path, "watcherId": watcherId])
     }
 
@@ -235,7 +319,7 @@ class KalyntHelper {
             sendError(id: id, message: "Missing watcherId parameter")
             return
         }
-        
+
         if let watcher = watchers[watcherId] {
             watcher.stop()
             watchers.removeValue(forKey: watcherId)
@@ -250,6 +334,7 @@ class KalyntHelper {
             sendError(id: id, message: "Missing path parameter")
             return
         }
+        // RAM: Lazy initialization — engine only created when needed
         if inferenceEngine == nil {
             inferenceEngine = InferenceEngine()
         }
@@ -271,6 +356,25 @@ class KalyntHelper {
         sendResult(id: id, result: ["text": result])
     }
 
+    /// RAM: Unload the LLM engine and release its memory
+    private func unloadLLM(id: Int) {
+        inferenceEngine?.unloadModel()
+        inferenceEngine = nil
+        sendResult(id: id, result: ["status": "unloaded"])
+    }
+
+    /// RAM: Compact all internal data structures and request system GC
+    private func trimMemory(id: Int) {
+        releaseAllCaches()
+
+        // Request malloc to return freed pages to the OS
+        #if os(macOS)
+        malloc_zone_pressure_relief(nil, 0)
+        #endif
+
+        sendResult(id: id, result: ["status": "trimmed"])
+    }
+
     private func sendResult(id: Int, result: [String: Any]) {
         let response: [String: Any] = ["jsonrpc": "2.0", "id": id, "result": result]
         send(response)
@@ -287,10 +391,13 @@ class KalyntHelper {
     }
 
     private func send(_ dictionary: [String: Any]) {
-        if let data = try? JSONSerialization.data(withJSONObject: dictionary),
-           let string = String(data: data, encoding: .utf8) {
-            print(string)
-            fflush(stdout)
+        // RAM: Wrap JSON serialization in autoreleasepool
+        autoreleasepool {
+            if let data = try? JSONSerialization.data(withJSONObject: dictionary),
+               let string = String(data: data, encoding: .utf8) {
+                print(string)
+                fflush(stdout)
+            }
         }
     }
 }

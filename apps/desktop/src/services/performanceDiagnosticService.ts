@@ -8,7 +8,6 @@ export interface DiagnosticResult {
     diskReadSpeed: number // MB/s
     diskWriteSpeed: number // MB/s
     cpuScore: number // relative score
-    ramScore: number // relative score
     timestamp: number
 }
 
@@ -64,7 +63,7 @@ class PerformanceDiagnosticService {
         const cpu = await this.runCPUBenchmark()
         const ipc = await this.measureIPCLatency()
         const disk = await this.measureDiskSpeed()
-        
+
         // Boot time from main process
         const bootTime = await window.electronAPI.ipcRenderer.invoke('performance:get-boot-time')
 
@@ -74,7 +73,6 @@ class PerformanceDiagnosticService {
             diskReadSpeed: Math.round(disk.read * 10) / 10,
             diskWriteSpeed: Math.round(disk.write * 10) / 10,
             cpuScore: cpu,
-            ramScore: Math.round(window.electronAPI.platform === 'darwin' ? 95 : 85),
             timestamp: Date.now()
         }
     }

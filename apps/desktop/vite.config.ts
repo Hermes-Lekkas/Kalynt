@@ -42,26 +42,26 @@ function getObfuscationOptions(target: 'node' | 'browser') {
         compact: true,
         simplify: true,
         identifierNamesGenerator: 'hexadecimal' as const,
-        
+
         // String Protection
         stringArray: true,
         stringArrayCallsTransform: true,
         stringArrayCallsTransformThreshold: 0.5, // Reduced for stability
         stringArrayEncoding: ['rc4' as const],
         stringArrayThreshold: 0.5, // Reduced for stability
-        
+
         // Control Flow
         controlFlowFlattening: true,
         controlFlowFlatteningThreshold: 0.5, // Reduced for stability
         deadCodeInjection: false, // Disabled as it frequently causes build crashes in large files
-        
+
         // Safety
         numbersToExpressions: true,
         transformObjectKeys: true,
         unicodeEscapeSequence: false,
         splitStrings: true,
         splitStringsChunkLength: 50,
-        
+
         // Environment
         target: target as any,
         sourceMap: false,
@@ -78,7 +78,7 @@ function createObfuscatorPlugin(): Plugin {
             if (!shouldObfuscate || !isProduction) return null
 
             const normalizedId = id.replace(/\\/g, '/').split('?')[0]
-            const shouldObfuscateFile = PROPRIETARY_PATHS.some(p => 
+            const shouldObfuscateFile = PROPRIETARY_PATHS.some(p =>
                 normalizedId.endsWith(p.split('/').slice(-2).join('/'))
             )
 
@@ -142,7 +142,7 @@ export default defineConfig({
                                 'chokidar'
                             ],
                             output: {
-                                format: 'es',
+                                format: 'cjs',
                             }
                         }
                     }

@@ -8,7 +8,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import { TerminalTab, TerminalState, DEFAULT_THEME } from './types'
+import { TerminalTab, TerminalState, DEFAULT_THEME, LIGHT_THEME } from './types'
+import { useAppStore } from '../../../stores/appStore'
 
 export function useTerminalSession(
     containerRef: React.RefObject<HTMLDivElement>,
@@ -17,7 +18,19 @@ export function useTerminalSession(
     updateTab: (id: string, updates: Partial<TerminalTab>) => void,
     initialCwd?: string
 ) {
+    const { theme } = useAppStore()
     const terminals = useRef<Map<string, TerminalState>>(new Map())
+
+    // Update all terminals when theme changes
+    useEffect(() => {
+        const terminalTheme = theme === 'light' ? LIGHT_THEME : DEFAULT_THEME
+        terminals.current.forEach(term => {
+            if (term.xterm) {
+                // BUG-FIX: Setting the entire theme object ensures xterm re-renders the background
+                term.xterm.options.theme = { ...terminalTheme }
+            }
+        })
+    }, [theme])
     const terminalElements = useRef<Map<string, HTMLDivElement>>(new Map()) // Store DOM elements
     const resizeObserver = useRef<ResizeObserver | null>(null)
     const dataListenerSet = useRef(false)
@@ -62,7 +75,7 @@ export function useTerminalSession(
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
             fontSize: 14,
             cursorBlink: true,
-            theme: DEFAULT_THEME,
+            theme: theme === 'light' ? LIGHT_THEME : DEFAULT_THEME,
             allowProposedApi: true
         })
 

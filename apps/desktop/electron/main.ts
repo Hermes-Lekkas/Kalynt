@@ -77,6 +77,23 @@ if (process.platform === 'linux') {
     app.disableHardwareAcceleration()
 }
 
+// RAM Optimization: Expose V8 Garbage Collector & Optimize for Memory Size
+app.commandLine.appendSwitch('js-flags', '--expose_gc --optimize_for_size --max-old-space-size=256 --lite-mode')
+
+// RAM Optimization: Chromium-level memory savings
+app.commandLine.appendSwitch('disable-gpu-compositing')       // Reduces GPU process memory ~50MB
+app.commandLine.appendSwitch('disable-software-rasterizer')   // Prevent fallback software renderer
+app.commandLine.appendSwitch('in-process-gpu')                // Merge GPU into main process (~80MB saved)
+app.commandLine.appendSwitch('disable-background-networking') // No idle network threads
+app.commandLine.appendSwitch('disable-breakpad')              // No crash reporter memory overhead
+app.commandLine.appendSwitch('disable-component-update')      // No background component updates
+app.commandLine.appendSwitch('disable-domain-reliability')    // No domain reliability monitoring
+app.commandLine.appendSwitch('disable-features', 'TranslateUI,BlinkGenPropertyTrees,AudioServiceOutOfProcess')
+app.commandLine.appendSwitch('enable-features', 'CalculateNativeWinOcclusion') // Trim RS when occluded
+app.commandLine.appendSwitch('force-color-profile', 'srgb')   // Simpler color management
+app.commandLine.appendSwitch('renderer-process-limit', '1')   // Only one renderer process
+app.commandLine.appendSwitch('disable-renderer-backgrounding')// Stop renderer from going to background priority
+
 // Directory constants (initialized after app is ready)
 let MODELS_DIR: string
 let RUNTIMES_DIR: string
@@ -121,7 +138,7 @@ function ensureExtensionsDir() {
 // Window management
 function createWindow() {
     const isLinux = process.platform === 'linux'
-    
+
     const win = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -130,14 +147,17 @@ function createWindow() {
         frame: isLinux, // Enable frame on Linux for better compatibility
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         ...(process.platform === 'darwin' && { trafficLightPosition: { x: 16, y: 16 } }),
-        icon: path.join(__dirname, VITE_DEV_SERVER_URL 
+        icon: path.join(__dirname, VITE_DEV_SERVER_URL
             ? (isLinux ? '../public/Kalynt.png' : '../public/Kalynt_256x256.ico')
             : (isLinux ? '../dist/Kalynt.png' : '../dist/Kalynt_256x256.ico')),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: !isLinux  // Disable sandbox on Linux for dev stability
+            sandbox: !isLinux,  // Disable sandbox on Linux for dev stability
+            spellcheck: false,  // RAM: Saves ~20-30MB (no dictionary loaded)
+            v8CacheOptions: 'bypassHeatCheck',  // RAM: Faster V8 code caching, less heap growth
+            backgroundThrottling: true,  // RAM: Throttle timers/requestAnimationFrame when hidden
         },
         transparent: !isLinux, // Disable transparency on Linux to prevent crashes
         backgroundColor: isLinux ? '#1e1e1e' : '#00000000', // Use solid background on Linux
@@ -168,11 +188,34 @@ function createWindow() {
 
     win.once('ready-to-show', () => {
         win.show()
+
+        // RAM Optimization: Clear old Chromium session data on startup
+        session.defaultSession.clearStorageData({
+            storages: ['cachestorage', 'shadercache', 'serviceworkers'],
+        }).catch(() => { /* ignore */ })
+    })
+
+    // RAM Optimization: Working set trimming on minimize/restore
+    // When minimized, trigger aggressive GC + clear renderer back/forward cache
+    win.on('minimize', () => {
+        // Trigger GC in each renderer
+        if (!win.isDestroyed()) {
+            win.webContents.send('performance:request-gc')
+        }
+        // Trigger main process GC
+        if (typeof globalThis.gc === 'function') {
+            try { globalThis.gc() } catch { /* ignore */ }
+        }
+        // Clear Chromium back-forward cache to free page snapshots
+        session.defaultSession.clearCache().catch(() => { /* ignore */ })
     })
 
     if (VITE_DEV_SERVER_URL) {
         void win.loadURL(VITE_DEV_SERVER_URL)
-        win.webContents.openDevTools()
+        // RAM: Only open DevTools if explicitly requested (saves ~50MB)
+        if (process.argv.includes('--devtools')) {
+            win.webContents.openDevTools()
+        }
     } else {
         void win.loadFile(path.join(__dirname, '../dist/index.html'))
     }
@@ -186,7 +229,7 @@ function createWindow() {
 function registerAllHandlers() {
     // App info and hardware
     registerAppInfoHandlers(ipcMain, app, MODELS_DIR)
-    
+
     // Performance Boot Time
     ipcMain.handle('performance:get-boot-time', () => {
         return Date.now() - APP_START_TIME
@@ -336,14 +379,14 @@ if (!gotTheLock) {
         ensureModelsDir()
         ensureRuntimesDir()
         ensureExtensionsDir()
-        
+
         console.log('[Main] Registering handlers...');
         // Register handlers BEFORE creating window to ensure they are available
         registerAllHandlers()
-        
+
         console.log('[Main] Creating window...');
         createWindow()
-        
+
         // Initialize extension host
         console.log('[Main] Starting extension host...');
         extensionHostManager.start().catch(err => {

@@ -4,6 +4,7 @@
 import React, { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { useAppStore } from '../../../stores/appStore'
 import '@xterm/xterm/css/xterm.css'
 
 interface OutputTerminalProps {
@@ -17,6 +18,7 @@ export const OutputTerminal: React.FC<OutputTerminalProps> = ({
     isRunning,
     onInput
 }) => {
+    const { theme } = useAppStore()
     const containerRef = useRef<HTMLDivElement>(null)
     const terminalRef = useRef<Terminal | null>(null)
     const fitAddonRef = useRef<FitAddon | null>(null)
@@ -29,8 +31,8 @@ export const OutputTerminal: React.FC<OutputTerminalProps> = ({
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
             fontSize: 13,
             theme: {
-                background: '#11111b',
-                foreground: '#cdd6f4'
+                background: theme === 'light' ? '#ffffff' : '#11111b',
+                foreground: theme === 'light' ? '#1a1a1a' : '#cdd6f4'
             },
             cursorBlink: true,
             convertEol: true
@@ -66,7 +68,18 @@ export const OutputTerminal: React.FC<OutputTerminalProps> = ({
             resizeObserver.disconnect()
             term.dispose()
         }
-    }, [onInput, isRunning])
+    }, [onInput, isRunning, theme])
+
+    // Update terminal theme when global theme changes
+    useEffect(() => {
+        const term = terminalRef.current
+        if (term) {
+            term.options.theme = {
+                background: theme === 'light' ? '#ffffff' : '#11111b',
+                foreground: theme === 'light' ? '#1a1a1a' : '#cdd6f4'
+            }
+        }
+    }, [theme])
 
     // Ensure focus when running state changes or content updates
     useEffect(() => {
@@ -100,7 +113,7 @@ export const OutputTerminal: React.FC<OutputTerminalProps> = ({
             style={{ 
                 width: '100%', 
                 height: '100%', 
-                background: '#11111b',
+                background: theme === 'light' ? '#ffffff' : '#11111b',
                 padding: '4px'
             }} 
         />

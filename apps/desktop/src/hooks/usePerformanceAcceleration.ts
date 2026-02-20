@@ -53,11 +53,26 @@ export function usePerformanceAcceleration() {
             })
         })
 
+        // RAM Optimization: Proactive idle-time GC loop
+        // Runs renderer GC via requestIdleCallback every 10s when the browser is idle
+        let idleGcHandle: number | null = null
+        const scheduleIdleGc = () => {
+            idleGcHandle = requestIdleCallback(() => {
+                if (typeof (window as any).gc === 'function') {
+                    try { (window as any).gc() } catch { /* ignore */ }
+                }
+                // Re-schedule after 10 seconds
+                setTimeout(scheduleIdleGc, 10_000)
+            }, { timeout: 5_000 })
+        }
+        scheduleIdleGc()
+
         return () => {
             removeGcListener()
             removeSuspendListener()
             removeMonacoListener()
             removeWorkerListener()
+            if (idleGcHandle !== null) cancelIdleCallback(idleGcHandle)
         }
     }, [])
 

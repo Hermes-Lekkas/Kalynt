@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
+import { useAppStore } from '../stores/appStore'
 import { hardwareService } from '../services/hardwareService'
 import type { HardwareInfo, AIMEConfig, KVCacheQuantization, OffloadingStrategy } from '../types/aime'
 import { DEFAULT_AIME_CONFIG, AIME_PRESETS, calculateAIMERAMUsage, recommendAIMESettings } from '../types/aime'
@@ -403,6 +404,7 @@ export default function AIMESettings({ onSave }: AIMESettingsProps) {
 }
 
 function RAMUsageGraph({ history, total }: { readonly history: number[]; readonly total: number }) {
+    const { theme } = useAppStore()
     if (!history.length) return null
 
     const width = 100
@@ -419,6 +421,9 @@ function RAMUsageGraph({ history, total }: { readonly history: number[]; readonl
     const pathD = `M ${points}`
     const areaD = `M 0,${height} ${points} L ${width},${height} Z`
 
+    const gridColor = theme === 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.05)'
+    const textColor = theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)'
+
     return (
         <div className="ram-graph-container">
             <svg className="ram-usage-svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
@@ -430,15 +435,15 @@ function RAMUsageGraph({ history, total }: { readonly history: number[]; readonl
                 </defs>
 
                 {}
-                <line x1="0" y1="25" x2="100" y2="25" className="grid-line" />
-                <line x1="0" y1="50" x2="100" y2="50" className="grid-line" />
-                <line x1="0" y1="75" x2="100" y2="75" className="grid-line" />
+                <line x1="0" y1="25" x2="100" y2="25" stroke={gridColor} strokeWidth="1" strokeDasharray="4,4" />
+                <line x1="0" y1="50" x2="100" y2="50" stroke={gridColor} strokeWidth="1" strokeDasharray="4,4" />
+                <line x1="0" y1="75" x2="100" y2="75" stroke={gridColor} strokeWidth="1" strokeDasharray="4,4" />
 
                 {}
                 <path d={areaD} className="graph-fill" />
                 <path d={pathD} className="graph-path" vectorEffect="non-scaling-stroke" />
             </svg>
-            <div className="absolute top-2 right-2 text-xs text-slate-500 font-mono">
+            <div className="absolute top-2 right-2 text-xs font-mono" style={{ color: textColor }}>
                 {Math.round(total / 1024)}GB MAX
             </div>
         </div>

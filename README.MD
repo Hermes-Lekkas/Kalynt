@@ -22,30 +22,67 @@
 ### Autonomous AI Agent (AIME)
 *   **Local Inference:** Run LLMs (Llama 3, Mistral, CodeQwen) directly on your CPU/GPU using `node-llama-cpp`. No internet required.
 *   **Agentic Loop:** An autonomous ReAct (Reasoning + Acting) loop that can plan, execute terminal commands, edit files, and fix bugs without hand-holding.
-*   **Shadow Workspace:** **Safety First.** AI changes are sandboxed and validated in a temporary "shadow" environment before touching your real code.
-*   **Cloud Fallback:** Seamlessly switch to OpenAI (GPT-4o), Anthropic (Claude 3.5), or Google (Gemini 1.5) when you need extra horsepower.
+*   **Shadow Workspace:** AI changes are sandboxed and validated in a temporary "shadow" environment before touching your real code.
+*   **Cloud Fallback:** Seamlessly switch to OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet), or Google (Gemini 1.5 Pro) when you need extra horsepower.
+*   **RAG Engine:** AIME indexes your entire codebase semantically, allowing the agent to retrieve relevant context for complex tasks.
+*   **Model Manager:** Download, manage, and configure local GGUF models directly from the IDE.
 
 ### Privacy & Security by Design
 *   **Local-First:** Your code, chat history, and vector embeddings live strictly on your disk.
 *   **P2P Collaboration:** Serverless, end-to-end encrypted (AES-256-GCM) collaboration using CRDTs and WebRTC. No central server sees your keystrokes.
-*   **Security Scanning:** Integrated static analysis and dependency scanning.
+*   **Process Isolation:** Renderer sandboxing (`contextIsolation`, `sandbox: true`), strict Content Security Policy headers, and no `nodeIntegration`.
+*   **API Key Security:** Keys stored via Electron's `safeStorage` (OS keychain) — never in plain text.
+*   **Path Protection:** All file operations pass through `validatePath` with symlink resolution.
+*   **Update Integrity:** GitHub token validation and checksum verification for all updates.
+*   **Security Scanning:** Integrated workspace scanner for code quality and vulnerability detection.
+*   **Audit Logging:** Security event tracking via `auditLogService`.
 
-### Modern Developer Experience
-*   **Unified & Modern UI:** A sleek, glassmorphism-based interface with a redesigned Settings Panel.
-*   **Monaco Editor:** The battle-tested core of VS Code, enhanced with AI inline completions.
-*   **Resizable Panels:** Fully customizable layout with draggable Terminal, File Explorer, and Agent Sidebar.
-*   **Chat History:** Persistent, searchable chat sessions with your AI pair programmer.
-*   **Integrated Terminal:** Hardware-accelerated terminal with smart command suggestions.
+### Full-Featured IDE
+*   **Monaco Editor:** The battle-tested core of VS Code, with AI inline completions and model-aware editing.
+*   **Integrated Terminal:** Xterm.js-based terminal with split views, search, context menus, and smart command suggestions.
+*   **Git Integration:** Full Git panel with staging, committing, branch management, and diff viewing.
+*   **File Explorer:** Tree view with drag-and-drop, context menus, and file operations.
+*   **Search Panel:** Full-text and regex search across the workspace.
+*   **Command Palette:** Fuzzy-matched command execution.
+*   **Debugger:** Integrated runtime debugging with breakpoints and inspection.
+*   **Task Board:** Project task management directly in the IDE.
+*   **Version History:** Diff viewer for comparing file versions.
+
+### Extension System
+*   **VS Code Compatibility:** Implements a subset of the VS Code API for easy extension porting.
+*   **Process Isolation:** Extensions run in a forked Node.js process for safety.
+*   **Open VSX Support:** Install extensions from the Open VSX marketplace or local `.vsix` files.
+*   **Plugin Management:** Full-featured panel for discovering, installing, and managing extensions.
+
+### Performance Acceleration
+*   **Memory Optimization:** Multi-layer RAM reduction system (Chromium flags, V8 heap cap, idle GC loops, lazy loading) achieving ~450 MB idle on Windows.
+*   **Lazy Loading:** Monaco Editor, tab panels, and heavy services load on-demand via `React.lazy()` and `ServiceOrchestrator`.
+*   **Native Acceleration:** Swift native helper on macOS for FSEvents, CoreML, and memory management.
+*   **Performance Modes:** Balanced, High Performance, and Power Saver profiles.
+*   **Real-Time Monitoring:** CPU, RAM, disk, and network metrics in the header and a dedicated Performance tab.
+
+### Real-Time Collaboration
+*   **P2P Sync:** Yjs CRDTs over WebRTC data channels — no central server.
+*   **Encrypted Channels:** AES-256-GCM encryption on all collaboration data.
+*   **Presence:** Real-time cursor positions, selections, and member awareness.
+*   **File Transfer:** Secure peer-to-peer file sharing.
+
+### Modern UI/UX
+*   **Glassmorphism Aesthetic:** Sleek, modern interface with depth and transparency effects.
+*   **Theme System:** Full Light and Dark mode support with CSS variable-based theming.
+*   **Resizable Panels:** Draggable Terminal, File Explorer, and Agent Sidebar with state persistence.
+*   **Notification System:** Toast notifications with priority levels.
+*   **Auto-Updates:** Built-in update system with integrity verification.
 
 ---
 
 ## Compatibility & Testing
 
-Kalynt is a cross-platform application, but testing coverage varies by operating system:
+Kalynt is a cross-platform application:
 
 *   **Windows:** **Extensively Tested.** Full support for local LLM acceleration (CUDA/DirectML) and native PTY.
-*   **Linux (Ubuntu/Debian):** **Extensively Tested.** Optimized for modern distributions (Ubuntu 24.04+). Includes specific stability fixes for Wayland and transparency.
-*   **macOS:** **Limited Testing.** Support for Apple Silicon (M1/M2/M3) is implemented but has received less frequent verification.
+*   **Linux (Ubuntu/Debian):** **Extensively Tested.** Optimized for modern distributions (Ubuntu 24.04+). Includes stability fixes for Wayland and transparency.
+*   **macOS:** **Supported.** Apple Silicon (M1/M2/M3) with Swift native performance helper for FSEvents, CoreML, and memory management.
 
 ---
 
@@ -53,20 +90,38 @@ Kalynt is a cross-platform application, but testing coverage varies by operating
 
 Kalynt is built on a robust, modern tech stack:
 
-*   **Runtime:** Electron (Main Process), Chromium (Renderer)
-*   **Frontend:** React 18, Vite, TypeScript, Tailwind CSS
+*   **Runtime:** Electron 28 (Main Process), Chromium (Renderer)
+*   **Frontend:** React 18, Vite, TypeScript (Strict Mode)
+*   **Editor:** Monaco Editor (VS Code core)
 *   **State Management:** Zustand (w/ Persistence), Yjs (CRDT for collaboration)
-*   **AI Engine:** `node-llama-cpp` (Local), Custom OpenAI-compatible client (Cloud)
-*   **Storage:** SQLite (Metadata), JSON/File System (Workspaces)
+*   **AI Engine:** `node-llama-cpp` (Local), OpenAI/Anthropic/Google (Cloud)
+*   **Terminal:** Xterm.js + node-pty
+*   **Styling:** CSS Variables + Glassmorphism aesthetic
+*   **Icons:** Lucide React
+*   **Security:** Context-bridged IPC, CSP, renderer sandbox, safeStorage
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for a deep dive into the system design.
 
-### Codebase Statistics
-As of February 2026, the Kalynt project consists of **~67,785 lines of code**:
-*   **Renderer (React/UI):** 53,542 lines
-*   **Main Process (Electron/Native):** 13,024 lines
-*   **Shared Packages:** 443 lines
-*   **Build Scripts & Utils:** 776 lines
+### Monorepo Structure
+
+```text
+kalynt/
+├── apps/
+│   └── desktop/                 # Main Electron application
+│       ├── electron/            # Main process (services, IPC, native)
+│       │   └── services/
+│       │       └── Performance_Acceleration/
+│       └── src/                 # Renderer (React UI, services, stores)
+│           ├── components/      # 23 top-level + ide/ + collaboration/ + extensions/
+│           ├── services/        # 28 renderer services
+│           └── stores/          # 6 Zustand stores
+├── packages/
+│   ├── crdt/                    # Shared Yjs CRDT logic
+│   ├── networking/              # P2P WebRTC management
+│   ├── shared/                  # Common types and utilities
+│   └── native-macos/            # Swift native helper (FSEvents, CoreML, memory)
+└── ...
+```
 
 ---
 
@@ -77,14 +132,18 @@ Download the latest installer for Windows, macOS, or Linux from the [Releases Pa
 
 ### Building from Source
 
-See the [Developer Guide](./DEVELOPER_GUIDE.md) for detailed build instructions.
-
 ```bash
-# Quick Start
+# Prerequisites: Node.js >= 18, Python 3.10+, C++ Build Tools
 git clone https://github.com/Hermes-Lekkas/Kalynt.git
 cd Kalynt
 npm install
 npm run dev
+```
+
+For macOS native helper:
+```bash
+cd packages/native-macos
+swift build -c release
 ```
 
 ---
@@ -95,10 +154,16 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for gu
 
 ---
 
+## Security
+
+Kalynt is built on a "Trust No One" (Zero Trust) architecture. See [SECURITY.md](./SECURITY.md) for the full security policy, vulnerability reporting, and recent security updates.
+
+---
+
 ## Licensing
 
 Kalynt is free and open-source software licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
 Files marked with `SPDX-License-Identifier: AGPL-3.0-only` are free to use, modify, and distribute under the terms of the AGPL.
 
-Copyright © 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).
+Copyright (c) 2026 Hermes Lekkas (hermeslekkasdev@gmail.com).

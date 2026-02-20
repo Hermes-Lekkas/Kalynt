@@ -691,8 +691,8 @@ const gitPanelStyles = `
         display: flex;
         flex-direction: column;
         height: 100%;
-        background: #000000;
-        color: white;
+        background: var(--color-bg);
+        color: var(--color-text);
         font-family: var(--font-sans);
         position: relative;
         overflow: hidden;
@@ -716,7 +716,7 @@ const gitPanelStyles = `
     }
 
     .empty-state p {
-        color: rgba(255, 255, 255, 0.4);
+        color: var(--color-text-muted);
         font-size: 13px;
         max-width: 200px;
     }
@@ -726,8 +726,8 @@ const gitPanelStyles = `
         align-items: center;
         justify-content: space-between;
         padding: 16px 20px;
-        background: rgba(255, 255, 255, 0.02);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        background: var(--color-surface-subtle);
+        border-bottom: 1px solid var(--color-border);
     }
 
     .branch-btn {
@@ -735,18 +735,18 @@ const gitPanelStyles = `
         align-items: center;
         gap: 8px;
         padding: 6px 12px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: var(--color-surface-elevated);
+        border: 1px solid var(--color-border);
         border-radius: 8px;
-        color: white;
+        color: var(--color-text);
         font-size: 12px;
         font-weight: 600;
         transition: all 0.2s;
     }
 
     .branch-btn:hover {
-        background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(59, 130, 246, 0.4);
+        background: var(--color-glass);
+        border-color: var(--color-accent);
     }
 
     .header-actions {
@@ -781,41 +781,47 @@ const gitPanelStyles = `
         align-items: center;
         justify-content: center;
         border-radius: 8px;
-        color: rgba(255, 255, 255, 0.4);
+        color: var(--color-text-tertiary);
         transition: all 0.2s;
+        background: transparent;
+        border: none;
+        cursor: pointer;
     }
 
     .action-btn:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.05);
-        color: white;
+        background: var(--color-glass);
+        color: var(--color-text);
     }
 
     .git-tabs-strip {
         display: flex;
         padding: 0 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid var(--color-border-subtle);
     }
 
     .git-tab {
         padding: 12px 16px;
         font-size: 12px;
         font-weight: 700;
-        color: rgba(255, 255, 255, 0.3);
+        color: var(--color-text-tertiary);
         border-bottom: 2px solid transparent;
         transition: all 0.2s;
         display: flex;
         align-items: center;
         gap: 8px;
+        background: none;
+        border: none;
+        cursor: pointer;
     }
 
     .git-tab.active {
-        color: white;
-        border-bottom-color: #3b82f6;
+        color: var(--color-text);
+        border-bottom-color: var(--color-accent);
     }
 
     .tab-badge {
         padding: 1px 6px;
-        background: #3b82f6;
+        background: var(--color-accent);
         color: white;
         font-size: 10px;
         border-radius: 100px;
@@ -839,12 +845,12 @@ const gitPanelStyles = `
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        color: rgba(255, 255, 255, 0.2);
+        color: var(--color-text-tertiary);
     }
 
     .stage-all-btn {
         margin-left: auto;
-        color: #3b82f6;
+        color: var(--color-accent);
         font-size: 10px;
         font-weight: 800;
         background: none;
@@ -862,7 +868,7 @@ const gitPanelStyles = `
     }
 
     .file-row:hover {
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--color-glass);
     }
 
     .file-info {
@@ -886,7 +892,7 @@ const gitPanelStyles = `
 
     .file-name {
         font-size: 13px;
-        color: rgba(255, 255, 255, 0.7);
+        color: var(--color-text-secondary);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -909,45 +915,46 @@ const gitPanelStyles = `
         align-items: center;
         justify-content: center;
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.05);
-        color: rgba(255, 255, 255, 0.4);
-        border: none;
+        background: var(--color-surface-subtle);
+        color: var(--color-text-tertiary);
+        border: 1px solid var(--color-border);
         cursor: pointer;
     }
 
     .file-control:hover {
-        background: white;
-        color: black;
+        background: var(--color-text);
+        color: var(--color-bg);
     }
 
     .file-control.discard:hover {
         background: #ef4444;
         color: white;
+        border-color: #ef4444;
     }
 
     .commit-footer {
         position: sticky;
         bottom: 0;
         padding: 20px;
-        background: linear-gradient(to top, #000000 80%, transparent);
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        background: var(--color-bg);
+        border-top: 1px solid var(--color-border-subtle);
     }
 
     .commit-input-wrapper textarea {
         width: 100%;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
         border-radius: 12px;
         padding: 12px;
-        color: white;
+        color: var(--color-text);
         font-size: 13px;
         outline: none;
         resize: none;
     }
 
     .btn-premium {
-        background: white;
-        color: black;
+        background: var(--color-text);
+        color: var(--color-bg);
         font-weight: 700;
         font-size: 13px;
         padding: 10px;
@@ -963,7 +970,7 @@ const gitPanelStyles = `
 
     .btn-premium:hover {
         transform: scale(0.98);
-        background: rgba(255, 255, 255, 0.9);
+        opacity: 0.9;
     }
 
     .history-view {
@@ -988,7 +995,7 @@ const gitPanelStyles = `
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #3b82f6;
+        background: var(--color-accent);
         box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
     }
 
@@ -999,13 +1006,13 @@ const gitPanelStyles = `
         top: 14px;
         bottom: 0;
         width: 2px;
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--color-border);
     }
 
     .log-message {
         font-size: 14px;
         font-weight: 600;
-        color: white;
+        color: var(--color-text);
         margin-bottom: 4px;
     }
 
@@ -1013,19 +1020,19 @@ const gitPanelStyles = `
         display: flex;
         gap: 12px;
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.3);
+        color: var(--color-text-tertiary);
         font-weight: 700;
     }
 
     .log-hash {
         font-family: monospace;
-        color: #3b82f6;
+        color: var(--color-accent);
     }
 
     .floating-diff-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.85);
+        background: rgba(0, 0, 0, 0.4);
         backdrop-filter: blur(12px);
         z-index: 2000;
         display: flex;
@@ -1038,19 +1045,19 @@ const gitPanelStyles = `
         width: 100%;
         height: 100%;
         max-width: 1200px;
-        background: #050505;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
         border-radius: 24px;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        box-shadow: 0 50px 100px rgba(0, 0, 0, 0.8);
+        box-shadow: 0 50px 100px rgba(0, 0, 0, 0.2);
     }
 
     .diff-header-bar {
         padding: 20px 32px;
-        background: rgba(255, 255, 255, 0.02);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        background: var(--color-surface-subtle);
+        border-bottom: 1px solid var(--color-border-subtle);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -1082,7 +1089,7 @@ const gitPanelStyles = `
     .diff-line { padding: 0 16px; white-space: pre; }
     .diff-add { background: rgba(16, 185, 129, 0.1); color: #10b981; }
     .diff-remove { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-    .diff-hunk { color: #3b82f6; opacity: 0.6; padding: 8px 16px; }
+    .diff-hunk { color: var(--color-accent); opacity: 0.6; padding: 8px 16px; }
 
     .binary-preview {
         height: 100%;

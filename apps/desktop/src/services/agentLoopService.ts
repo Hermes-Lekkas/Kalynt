@@ -21,7 +21,7 @@
 import { logger } from '../utils/logger'
 import { aiService, AIProvider, AIMessage } from './aiService'
 import { offlineLLMService, ChatMessage as OfflineChatMessage } from './offlineLLMService'
-import { executeTool, getToolCallJsonSchema, getSimplifiedToolSchema, getModelSizeCategory, stopActiveTool, type ToolContext } from './ideAgentTools'
+import { executeTool, stopActiveTool, type ToolContext } from './ideAgentTools'
 import { aimeService } from './aimeService'
 import { shadowWorkspaceService } from './shadowWorkspaceService'
 import { useModelStore } from '../stores/modelStore'
@@ -38,6 +38,9 @@ import {
 } from '../types/agentTypes'
 
 type EventListener = (event: AgentLoopEvent) => void
+
+/** Maximum characters to include from a single tool result */
+const MAX_TOOL_RESULT_CHARS = 4000
 
 /**
  * Parse tool calls from LLM response.
@@ -76,7 +79,7 @@ function parseToolCalls(response: string): Array<{ name: string; params: Record<
                         const val = paramMatch[2].trim()
                         if (val === 'true') params[paramMatch[1]] = true
                         else if (val === 'false') params[paramMatch[1]] = false
-                        else if (/^\d+$/.test(val)) params[paramMatch[1]] = parseInt(val)
+                        else if (/^\d+$/.test(val)) params[paramMatch[1]] = Number.parseInt(val)
                         else params[paramMatch[1]] = val
                     }
                 }
@@ -90,7 +93,6 @@ function parseToolCalls(response: string): Array<{ name: string; params: Record<
     const jsonStartPattern = /\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"params"\s*:/g
     while ((match = jsonStartPattern.exec(response)) !== null) {
         const jsonCandidate = response.substring(match.index)
-        let endPos = jsonCandidate.indexOf('}')
         // Try to find the matching closing brace
         let braceCount = 0
         for (let i = 0; i < jsonCandidate.length; i++) {
@@ -119,28 +121,22 @@ function parseToolCalls(response: string): Array<{ name: string; params: Record<
 function extractCleanContent(response: string): string {
     return response
         // Remove thinking tags and their content
-        .replace(/<think>[\s\S]*?<\/think>/gi, '')
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+        .replaceAll(/<think>[\s\S]*?<\/think>/gi, '')
+        .replaceAll(/<thinking>[\s\S]*?<\/thinking>/gi, '')
         // Remove standardized tool code blocks
-        .replace(/```tool[\s\S]*?```/gi, '')
-        // Remove loose JSON tool calls ONLY if they are the entire response or at the end
-        // This is tricky - we don't want to remove random JSON in text
-        // But we want to remove the tool call JSON.
-        // If we used grammar, it's mostly in the ```tool block anyway.
-        
+        .replaceAll(/```tool[\s\S]*?```/gi, '')
         // Remove other specific formats if they leak
-        .replace(/<tool_code>[\s\S]*?<\/tool_code>/gi, '')
-        
+        .replaceAll(/<tool_code>[\s\S]*?<\/tool_code>/gi, '')
         // Remove special tokens
-        .replace(/<\|im_end\|>/g, '')
-        .replace(/<\|im_start\|>/g, '')
-        .replace(/<\|end_of_text\|>/g, '')
-        .replace(/<\/s>/g, '')
-        .replace(/<s>/g, '')
-        .replace(/\[INST\]/g, '')
-        .replace(/\[\/INST\]/g, '')
+        .replaceAll(/<\|im_end\|>/g, '')
+        .replaceAll(/<\|im_start\|>/g, '')
+        .replaceAll(/<\|end_of_text\|>/g, '')
+        .replaceAll(/<\/s>/g, '')
+        .replaceAll(/<s>/g, '')
+        .replaceAll(/\[INST\]/g, '')
+        .replaceAll(/\[\/INST\]/g, '')
         // Remove role markers
-        .replace(/\n?(user|assistant|system)\s*$/gi, '')
+        .replaceAll(/\n?(user|assistant|system)\s*$/gi, '')
         // Clean whitespace
         .trim()
 }
@@ -201,7 +197,7 @@ function extractPlan(response: string): AgentPlan | null {
 class AgentLoopService {
     private config: AgentLoopConfig = { ...DEFAULT_LOOP_CONFIG }
     private state: AgentLoopState | null = null
-    private listeners: Set<EventListener> = new Set()
+    private readonly listeners: Set<EventListener> = new Set()
     private abortController: AbortController | null = null
     private workspacePath: string = ''
     private useOfflineAI: boolean = false
@@ -315,10 +311,10 @@ class AgentLoopService {
             const systemPrompt = options?.systemPrompt || this.buildSystemPrompt(ragContext, runConfig)
 
             // 3. Build conversation history
-            const contextWindow = this.useOfflineAI 
-                ? offlineLLMService.getContextWindow() 
+            const contextWindow = this.useOfflineAI
+                ? offlineLLMService.getContextWindow()
                 : aiService.getContextWindow(this.cloudProvider)
-                
+
             const messages = this.buildMessages(systemPrompt, chatHistory, userMessage, contextWindow)
 
             // 4. Enter the ReAct loop
@@ -344,6 +340,12 @@ class AgentLoopService {
 
                 this.state.iteration = iteration + 1
                 this.emit({ type: 'iteration', iteration: iteration + 1, maxIterations: runConfig.maxIterations })
+
+                // Trim conversation to fit context window before generating
+                const currentContextWindow = this.useOfflineAI
+                    ? offlineLLMService.getContextWindow()
+                    : aiService.getContextWindow(this.cloudProvider)
+                conversationMessages = this.trimToContextWindow(conversationMessages, currentContextWindow)
 
                 // Generate LLM response
                 this.state.isGenerating = true
@@ -378,9 +380,11 @@ class AgentLoopService {
                     this.state.plan = plan
                     this.emit({ type: 'plan-proposed', plan })
                     this.addStep({ type: 'plan', content: plan.steps.map(s => s.description).join('\n') })
-                    // In plan mode, we'd wait for approval here
-                    // For now, auto-approve and continue
-                    plan.status = 'executing'
+
+                    // In plan mode, emit the plan and return it for user approval
+                    // The UI should present approve/reject, then call run() again
+                    finalResponse = `Plan proposed:\n${plan.steps.map((s, i) => `${i + 1}. ${s.description}`).join('\n')}`
+                    break
                 }
 
                 // Parse tool calls
@@ -403,7 +407,9 @@ class AgentLoopService {
                     this.addStep({ type: 'thinking', content: `Executing ${toolCalls.length} tool(s)...` })
                 }
 
-                // Execute tool calls sequentially
+                // Execute tool calls sequentially, collecting all results
+                const toolResults: string[] = []
+
                 for (const toolCall of toolCalls) {
                     if (signal.aborted) break
 
@@ -431,9 +437,14 @@ class AgentLoopService {
                             }
                         }
 
-                        const resultStr = result.success
+                        let resultStr = result.success
                             ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2))
                             : `Error: ${result.error}`
+
+                        // Truncate very long tool results to prevent context overflow
+                        if (resultStr.length > MAX_TOOL_RESULT_CHARS) {
+                            resultStr = resultStr.slice(0, MAX_TOOL_RESULT_CHARS) + `\n...(truncated, ${resultStr.length - MAX_TOOL_RESULT_CHARS} more characters)...`
+                        }
 
                         this.addStep({
                             type: 'tool-result',
@@ -450,13 +461,6 @@ class AgentLoopService {
                             success: result.success
                         })
 
-                        this.emit({
-                            type: 'tool-complete',
-                            toolName: toolCall.name,
-                            result: result.data ?? result.error,
-                            success: result.success
-                        })
-
                         // Shadow Workspace: Auto-validate after file modifications
                         let validationFeedback = ''
                         if (result.success && ['writeFile', 'replaceInFile', 'insertAtLine', 'fuzzyReplace', 'createFile'].includes(toolCall.name)) {
@@ -465,11 +469,11 @@ class AgentLoopService {
                                 try {
                                     const validation = await shadowWorkspaceService.validateFile(modifiedPath, this.workspacePath)
                                     if (validation && !validation.success) {
-                                        validationFeedback = '\n\n' + shadowWorkspaceService.formatErrorsForAgent(validation)
+                                        validationFeedback = '\n' + shadowWorkspaceService.formatErrorsForAgent(validation)
                                         this.addStep({
                                             type: 'error',
                                             content: `Build validation: ${validation.errors.filter(e => e.severity === 'error').length} error(s) detected`,
-                                            toolName: 'shadowWorkspace',
+                                            name: 'shadowWorkspace',
                                             duration: validation.duration
                                         })
                                     }
@@ -479,14 +483,10 @@ class AgentLoopService {
                             }
                         }
 
-                        // Add tool result to conversation for next iteration
-                        conversationMessages = [
-                            ...conversationMessages,
-                            this.makeAssistantMessage(response),
-                            this.makeUserMessage(
-                                `Tool "${toolCall.name}" ${result.success ? 'succeeded' : 'failed'}.\nResult:\n${resultStr}${validationFeedback}\n\nContinue with the task. If more tools are needed, call them. If the task is complete, provide a final summary.`
-                            )
-                        ]
+                        // Collect tool result for combined message
+                        toolResults.push(
+                            `Tool "${toolCall.name}" ${result.success ? 'succeeded' : 'failed'}.\nResult:\n${resultStr}${validationFeedback}`
+                        )
                     } catch (err) {
                         const errorMsg = err instanceof Error ? err.message : String(err)
                         this.addStep({
@@ -496,23 +496,31 @@ class AgentLoopService {
                             duration: Date.now() - stepStart
                         })
                         this.emit({ type: 'tool-result', toolName: toolCall.name, result: errorMsg, success: false })
-                        this.emit({ type: 'tool-complete', toolName: toolCall.name, result: errorMsg, success: false })
 
-                        conversationMessages = [
-                            ...conversationMessages,
-                            this.makeAssistantMessage(response),
-                            this.makeUserMessage(
-                                `Tool "${toolCall.name}" threw an error: ${errorMsg}\n\nTry a different approach or tool. If the task cannot be completed, explain why.`
-                            )
-                        ]
+                        toolResults.push(
+                            `Tool "${toolCall.name}" threw an error: ${errorMsg}\nTry a different approach or tool.`
+                        )
                     }
+                }
+
+                // Append assistant response ONCE + combined tool results as a single user message
+                // This prevents conversation corruption from duplicating the assistant response per tool
+                if (toolResults.length > 0) {
+                    const combinedResults = toolResults.join('\n\n---\n\n')
+                    conversationMessages = [
+                        ...conversationMessages,
+                        this.makeAssistantMessage(response),
+                        this.makeUserMessage(
+                            `${combinedResults}\n\nContinue with the task. If more tools are needed, call them. If the task is complete, provide a final summary.`
+                        )
+                    ]
                 }
             }
 
             // If we exhausted iterations without a final answer
             if (!finalResponse && this.state.steps.length > 0) {
-                const lastStep = this.state.steps[this.state.steps.length - 1]
-                if (lastStep.type === 'tool-result') {
+                const lastStep = this.state.steps.at(-1)
+                if (lastStep?.type === 'tool-result') {
                     finalResponse = `Completed ${this.state.iteration} steps. Modified files: ${this.state.modifiedFiles.join(', ') || 'none'}.`
                 }
             }
@@ -543,8 +551,8 @@ class AgentLoopService {
     getMissionHistory(): Array<{ role: string; content: string }> {
         return this.state?.steps.map(step => {
             if (step.type === 'thinking') return { role: 'assistant', content: `<think>\n${step.content}\n</think>` }
-            if (step.type === 'tool-call') return { role: 'assistant', content: `{"name": "${step.toolName}", "params": ${JSON.stringify(step.toolParams)}}` }
-            if (step.type === 'tool-result') return { role: 'user', content: `Tool Result: ${JSON.stringify(step.toolResult)}` }
+            if (step.type === 'tool-call') return { role: 'assistant', content: `{"name": "${step.name}", "params": ${JSON.stringify(step.params)}}` }
+            if (step.type === 'tool-result') return { role: 'user', content: `Tool Result: ${JSON.stringify(step.data)}` }
             if (step.type === 'answer') return { role: 'assistant', content: step.content }
             return { role: 'user', content: step.content }
         }) || []
@@ -577,6 +585,58 @@ class AgentLoopService {
     }
 
     // --- Internal Methods ---
+
+    /**
+     * Trim conversation messages to fit within the context window.
+     * Preserves the system prompt (first message) and the most recent messages.
+     * Drops oldest non-system messages when token count exceeds the budget.
+     */
+    private trimToContextWindow(
+        messages: Array<{ role: string; content: string }>,
+        contextWindow: number
+    ): Array<{ role: string; content: string }> {
+        const responseBuffer = 4096
+        const safetyBuffer = 1000
+        const maxTokens = contextWindow - responseBuffer - safetyBuffer
+
+        // Calculate total tokens
+        let totalTokens = 0
+        for (const msg of messages) {
+            totalTokens += estimateTokens(msg.content)
+        }
+
+        // If within budget, return as-is
+        if (totalTokens <= maxTokens) return messages
+
+        // System prompt always stays (index 0)
+        const systemMsg = messages[0]
+        const rest = messages.slice(1)
+
+        // Drop oldest non-system messages until within budget
+        let trimmed = [...rest]
+        let currentTokens = totalTokens
+
+        while (currentTokens > maxTokens && trimmed.length > 2) {
+            // Remove the oldest non-system message
+            const removed = trimmed.shift()!
+            currentTokens -= estimateTokens(removed.content)
+        }
+
+        // If still over budget, truncate the oldest remaining message
+        if (currentTokens > maxTokens && trimmed.length > 0) {
+            const oldest = trimmed[0]
+            const excessTokens = currentTokens - maxTokens
+            const keepTokens = estimateTokens(oldest.content) - excessTokens
+            if (keepTokens > 100) {
+                trimmed[0] = {
+                    role: oldest.role,
+                    content: '...(earlier context trimmed)...\n' + truncateToTokens(oldest.content, keepTokens)
+                }
+            }
+        }
+
+        return [systemMsg, ...trimmed]
+    }
 
     private addStep(step: Omit<AgentStep, 'id' | 'timestamp'>) {
         const fullStep: AgentStep = {
@@ -631,11 +691,11 @@ Then execute the plan step by step.`
         const responseBuffer = 4096
         const systemTokens = estimateTokens(systemPrompt)
         const userTokens = estimateTokens(userMessage)
-        
+
         let availableTokens = contextWindow - responseBuffer - systemTokens - userTokens
-        
+
         // Safety buffer
-        availableTokens -= 1000 
+        availableTokens -= 1000
 
         if (availableTokens < 0) {
             // Context is extremely tight, just send system + truncated user message
@@ -646,12 +706,12 @@ Then execute the plan step by step.`
         }
 
         const selectedHistory: Array<{ role: string; content: string }> = []
-        
+
         // Iterate backwards
         for (let i = chatHistory.length - 1; i >= 0; i--) {
             const msg = chatHistory[i]
             const msgTokens = estimateTokens(msg.content)
-            
+
             if (availableTokens >= msgTokens) {
                 selectedHistory.unshift({
                     role: msg.role === 'tool' ? 'assistant' : msg.role,
@@ -662,9 +722,8 @@ Then execute the plan step by step.`
                 // Partial fit (keep at least 100 tokens)
                 selectedHistory.unshift({
                     role: msg.role === 'tool' ? 'assistant' : msg.role,
-                    content: '...(older content truncated)...\n' + truncateToTokens(msg.content, availableTokens) // We want the END of the message ideally, but truncateToTokens keeps START. For now keeping start is safer for context.
+                    content: '...(older content truncated)...\n' + truncateToTokens(msg.content, availableTokens)
                 })
-                availableTokens = 0
                 break
             } else {
                 break
@@ -690,11 +749,39 @@ Then execute the plan step by step.`
         messages: Array<{ role: string; content: string }>,
         signal: AbortSignal
     ): Promise<string> {
-        if (this.useOfflineAI) {
-            return this.generateOffline(messages, signal)
-        } else {
-            return this.generateCloud(messages, signal)
+        const maxRetries = 3
+        let lastError: Error | null = null
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                if (this.useOfflineAI) {
+                    return await this.generateOffline(messages, signal)
+                } else {
+                    return await this.generateCloud(messages, signal)
+                }
+            } catch (err) {
+                // Don't retry on abort
+                if (signal.aborted) throw err
+
+                lastError = err instanceof Error ? err : new Error(String(err))
+                const msg = lastError.message.toLowerCase()
+
+                // Only retry on transient errors (network, rate limit, server errors)
+                const isRetryable = msg.includes('fetch') || msg.includes('network') ||
+                    msg.includes('429') || msg.includes('rate limit') ||
+                    msg.includes('500') || msg.includes('502') || msg.includes('503') ||
+                    msg.includes('timeout') || msg.includes('timed out')
+
+                if (!isRetryable || attempt >= maxRetries) throw lastError
+
+                // Exponential backoff: 1s, 2s
+                const delay = Math.pow(2, attempt - 1) * 1000
+                logger.agent.warn(`Generation attempt ${attempt} failed, retrying in ${delay}ms: ${lastError.message}`)
+                await new Promise(resolve => setTimeout(resolve, delay))
+            }
         }
+
+        throw lastError || new Error('Generation failed after retries')
     }
 
     private async generateOffline(
@@ -703,8 +790,6 @@ Then execute the plan step by step.`
     ): Promise<string> {
         const loadedModelId = useModelStore.getState().loadedModelId
         if (!loadedModelId) throw new Error('No offline model loaded')
-
-        const modelSize = getModelSizeCategory(loadedModelId)
 
         // For offline, keep conversation history within context limits but generous enough for reasoning
         const trimmedMessages: OfflineChatMessage[] = [
@@ -715,33 +800,12 @@ Then execute the plan step by step.`
             }))
         ]
 
-        // Use grammar-based JSON sampling for tool calls
+        // Let the model respond naturally — tool calls are parsed from the
+        // ```tool markdown format defined in the system prompt. Grammar-forcing
+        // JSON breaks natural text responses (final answers, clarifications).
         const options: any = {
-            temperature: 0.2,
-            maxTokens: 2048
-        }
-
-        // Detect if this might be a tool-using turn or if we should allow natural text
-        const lastMsg = messages[messages.length - 1]
-        const lastContent = lastMsg?.content?.toLowerCase() || ''
-        
-        // Conversational triggers - if these are present, DON'T force JSON
-        const isConversational = 
-            lastContent.length < 15 && 
-            (lastContent.includes('hi') || 
-             lastContent.includes('hello') || 
-             lastContent.includes('hey') || 
-             lastContent.includes('how are') ||
-             lastContent.includes('who are'))
-
-        const isToolTurn = lastMsg?.content?.includes('Tool ') ||
-            lastMsg?.content?.includes('Continue with') ||
-            lastMsg?.content?.includes('TOOL_NAME')
-
-        if ((isToolTurn || modelSize === 'small') && !isConversational) {
-            options.jsonSchema = modelSize === 'small'
-                ? getSimplifiedToolSchema()
-                : getToolCallJsonSchema()
+            temperature: 0.3,
+            maxTokens: 4096
         }
 
         const response = await new Promise<string>((resolve, reject) => {
@@ -779,15 +843,22 @@ Then execute the plan step by step.`
 
         // Determine best model for agent tasks
         const options: any = {
-            temperature: 0.2,
-            maxTokens: 4096,
-            thinking: true
+            temperature: 0.3,
+            maxTokens: 8192
         }
 
-        // Auto-select 'Ultra' models for cloud providers to ensure high-quality tool calling
-        if (this.cloudProvider === 'openai') options.model = 'gpt-5-preview'
-        else if (this.cloudProvider === 'anthropic') options.model = 'claude-4-6-opus-latest'
-        else if (this.cloudProvider === 'google') options.model = 'gemini-3-pro-high'
+        // Use user-selected model if available, otherwise fall back to reliable defaults
+        if (this.config.model) {
+            options.model = this.config.model
+        } else if (this.cloudProvider === 'openai') {
+            options.model = 'gpt-4o'
+        } else if (this.cloudProvider === 'anthropic') {
+            options.model = 'claude-3-5-sonnet-latest'
+            // Only Anthropic supports extended thinking mode
+            options.thinking = true
+        } else if (this.cloudProvider === 'google') {
+            options.model = 'gemini-1.5-pro'
+        }
 
         const response = await new Promise<string>((resolve, reject) => {
             const onAbort = () => {

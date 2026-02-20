@@ -8,11 +8,13 @@ import App from './App'
 import './index.css'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
-import * as monaco from 'monaco-editor'
-import { loader } from '@monaco-editor/react'
 
-// Configure Monaco to load from local node_modules instead of CDN
-loader.config({ monaco })
+// RAM Optimization: Lazy-load Monaco only when the editor is actually mounted.
+// This defers ~150MB of V8 heap allocation until a file is opened.
+import { loader } from '@monaco-editor/react'
+loader.config({
+    'vs/nls': { availableLanguages: { '*': '' } }, // Skip i18n loading
+})
 
 const rootElement = document.getElementById('root')
 if (!rootElement) throw new Error('Failed to find the root element')

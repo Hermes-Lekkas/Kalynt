@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useRef, useState, useCallback, useEffect } from 'react'
+import { useAppStore } from '../../stores/appStore'
 import { TerminalProps, ContextMenuState } from './terminal/types'
 import { useTerminalManager } from './terminal/useTerminalManager'
 import { useTerminalSession } from './terminal/useTerminalSession'
@@ -23,6 +24,7 @@ interface CommandHistoryItem {
 }
 
 export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalProps & { onActiveTabChange?: (id: string) => void }>) {
+    const { theme } = useAppStore()
     const containerRef = useRef<HTMLDivElement>(null)
     const [searchVisible, setSearchVisible] = useState(false)
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
@@ -232,13 +234,13 @@ export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalPr
             height: '100%',
             width: '100%',
             flex: 1,
-            background: 'linear-gradient(180deg, #09090b 0%, #000000 100%)',
+            background: theme === 'light' ? '#ffffff' : 'linear-gradient(180deg, #09090b 0%, #000000 100%)',
             fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             position: 'relative',
             borderRadius: '12px',
             overflow: 'hidden',
-            border: '1px solid rgba(139, 92, 246, 0.1)',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03)'
+            border: `1px solid ${theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(139, 92, 246, 0.1)'}`,
+            boxShadow: theme === 'light' ? '0 4px 24px rgba(0, 0, 0, 0.05)' : '0 4px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03)'
         }}>
             {/* Header with tabs and actions */}
             <TerminalHeader

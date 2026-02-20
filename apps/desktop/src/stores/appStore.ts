@@ -77,6 +77,7 @@ interface AppState {
     startupStatus: string // [NEW] Real-time status for splash screen
     showSettings: boolean // [NEW] Global settings toggle
     settingsTab: string | null // [NEW] Current active settings tab
+    theme: 'light' | 'dark' // [NEW]
 
     // Actions
     initialize: () => Promise<void>
@@ -88,6 +89,7 @@ interface AppState {
     setStartupStatus: (status: string) => void // [NEW]
     setShowSettings: (show: boolean) => void // [NEW]
     setSettingsTab: (tab: string | null) => void // [NEW]
+    setTheme: (theme: 'light' | 'dark') => void // [NEW]
     reorderSpaces: (fromIndex: number, toIndex: number) => void // [NEW]
 
     // API Key actions (now async for safeStorage)
@@ -120,10 +122,12 @@ export const useAppStore = create<AppState>()(
             startupStatus: 'Initializing Agent Core...', // Default start message
             showSettings: false,
             settingsTab: null,
+            theme: 'dark',
 
             setStartupStatus: (status) => set({ startupStatus: status }),
             setShowSettings: (show) => set({ showSettings: show }),
             setSettingsTab: (tab) => set({ settingsTab: tab }),
+            setTheme: (theme) => set({ theme }),
 
             reorderSpaces: (fromIndex, toIndex) => {
                 const { spaces } = get()
@@ -278,7 +282,8 @@ export const useAppStore = create<AppState>()(
                 currentSpace: state.currentSpace,
                 // Note: apiKeys are now stored in safeStorage, not localStorage
                 userName: state.userName,
-                sidebarCollapsed: state.sidebarCollapsed
+                sidebarCollapsed: state.sidebarCollapsed,
+                theme: state.theme
             }),
             onRehydrateStorage: () => {
                 console.log('[AppStore] Starting hydration...')

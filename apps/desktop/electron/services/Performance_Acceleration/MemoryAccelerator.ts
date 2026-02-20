@@ -1,8 +1,8 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { app, BrowserWindow, PowerMonitor } from 'electron'
-import os from 'os'
+import { app, BrowserWindow } from 'electron'
+import * as os from 'node:os'
 
 export enum PerformanceMode {
     BALANCED = 'balanced',
@@ -19,21 +19,27 @@ export enum PerformanceMode {
 export class MemoryAccelerator {
     private mode: PerformanceMode = PerformanceMode.BALANCED
     private gcTimer: NodeJS.Timeout | null = null
-    private checkInterval: number = 60000 // 1 minute default
-    private memoryThreshold: number = 0.8 // 80% RAM usage threshold
+    private checkInterval: number = 15_000 // 15 seconds default (balanced mode)
+    private memoryThreshold: number = 0.65 // 65% RAM usage threshold
 
     constructor() {
         this.init()
     }
 
     private init() {
-        // Listen for memory pressure events on macOS
+        // Monitor for low memory conditions on macOS via periodic checks
         if (process.platform === 'darwin') {
-            app.on('memory-pressure', (level) => {
-                console.warn(`[MemoryAccelerator] Memory pressure detected: ${level}`)
-                this.handleMemoryPressure(level)
-            })
+            // Electron does not expose a 'memory-pressure' event on app.
+            // Instead, we proactively check memory in startMonitoring().
         }
+
+        // Listen to OS memory pressure warnings
+        app.on('child-process-gone', (event, details) => {
+            if (details.reason === 'oom') {
+                console.warn('[MemoryAccelerator] A child process went out of memory!')
+                this.requestGarbageCollection()
+            }
+        })
 
         // Monitor system resources and adjust mode
         this.startMonitoring()
@@ -41,7 +47,7 @@ export class MemoryAccelerator {
 
     private startMonitoring() {
         if (this.gcTimer) clearInterval(this.gcTimer)
-        
+
         this.gcTimer = setInterval(() => {
             this.checkMemoryUsage()
         }, this.checkInterval)
@@ -69,10 +75,10 @@ export class MemoryAccelerator {
      * Attempts to trigger garbage collection in the main process and all windows.
      */
     public requestGarbageCollection() {
-        // Main process GC (requires --expose-gc flag)
-        if (typeof global.gc === 'function') {
+        // Main process GC (requires --expose_gc flag)
+        if (typeof globalThis.gc === 'function') {
             try {
-                global.gc()
+                globalThis.gc()
                 console.log('[MemoryAccelerator] Main process GC triggered.')
             } catch (e) {
                 console.error('[MemoryAccelerator] Failed to trigger main GC:', e)
@@ -87,6 +93,15 @@ export class MemoryAccelerator {
                 win.webContents.send('performance:dispose-workers')
             }
         }
+
+        // RAM: Also trim the Swift native helper process (macOS)
+        if (process.platform === 'darwin') {
+            import('../native-helper-service').then(({ nativeHelperService }) => {
+                if (nativeHelperService.isAvailable()) {
+                    nativeHelperService.request('memory-trim').catch(() => { /* ignore */ })
+                }
+            }).catch(() => { /* ignore */ })
+        }
     }
 
     /**
@@ -95,7 +110,7 @@ export class MemoryAccelerator {
     private handleMemoryPressure(level: 'critical' | 'normal' | 'warning') {
         if (level === 'critical' || level === 'warning') {
             this.requestGarbageCollection()
-            
+
             // In critical situations, we might want to kill background workers
             if (level === 'critical') {
                 this.suspendBackgroundTasks()
@@ -123,20 +138,20 @@ export class MemoryAccelerator {
 
         switch (mode) {
             case PerformanceMode.HIGH_PERFORMANCE:
-                this.checkInterval = 120000 // Less frequent checks, prioritize compute
-                this.memoryThreshold = 0.9
+                this.checkInterval = 30_000 // 30s — less frequent, prioritize compute
+                this.memoryThreshold = 0.85
                 break
             case PerformanceMode.BALANCED:
-                this.checkInterval = 60000
-                this.memoryThreshold = 0.8
+                this.checkInterval = 15_000 // 15s
+                this.memoryThreshold = 0.65
                 break
             case PerformanceMode.POWER_SAVER:
-                this.checkInterval = 30000 // More frequent checks
-                this.memoryThreshold = 0.5
+                this.checkInterval = 10_000 // 10s — aggressive
+                this.memoryThreshold = 0.4
                 this.requestGarbageCollection()
                 break
         }
-        
+
         this.startMonitoring()
     }
 
@@ -162,13 +177,21 @@ export class MemoryAccelerator {
     }
 
     public getStatus() {
-        const processMem = process.memoryUsage()
+        const metrics = app.getAppMetrics()
+        let totalWorkingSetSize = 0
+        let totalPrivateMemory = 0
+
+        for (const metric of metrics) {
+            totalWorkingSetSize += metric.memory.workingSetSize
+            totalPrivateMemory += (metric.memory.privateBytes || 0)
+        }
+
+        // workingSetSize is typically considered the best equivalent to RSS for Chromium processes
         return {
             mode: this.mode,
-            rss: Math.round(processMem.rss / 1024 / 1024),
-            heapTotal: Math.round(processMem.heapTotal / 1024 / 1024),
-            heapUsed: Math.round(processMem.heapUsed / 1024 / 1024),
-            external: Math.round(processMem.external / 1024 / 1024)
+            rss: Math.round(totalWorkingSetSize / 1024), // converting KB to MB
+            // keeping extra data just in case needed later, though not actively used by FE right now
+            totalPrivateBytes: Math.round(totalPrivateMemory / 1024),
         }
     }
 
