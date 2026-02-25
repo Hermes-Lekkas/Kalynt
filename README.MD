@@ -169,7 +169,7 @@ Download the latest installer for Windows, macOS, or Linux from the [Releases Pa
 ### Building from Source
 
 ```bash
-# Prerequisites: Node.js >= 18, Python 3.10+, C++ Build Tools
+# Prerequisites: Node.js >= 22, Python 3.10+, C++ Build Tools
 git clone https://github.com/Hermes-Lekkas/Kalynt.git
 cd Kalynt
 npm install
