@@ -38,26 +38,22 @@ export const IDEBottomTerminal: React.FC<IDEBottomTerminalProps> = ({
     const { theme } = useAppStore()
     const [activeTab, setActiveTab] = useState<'terminal' | 'output' | 'build' | 'debug'>('terminal')
 
-    // Switch to output tab when code starts running
+    // Switch to appropriate tab when processes start
     useEffect(() => {
-        if (isRunning) {
-            setActiveTab('output')
+        const switchTab = () => {
+            if (isRunning) {
+                setActiveTab('output')
+            } else if (isBuilding) {
+                setActiveTab('build')
+            } else if (isDebugging) {
+                setActiveTab('debug')
+            }
         }
-    }, [isRunning])
-
-    // Switch to build tab when build starts
-    useEffect(() => {
-        if (isBuilding) {
-            setActiveTab('build')
-        }
-    }, [isBuilding])
-
-    // Switch to debug tab when debug starts
-    useEffect(() => {
-        if (isDebugging) {
-            setActiveTab('debug')
-        }
-    }, [isDebugging])
+        
+        // Defer to avoid synchronous state update in effect body
+        const timeout = setTimeout(switchTab, 0)
+        return () => clearTimeout(timeout)
+    }, [isRunning, isBuilding, isDebugging])
 
     return (
         <div

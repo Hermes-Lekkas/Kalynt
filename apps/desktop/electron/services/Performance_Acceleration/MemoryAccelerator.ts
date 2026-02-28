@@ -3,6 +3,7 @@
  */
 import { app, BrowserWindow } from 'electron'
 import * as os from 'node:os'
+import { nativeHelperService } from '../native-helper-service'
 
 export enum PerformanceMode {
     BALANCED = 'balanced',
@@ -95,12 +96,8 @@ export class MemoryAccelerator {
         }
 
         // RAM: Also trim the Swift native helper process (macOS)
-        if (process.platform === 'darwin') {
-            import('../native-helper-service').then(({ nativeHelperService }) => {
-                if (nativeHelperService.isAvailable()) {
-                    nativeHelperService.request('memory-trim').catch(() => { /* ignore */ })
-                }
-            }).catch(() => { /* ignore */ })
+        if (process.platform === 'darwin' && nativeHelperService.isAvailable()) {
+            nativeHelperService.request('memory-trim').catch(() => { /* ignore */ })
         }
     }
 

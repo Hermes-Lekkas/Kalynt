@@ -33,7 +33,7 @@ export class ComputeAccelerator {
         if (this.isNativeSupported) {
             try {
                 await nativeHelperService.request('process:set-priority', { priority })
-            } catch (e) {
+            } catch (_e) {
                 // Ignore failure
             }
         }

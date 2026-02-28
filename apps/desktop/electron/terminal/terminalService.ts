@@ -6,6 +6,7 @@ import * as pty from 'node-pty'
 import { BrowserWindow, app } from 'electron'
 import { EventEmitter } from 'node:events'
 import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { ShellIntegrationService } from './shellIntegration'
 import { LanguageRuntimeGateway } from './languageGateway'
 import { TaskRunnerService } from './taskRunner'
@@ -37,6 +38,8 @@ export class TerminalService extends EventEmitter {
     private readonly sessionManager: TerminalSessionManager
     private readonly terminalHistory = new Map<string, string[]>()
     private readonly maxHistorySize = 1000
+    // HIGH-002 FIX: Track cleanup timeouts to prevent race conditions
+    private readonly cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
     constructor(
         private readonly getMainWindow: () => BrowserWindow | null,
@@ -368,6 +371,13 @@ export class TerminalService extends EventEmitter {
         const terminal = this.terminals.get(id)
         if (!terminal) return
 
+        // HIGH-002 FIX: Clear any existing cleanup timer for this terminal
+        const existingTimer = this.cleanupTimers.get(id)
+        if (existingTimer) {
+            clearTimeout(existingTimer)
+            this.cleanupTimers.delete(id)
+        }
+
         terminal.status = 'stopped'
         terminal.lastExitCode = exitCode
 
@@ -379,11 +389,18 @@ export class TerminalService extends EventEmitter {
             title: terminal.title
         })
 
-        // Clean up after delay
-        setTimeout(() => {
-            this.terminals.delete(id)
-            this.terminalHistory.delete(id)
+        // HIGH-002 FIX: Track cleanup timer and check terminal existence before deletion
+        const cleanupTimer = setTimeout(() => {
+            // Only delete if terminal is still in stopped state (not restarted)
+            const currentTerminal = this.terminals.get(id)
+            if (currentTerminal?.status === 'stopped') {
+                this.terminals.delete(id)
+                this.terminalHistory.delete(id)
+            }
+            this.cleanupTimers.delete(id)
         }, 30000) // Keep metadata for 30 seconds
+        
+        this.cleanupTimers.set(id, cleanupTimer)
     }
 
     async executeTask(options: {

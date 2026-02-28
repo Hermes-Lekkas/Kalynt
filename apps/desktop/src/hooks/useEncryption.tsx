@@ -44,8 +44,9 @@ export function EncryptionProvider({
     // Check encryption state (key is derived in useYjs, not here)
     useEffect(() => {
         if (!spaceId) {
-            setIsEnabled(false)
-            setIsReady(false)
+            // Already false by default, but if we need to reset:
+            // setIsEnabled(false)
+            // setIsReady(false)
             return
         }
 
@@ -55,16 +56,19 @@ export function EncryptionProvider({
         // Check if encryption is configured for this space
         const checkEncryption = () => {
             const settings = localStorage.getItem(`space-settings-${spaceId}`)
+            let enabled = false
             if (settings) {
                 try {
                     const parsed = JSON.parse(settings)
                     // Only check if settings exist, key derivation happens in useYjs
-                    setIsEnabled(parsed.encryptionEnabled && !!parsed.roomPassword)
+                    enabled = (parsed.encryptionEnabled && !!parsed.roomPassword)
                 } catch (e) {
                     console.error('[Encryption] Failed to parse space settings:', e)
-                    setIsEnabled(false)
                 }
             }
+            
+            // Batch updates
+            setIsEnabled(enabled)
             setIsReady(true)
         }
 

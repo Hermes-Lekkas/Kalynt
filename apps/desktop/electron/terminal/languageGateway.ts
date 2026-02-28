@@ -518,6 +518,7 @@ export class LanguageRuntimeGateway extends EventEmitter {
         const onData = (data: Buffer) => {
             session.buffer += data.toString('utf8')
             
+            // eslint-disable-next-line no-constant-condition
             while (true) {
                 // Check for Content-Length header
                 const lengthMatch = session.buffer.match(/Content-Length: (\d+)\r\n\r\n/)

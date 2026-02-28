@@ -107,13 +107,23 @@ class ExtensionHostManager {
         return
       }
 
+      // SECURITY FIX: Only pass whitelisted environment variables to extension host
+      // This prevents leaking sensitive credentials like API keys to extensions
+      const safeEnv: Record<string, string> = {
+        PATH: process.env.PATH || '',
+        HOME: process.env.HOME || '',
+        USER: process.env.USER || '',
+        TEMP: process.env.TEMP || '',
+        TMP: process.env.TMP || '',
+        LANG: process.env.LANG || '',
+        LC_ALL: process.env.LC_ALL || '',
+        NODE_ENV: process.env.NODE_ENV || 'production',
+        KALYNT_EXTENSION_HOST: 'true'
+      }
+
       this.extensionHostProcess = fork(hostScriptPath, [], {
         stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-        env: {
-          ...process.env,
-          NODE_ENV: process.env.NODE_ENV || 'production',
-          KALYNT_EXTENSION_HOST: 'true'
-        }
+        env: safeEnv
       })
 
       this.extensionHostProcess.on('message', (message: ExtensionHostMessage) => {
@@ -350,7 +360,13 @@ class ExtensionHostManager {
         if (!fs.existsSync(packageJsonPath)) continue
 
         try {
-          const manifest = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+          const rawData = fs.readFileSync(packageJsonPath, 'utf-8')
+          // CRITICAL-002 FIX: Validate manifest is an object
+          const manifest = JSON.parse(rawData)
+          if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) {
+            console.warn(`[ExtensionHost] Invalid manifest in ${entry}: not an object`)
+            continue
+          }
           
           if (!manifest.engines?.vscode) continue
 

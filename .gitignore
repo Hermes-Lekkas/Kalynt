@@ -2,6 +2,7 @@
 node_modules/
 .agents/skills/
 /video
+.github
 
 # Build outputs
 /dist/
@@ -71,3 +72,5 @@ SKILL.md
 !ARCHITECTURE.md
 !PROPRIETARY.md
 !DEVELOPER_GUIDE.md
+.gemini/
+gha-creds-*.json

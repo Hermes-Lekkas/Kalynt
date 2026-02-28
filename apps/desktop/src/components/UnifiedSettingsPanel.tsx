@@ -1,10 +1,10 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { useMemberStore } from '../stores/memberStore'
-import { useModelStore } from '../stores/modelStore'
+import { useModelStore } from '../stores/modelStore'  
 import { encryptionService } from '../services/encryptionService'
 import { p2pService } from '../services/p2pService'
 import { offlineLLMService } from '../services/offlineLLMService'
@@ -58,6 +58,8 @@ import {
   Layers,
   Palette,
   Wind,
+  AlertCircle,
+  Activity,
   Settings as SettingsIcon,
   Sun,
   Moon,
@@ -78,23 +80,32 @@ export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: ()
   const { currentSpace, apiKeys, setAPIKey, removeAPIKey, settingsTab, setSettingsTab, theme, setTheme } = useAppStore()
   const { getMyRole, getMembers } = useMemberStore()
 
-  const [activeTab, setActiveTab] = useState<TabId>('general')
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    return (settingsTab as TabId) || 'general'
+  })
 
-  useEffect(() => {
-    if (settingsTab) {
-      setActiveTab(settingsTab as TabId)
-    }
-  }, [settingsTab])
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setSettingsTab(null)
     onClose()
-  }
-  const [settings, setSettings] = useState<SpaceSettings>({
-    encryptionEnabled: false,
-    roomPassword: '',
-    githubConnected: false,
-    slackWebhook: ''
+  }, [setSettingsTab, onClose])
+
+  const [settings, setSettings] = useState<SpaceSettings>(() => {
+    if (currentSpace) {
+      const stored = localStorage.getItem(`space-settings-${currentSpace.id}`)
+      if (stored) {
+        try {
+          return JSON.parse(stored)
+        } catch (_error) {
+          console.error('Failed to load settings')
+        }
+      }
+    }
+    return {
+      encryptionEnabled: false,
+      roomPassword: '',
+      githubConnected: false,
+      slackWebhook: ''
+    }
   })
   const [showPassword, setShowPassword] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -117,19 +128,6 @@ export default function UnifiedSettingsPanel({ onClose }: { readonly onClose: ()
   const myRole = currentSpace ? getMyRole(currentSpace.id) : 'member'
   const isAdmin = myRole === 'owner' || myRole === 'admin'
   const memberCount = currentSpace ? getMembers(currentSpace.id).length : 0
-
-  useEffect(() => {
-    if (currentSpace) {
-      const stored = localStorage.getItem(`space-settings-${currentSpace.id}`)
-      if (stored) {
-        try {
-          setSettings(JSON.parse(stored))
-        } catch {
-          console.error('Failed to load settings')
-        }
-      }
-    }
-  }, [currentSpace])
 
   const handleSave = async () => {
     if (!currentSpace) return
@@ -807,8 +805,209 @@ function AdvancedTab({
   toggleCover,
   handleNuke
 }: any) {
+  // CROSS-NETWORK FIX: TURN settings state with p2pService integration
+  const [turnSettings, setTurnSettings] = useState({ url: '', username: '', credential: '' })
+  const [turnSaved, setTurnSaved] = useState(false)
+  const [turnTest, setTurnTest] = useState<{
+    testing: boolean
+    result: { stun: boolean; turn: boolean; error?: string } | null
+  }>({ testing: false, result: null })
+
+  // Load TURN settings from p2pService (which reads from localStorage)
+  useEffect(() => {
+    const settings = p2pService.getTurnSettings()
+    setTurnSettings({
+      url: settings.url,
+      username: settings.username,
+      credential: settings.credential
+    })
+  }, [])
+
+  const handleSaveTurn = () => {
+    // Save to localStorage
+    localStorage.setItem('kalynt-turn-settings', JSON.stringify(turnSettings))
+    // Notify p2pService to refresh and reconnect with new settings
+    p2pService.refreshTurnSettings()
+    setTurnSaved(true)
+    setTimeout(() => setTurnSaved(false), 2000)
+  }
+
+  const handleTestTurn = async () => {
+    // Validate settings before testing
+    if (!turnSettings.url || !turnSettings.username || !turnSettings.credential) {
+      setTurnTest({
+        testing: false,
+        result: { stun: false, turn: false, error: 'Please fill in all TURN fields before testing' }
+      })
+      return
+    }
+
+    setTurnTest({ testing: true, result: null })
+    try {
+      // First save temporarily to test
+      const previousSettings = localStorage.getItem('kalynt-turn-settings')
+      localStorage.setItem('kalynt-turn-settings', JSON.stringify(turnSettings))
+
+      // Run connectivity test
+      const result = await p2pService.testConnectivity()
+
+      // Restore previous settings if user hasn't saved
+      if (!previousSettings) {
+        localStorage.removeItem('kalynt-turn-settings')
+      } else {
+        localStorage.setItem('kalynt-turn-settings', previousSettings)
+      }
+
+      setTurnTest({
+        testing: false,
+        result: { stun: result.stun, turn: result.turn, error: result.error }
+      })
+    } catch (error) {
+      setTurnTest({
+        testing: false,
+        result: { stun: false, turn: false, error: String(error) }
+      })
+    }
+  }
+
+  const getTurnStatusColor = () => {
+    if (!turnSettings.url && !turnSettings.username && !turnSettings.credential) {
+      return 'var(--color-text-secondary)'
+    }
+    if (turnSettings.url && turnSettings.username && turnSettings.credential) {
+      return '#10b981' // Green - configured
+    }
+    return '#f59e0b' // Yellow - incomplete
+  }
+
+  const getTurnStatusText = () => {
+    if (!turnSettings.url && !turnSettings.username && !turnSettings.credential) {
+      return 'Not configured - using STUN only'
+    }
+    if (turnSettings.url && turnSettings.username && turnSettings.credential) {
+      return 'TURN configured - symmetric NAT connections enabled'
+    }
+    return 'Incomplete - fill all fields'
+  }
+
   return (
     <div className="tab-content animate-fadeIn">
+      <div className="settings-section" style={{ marginBottom: '24px' }}>
+        <h3><Globe size={16} /> P2P Network Configuration (BYOK)</h3>
+        <p className="section-desc">Configure a custom TURN server for reliable over-the-internet P2P collaboration. Get free credentials from <a href="https://www.metered.ca" target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6' }}>metered.ca</a> (500MB/month free tier).</p>
+
+        {/* TURN Status Indicator */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: 'rgba(255,255,255,0.03)',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          border: `1px solid ${getTurnStatusColor()}`
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: getTurnStatusColor()
+          }} />
+          <span style={{ fontSize: '13px', color: getTurnStatusColor() }}>
+            {getTurnStatusText()}
+          </span>
+        </div>
+
+        <div className="setting-card">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px' }}>
+            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>TURN URL (e.g. turn:your-server.metered.ca:80)</label>
+              <input
+                className="input"
+                value={turnSettings.url}
+                onChange={e => setTurnSettings({...turnSettings, url: e.target.value})}
+                placeholder="turn:your-server.metered.ca:80"
+              />
+            </div>
+            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Username</label>
+              <input
+                className="input"
+                value={turnSettings.username}
+                onChange={e => setTurnSettings({...turnSettings, username: e.target.value})}
+                placeholder="your-username"
+              />
+            </div>
+            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Credential</label>
+              <input
+                className="input"
+                type="password"
+                value={turnSettings.credential}
+                onChange={e => setTurnSettings({...turnSettings, credential: e.target.value})}
+                placeholder="your-credential"
+              />
+            </div>
+
+            {/* Test Results Display */}
+            {turnTest.result && (
+              <div style={{
+                padding: '12px',
+                background: turnTest.result.turn ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                borderRadius: '6px',
+                border: `1px solid ${turnTest.result.turn ? '#10b981' : '#ef4444'}`
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  {turnTest.result.turn ? <Check size={16} color="#10b981" /> : <AlertCircle size={16} color="#ef4444" />}
+                  <span style={{ fontWeight: 500, color: turnTest.result.turn ? '#10b981' : '#ef4444' }}>
+                    {turnTest.result.turn ? 'TURN Connection Working!' : 'TURN Connection Failed'}
+                  </span>
+                </div>
+                {turnTest.result.error && (
+                  <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                    Error: {turnTest.result.error}
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '12px' }}>
+                  <span style={{ color: turnTest.result.stun ? '#10b981' : '#ef4444' }}>
+                    STUN: {turnTest.result.stun ? '✓' : '✗'}
+                  </span>
+                  <span style={{ color: turnTest.result.turn ? '#10b981' : '#ef4444' }}>
+                    TURN: {turnTest.result.turn ? '✓' : '✗'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveTurn}
+                disabled={turnSaved}
+                style={{ opacity: turnSaved ? 0.7 : 1 }}
+              >
+                {turnSaved ? <Check size={14} /> : <Save size={14} />} {turnSaved ? 'Saved & Applied!' : 'Save & Apply'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleTestTurn}
+                disabled={turnTest.testing}
+                style={{ opacity: turnTest.testing ? 0.7 : 1 }}
+              >
+                {turnTest.testing ? <Loader2 size={14} className="animate-spin" /> : <Activity size={14} />}
+                {turnTest.testing ? 'Testing...' : 'Test Connection'}
+              </button>
+            </div>
+
+            {/* Help Text */}
+            <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
+              <strong>Why TURN?</strong> TURN servers relay traffic when both peers are behind symmetric NAT or corporate firewalls. Without TURN, connections may fail in these scenarios. Your credentials are stored locally and never sent to our servers.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="collapsible-section">
         <button className="collapsible-header" onClick={() => setShowAIME(!showAIME)}>
           <div className="header-left">

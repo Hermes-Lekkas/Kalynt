@@ -40,18 +40,24 @@ export const DebuggerManager = () => {
                 'lldb': 'rust'
             }
 
-            const runtimeId = typeMap[missingAdapter.type] || missingAdapter.requiredBinary
+            const runtimeId = typeMap[missingAdapter.type]
             
-            addNotification(`Starting installation of ${missingAdapter.type} debugger...`, 'info')
-            
-            // Trigger download and install via runtimeMgmt API
-            const result = await window.electronAPI.runtimeMgmt.downloadAndInstall(runtimeId)
-            
-            if (result.success) {
-                addNotification(`${missingAdapter.type} debugger installed successfully!`, 'success')
-                setMissingAdapter(null)
+            if (runtimeId) {
+                addNotification(`Starting installation of ${missingAdapter.type} debugger...`, 'info')
+                
+                // Trigger download and install via runtimeMgmt API
+                const result = await window.electronAPI.runtimeMgmt.downloadAndInstall(runtimeId)
+                
+                if (result.success) {
+                    addNotification(`${missingAdapter.type} debugger installed successfully!`, 'success')
+                    setMissingAdapter(null)
+                } else {
+                    addNotification(`Installation failed: ${result.error}`, 'error')
+                }
             } else {
-                addNotification(`Installation failed: ${result.error}`, 'error')
+                // Not supported for automated installation, show manual instructions
+                addNotification(`Automated installation is not available for ${missingAdapter.type}. Please follow the instructions provided.`, 'warning')
+                setMissingAdapter(null)
             }
         } catch (e: any) {
             addNotification(`Error: ${e.message}`, 'error')
@@ -62,28 +68,36 @@ export const DebuggerManager = () => {
 
     if (!missingAdapter) return null
 
+    // Disable automated installation for all debuggers currently since runtimeMgmt 
+    // installs runtimes (Python/Go) instead of DAP adapters (debugpy/delve).
+    const isAutomated = false;
+
     return (
         <div className="debugger-install-banner animate-reveal-up">
             <div className="banner-content">
                 <AlertCircle size={18} className="text-blue-400" />
                 <div className="text-group">
                     <span className="title">{missingAdapter.type.toUpperCase()} Debugger Missing</span>
-                    <span className="desc">To debug this file, you need the ${missingAdapter.requiredBinary} adapter.</span>
+                    <span className="desc">
+                        {missingAdapter.installInstructions || `To debug this file, you need the ${missingAdapter.requiredBinary} adapter.`}
+                    </span>
                 </div>
                 <div className="action-group">
-                    <button className="btn-ignore" onClick={() => setMissingAdapter(null)}>Ignore</button>
-                    <button 
-                        className="btn-install-debug" 
-                        onClick={handleInstall}
-                        disabled={installing}
-                    >
-                        {installing ? (
-                            <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                            <Download size={14} />
-                        )}
-                        <span>{installing ? 'Installing...' : 'Install Now'}</span>
-                    </button>
+                    <button className="btn-ignore" onClick={() => setMissingAdapter(null)}>Dismiss</button>
+                    {isAutomated && (
+                        <button 
+                            className="btn-install-debug" 
+                            onClick={handleInstall}
+                            disabled={installing}
+                        >
+                            {installing ? (
+                                <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                                <Download size={14} />
+                            )}
+                            <span>{installing ? 'Installing...' : 'Install Now'}</span>
+                        </button>
+                    )}
                 </div>
             </div>
 

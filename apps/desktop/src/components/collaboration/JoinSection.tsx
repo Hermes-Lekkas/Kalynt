@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Search,
   ArrowRight,
@@ -26,14 +26,7 @@ export default function JoinSection({ onJoin, isJoining, error }: JoinSectionPro
     password?: string
     spaceName?: string
   } | null>(null)
-  const [localError, setLocalError] = useState<string | null>(null)
-
-  // Clear local error when props error changes
-  useEffect(() => {
-    if (error) {
-      setLocalError(error)
-    }
-  }, [error])
+  const [localError, setLocalError] = useState<string | null>(error)
 
   const handleParseInput = () => {
     setLocalError(null)

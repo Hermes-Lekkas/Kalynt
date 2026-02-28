@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Link2,
   Copy,
@@ -22,21 +22,11 @@ interface InviteSectionProps {
 }
 
 export default function InviteSection({ spaceId: _spaceId, spaceName: _spaceName, onGenerateLink }: InviteSectionProps) {
-  const [inviteData, setInviteData] = useState<{ url: string; code: string } | null>(null)
+  const [inviteData, setInviteData] = useState<{ url: string; code: string } | null>(() => onGenerateLink())
   const [copiedLink, setCopiedLink] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
   const [showCode, setShowCode] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
-
-  // Generate initial link
-  useEffect(() => {
-    if (!inviteData) {
-      const data = onGenerateLink()
-      if (data) {
-        setInviteData(data)
-      }
-    }
-  }, [inviteData, onGenerateLink])
 
   const copyToClipboard = useCallback(async (text: string, type: 'link' | 'code') => {
     try {

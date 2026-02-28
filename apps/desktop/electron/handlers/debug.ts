@@ -7,7 +7,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as net from 'net';
 import { binaryManager } from '../services/binary-manager';
-import { RuntimeManager } from '../services/runtime-manager';
 import {
   DebugConfiguration,
   LaunchConfiguration,
@@ -37,16 +36,12 @@ interface WatchExpression {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-interface DebugSessionManager {
-  watchExpressions: Map<string, WatchExpression[]>; // sessionId -> expressions
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 class DebugSessionManager {
   private sessions: Map<string, DebugSession> = new Map();
   private adapters: Map<string, DebugAdapter> = new Map();
   private sessionIdCounter = 0;
   private watchExpressions: Map<string, WatchExpression[]> = new Map();
+  private eventListeners: Map<string, Map<string, ((event: DAPEvent) => void)[]>> = new Map();
 
   /**
    * Load launch.json from workspace
@@ -60,8 +55,8 @@ class DebugSessionManager {
 
     try {
       const content = fs.readFileSync(launchJsonPath, 'utf-8');
-      // Remove comments (simple approach)
-      const jsonContent = content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+      // Remove comments safely without breaking strings (e.g., http://...)
+      const jsonContent = content.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
       const config: LaunchConfiguration = JSON.parse(jsonContent);
       return config;
     } catch (error) {
@@ -234,9 +229,19 @@ class DebugSessionManager {
         locale: 'en-US',
       });
 
+      // Prepare to wait for the initialized event before concluding configuration.
+      // Some adapters fire this right after 'initialize', some fire it after 'launch'.
+      const initializedPromise = this.waitForEvent(sessionId, 'initialized', 10000)
+        .catch(e => console.warn(`[Debug][${sessionId}] Initialized event wait warning: ${e.message}`));
+
       // Send launch/attach request
+      // Filter out non-DAP properties from the configuration
       const requestType = resolvedConfig.request;
-      await this.sendDAPRequest(sessionId, requestType, resolvedConfig);
+      const launchArgs = this.filterLaunchArguments(resolvedConfig);
+      await this.sendDAPRequest(sessionId, requestType, launchArgs);
+
+      // Await initialized event to ensure adapter is ready for configuration
+      await initializedPromise;
 
       // Send configuration done
       await this.sendDAPRequest(sessionId, 'configurationDone', {});
@@ -280,19 +285,119 @@ class DebugSessionManager {
     // Determine debugger executable based on type
     switch (type) {
       case 'node':
-      case 'node-terminal':
-        // Use Node's built-in inspector protocol
-        debuggerPath = process.execPath; // Node.js executable
-        debuggerArgs = [
-            '--inspect-brk=0', 
-            ...(configuration.runtimeArgs || []),
-            configuration.program || ''
-        ];
-        break;
+      case 'node-terminal': {
+        // Use js-debug-dap (VS Code's Node.js debugger as standalone DAP adapter)
+        // Check for common locations of js-debug-dap
+        const jsDebugPaths = [
+          // Global npm install
+          process.platform === 'win32' 
+            ? `${process.env.APPDATA}\\npm\\node_modules\\@vscode\\js-debug-dap\\out\\src\\dapDebugServer.js`
+            : `/usr/local/lib/node_modules/@vscode/js-debug-dap/out/src/dapDebugServer.js`,
+          // Alternative global location
+          process.platform === 'win32'
+            ? `${process.env.USERPROFILE}\\node_modules\\@vscode\\js-debug-dap\\out\\src\\dapDebugServer.js`
+            : `${process.env.HOME}/.npm-global/lib/node_modules/@vscode/js-debug-dap/out/src/dapDebugServer.js`,
+          // Bundled location
+          binaryManager.getBinaryPath('js-debug-dap') || '',
+        ].filter(Boolean);
+
+        let jsDebugPath = jsDebugPaths.find(p => fs.existsSync(p));
+        
+        if (!jsDebugPath) {
+          // Try to find via npm root
+          const npmRootResult = await new Promise<string | null>((resolve) => {
+            const proc = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['root', '-g']);
+            let output = '';
+            proc.stdout?.on('data', (d) => output += d.toString());
+            proc.on('close', (code) => {
+              if (code === 0 && output.trim()) {
+                const dapPath = path.join(output.trim(), '@vscode', 'js-debug-dap', 'out', 'src', 'dapDebugServer.js');
+                resolve(fs.existsSync(dapPath) ? dapPath : null);
+              } else {
+                resolve(null);
+              }
+            });
+            proc.on('error', () => resolve(null));
+          });
+          
+          if (npmRootResult) {
+            jsDebugPath = npmRootResult;
+          }
+        }
+
+        if (!jsDebugPath) {
+          _window.webContents.send('debug:adapter-missing', { 
+            type, 
+            requiredBinary: '@vscode/js-debug-dap', 
+            installInstructions: 'Node.js debugging requires @vscode/js-debug-dap.\nInstall with: npm install -g @vscode/js-debug-dap' 
+          });
+          throw new Error(`Node.js debug adapter not found. Install with: npm install -g @vscode/js-debug-dap`);
+        }
+
+        const nodePort = await this.getAvailablePort();
+        debuggerPath = await this.resolveBinaryPath('node');
+        debuggerArgs = [jsDebugPath, '--port', nodePort.toString()];
+
+        console.log(`[Debug] Using js-debug-dap at port ${nodePort}`);
+
+        // Spawn the DAP server
+        const nodeChildProcess = spawn(debuggerPath, debuggerArgs, {
+          cwd: configuration.cwd || workspacePath,
+          env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
+        });
+
+        nodeChildProcess.on('error', (err) => {
+          console.error(`[Debug][Node Spawn Error] ${err.message}`);
+          _window.webContents.send('debug:error', { sessionId: 'initializing', error: `Node.js debugger failed to start: ${err.message}` });
+        });
+
+        adapter.process = nodeChildProcess;
+
+        // Establish socket connection to js-debug-dap
+        const nodeSocket = new net.Socket();
+        let nodeConnected = false;
+        const nodeMaxRetries = 10;
+
+        for (let attempt = 1; attempt <= nodeMaxRetries; attempt++) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                nodeSocket.destroy();
+                reject(new Error('Timeout'));
+              }, 2000);
+
+              nodeSocket.once('connect', () => {
+                clearTimeout(timeout);
+                resolve();
+              });
+
+              nodeSocket.once('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+              });
+
+              nodeSocket.connect(nodePort, '127.0.0.1');
+            });
+            nodeConnected = true;
+            break;
+          } catch (e) {
+            if (attempt === nodeMaxRetries) {
+              throw new Error(`Failed to connect to Node.js debugger after ${nodeMaxRetries} attempts on port ${nodePort}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+
+        if (!nodeConnected) {
+          throw new Error(`Failed to establish connection to js-debug-dap on port ${nodePort}`);
+        }
+
+        adapter.socket = nodeSocket;
+        return adapter;
+      }
 
       case 'debugpy':
       case 'python': {
-        const port = await this.getAvailablePort();
         // Use python3 by default on non-windows, python on windows
         requiredBinary = process.platform === 'win32' ? 'python' : 'python3';
         
@@ -307,14 +412,10 @@ class DebugSessionManager {
 
         console.log(`[Debug] Using resolved python path: ${debuggerPath}`);
 
-        // USE SOCKET MODE: Starts debuggee and listens for DAP client on dynamic port
+        // USE STDIO MODE: Starts debugpy adapter which speaks DAP directly over stdio
         debuggerArgs = [
             '-Xfrozen_modules=off', 
-            '-m', 'debugpy', 
-            '--listen', `127.0.0.1:${port}`, 
-            '--wait-for-client',
-            configuration.program || '',
-            ...(configuration.args || [])
+            '-m', 'debugpy.adapter'
         ];
         
         // Add environment variable to suppress warnings
@@ -324,13 +425,188 @@ class DebugSessionManager {
             'PYTHONUNBUFFERED': '1'
         };
         
-        // Spawn the process first
+        // Spawn the process
         const childProcess = spawn(debuggerPath, debuggerArgs, {
             cwd: configuration.cwd || workspacePath,
             env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
         });
 
         // Capture early errors and handle spawn failure
+        childProcess.on('error', (err) => {
+            console.error(`[Debug][Spawn Error] ${err.message}`);
+            _window.webContents.send('debug:error', { sessionId: 'initializing', error: `Debugger failed to start: ${err.message}` });
+        });
+
+        adapter.process = childProcess;
+        return adapter;
+      }
+
+      case 'lldb':
+      case 'rust-lldb':
+        // Support both old (lldb-vscode) and new (lldb-dap) names
+        debuggerPath = 'lldb-dap';
+        debuggerArgs = [];
+        requiredBinary = 'lldb-dap';
+        installInstructions = 'LLDB debugging requires lldb-dap or lldb-vscode.\nInstall LLVM/LLDB from https://llvm.org/';
+        break;
+
+      case 'gdb':
+      case 'cppdbg': {
+        // Use codelldb (LLDB-based DAP adapter that supports C/C++/Rust)
+        // This is the recommended approach as GDB MI is NOT DAP-compliant
+        const cppPort = await this.getAvailablePort();
+        
+        // Check for codelldb first (preferred)
+        const codelldbPaths = [
+          // VS Code extension location
+          process.platform === 'win32'
+            ? `${process.env.USERPROFILE}\\.vscode\\extensions\\vadimcn.vscode-lldb-*/adapter/codelldb.exe`
+            : `${process.env.HOME}/.vscode/extensions/vadimcn.vscode-lldb-*/adapter/codelldb`,
+          // Homebrew on macOS
+          '/opt/homebrew/bin/codelldb',
+          '/usr/local/bin/codelldb',
+          // Linux common paths
+          '/usr/bin/codelldb',
+          `${process.env.HOME}/.local/bin/codelldb`,
+        ];
+
+        let codelldbPath: string | null = null;
+        
+        // Try to find codelldb
+        for (const searchPath of codelldbPaths) {
+          if (searchPath.includes('*')) {
+            // Handle glob pattern for VS Code extensions
+            const globDir = path.dirname(searchPath);
+            const globPattern = path.basename(searchPath);
+            if (fs.existsSync(path.dirname(globDir))) {
+              try {
+                const dirs = fs.readdirSync(path.dirname(globDir));
+                const match = dirs.find(d => d.startsWith(globPattern.replace('*', '')));
+                if (match) {
+                  codelldbPath = path.join(path.dirname(globDir), match, globPattern.includes('adapter') ? '' : 'adapter', 'codelldb' + (process.platform === 'win32' ? '.exe' : ''));
+                  if (fs.existsSync(codelldbPath)) break;
+                  codelldbPath = null;
+                }
+              } catch { /* ignore */ }
+            }
+          } else if (fs.existsSync(searchPath)) {
+            codelldbPath = searchPath;
+            break;
+          }
+        }
+
+        if (!codelldbPath) {
+          // Fallback: check if lldb-dap is available (newer LLVM DAP adapter)
+          const lldbDapExists = await this.checkBinaryExists('lldb-dap');
+          if (lldbDapExists) {
+            debuggerPath = await this.resolveBinaryPath('lldb-dap');
+            debuggerArgs = [];
+            requiredBinary = 'lldb-dap';
+            installInstructions = 'C/C++ debugging uses lldb-dap.\nInstall LLVM/LLDB from https://llvm.org/';
+            break;
+          }
+
+          _window.webContents.send('debug:adapter-missing', { 
+            type, 
+            requiredBinary: 'codelldb', 
+            installInstructions: 'C/C++ debugging requires codelldb or lldb-dap.\n\nInstall codelldb:\n  - VS Code: Install "CodeLLDB" extension\n  - macOS: brew install codelldb\n  - Linux: Download from https://github.com/vadimcn/codelldb/releases\n\nOr install lldb-dap from LLVM/LLDB.' 
+          });
+          throw new Error(`C/C++ debug adapter not found. Install codelldb or lldb-dap.`);
+        }
+
+        debuggerPath = codelldbPath;
+        debuggerArgs = ['--port', cppPort.toString()];
+        requiredBinary = 'codelldb';
+        installInstructions = 'C/C++ debugging requires codelldb.\nInstall from https://github.com/vadimcn/codelldb/releases';
+
+        console.log(`[Debug] Using codelldb at port ${cppPort}`);
+
+        // Spawn codelldb
+        const cppChildProcess = spawn(debuggerPath, debuggerArgs, {
+          cwd: configuration.cwd || workspacePath,
+          env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
+        });
+
+        cppChildProcess.on('error', (err) => {
+          console.error(`[Debug][C++ Spawn Error] ${err.message}`);
+          _window.webContents.send('debug:error', { sessionId: 'initializing', error: `C/C++ debugger failed to start: ${err.message}` });
+        });
+
+        adapter.process = cppChildProcess;
+
+        // Establish socket connection to codelldb
+        const cppSocket = new net.Socket();
+        let cppConnected = false;
+        const cppMaxRetries = 10;
+
+        for (let attempt = 1; attempt <= cppMaxRetries; attempt++) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                cppSocket.destroy();
+                reject(new Error('Timeout'));
+              }, 2000);
+
+              cppSocket.once('connect', () => {
+                clearTimeout(timeout);
+                resolve();
+              });
+
+              cppSocket.once('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+              });
+
+              cppSocket.connect(cppPort, '127.0.0.1');
+            });
+            cppConnected = true;
+            break;
+          } catch (e) {
+            if (attempt === cppMaxRetries) {
+              throw new Error(`Failed to connect to C/C++ debugger after ${cppMaxRetries} attempts on port ${cppPort}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+
+        if (!cppConnected) {
+          throw new Error(`Failed to establish connection to codelldb on port ${cppPort}`);
+        }
+
+        adapter.socket = cppSocket;
+        return adapter;
+      }
+
+      case 'delve':
+      case 'go': {
+        const port = await this.getAvailablePort();
+        debuggerPath = 'dlv';
+        debuggerArgs = ['dap', '--listen', `127.0.0.1:${port}`, ...(configuration.args || [])];
+        requiredBinary = 'dlv';
+        installInstructions = 'Go debugging requires Delve.\nInstall with: go install github.com/go-delve/delve/cmd/dlv@latest';
+
+        // Check binary existence first
+        const binaryExists = await this.checkBinaryExists(requiredBinary);
+        if (!binaryExists) {
+            const bundled = binaryManager.getBinaryPath(requiredBinary);
+            if (bundled) {
+                debuggerPath = bundled;
+            } else {
+                _window.webContents.send('debug:adapter-missing', { type, requiredBinary, installInstructions });
+                throw new Error(`Debug adapter not found: '${requiredBinary}'.`);
+            }
+        } else {
+            debuggerPath = await this.resolveBinaryPath(requiredBinary);
+        }
+
+        console.log(`[Debug] Using debugger at: ${debuggerPath}`);
+
+        // Spawn Delve
+        const childProcess = spawn(debuggerPath, debuggerArgs, {
+            cwd: configuration.cwd || workspacePath,
+            env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
+        });
+
         let earlyError = '';
         childProcess.on('error', (err) => {
             console.error(`[Debug][Spawn Error] ${err.message}`);
@@ -344,7 +620,7 @@ class DebugSessionManager {
 
         adapter.process = childProcess;
 
-        // RETRY LOGIC: debugpy can take a few moments to initialize the socket server
+        // Establish socket connection
         const socket = new net.Socket();
         const maxRetries = 5;
         let connected = false;
@@ -375,52 +651,156 @@ class DebugSessionManager {
             } catch (e) {
                 if (attempt === maxRetries) {
                     const detailedError = earlyError ? `\nDebugger Output: ${earlyError}` : '';
-                    throw new Error(`Failed to connect to Python debugger after ${maxRetries} attempts on port ${port}: ${e instanceof Error ? e.message : String(e)}${detailedError}`);
+                    throw new Error(`Failed to connect to Go debugger after ${maxRetries} attempts on port ${port}: ${e instanceof Error ? e.message : String(e)}${detailedError}`);
                 }
-                // Wait before next attempt
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
 
         if (!connected) {
-            throw new Error(`Failed to establish connection to debugpy on port ${port}`);
+            throw new Error(`Failed to establish connection to delve on port ${port}`);
         }
 
         adapter.socket = socket;
         return adapter;
       }
 
-      case 'lldb':
-      case 'rust-lldb':
-        // Support both old (lldb-vscode) and new (lldb-dap) names
-        debuggerPath = 'lldb-dap';
-        debuggerArgs = [];
-        requiredBinary = 'lldb-dap';
-        installInstructions = 'LLDB debugging requires lldb-dap or lldb-vscode.\nInstall LLVM/LLDB from https://llvm.org/';
-        break;
+      case 'java': {
+        // Java debugging requires java-debug DAP adapter (Microsoft's vscode-java-debug)
+        // JDWP is NOT DAP-compliant, so we need a proper DAP adapter
+        
+        const javaDebugPaths = [
+          // VS Code extension location
+          process.platform === 'win32'
+            ? `${process.env.USERPROFILE}\\.vscode\\extensions\\vscjava.vscode-java-debug-*/scripts`
+            : `${process.env.HOME}/.vscode/extensions/vscjava.vscode-java-debug-*/scripts`,
+          // Global npm install (if packaged separately)
+          process.platform === 'win32'
+            ? `${process.env.APPDATA}\\npm\\node_modules\\java-debug-adapter`
+            : `/usr/local/lib/node_modules/java-debug-adapter`,
+        ];
 
-      case 'gdb':
-      case 'cppdbg':
-        debuggerPath = 'gdb';
-        debuggerArgs = ['--interpreter=mi', ...(configuration.args || [])];
-        requiredBinary = 'gdb';
-        installInstructions = 'GDB debugging requires GDB.\nInstall via your system package manager (e.g., apt install gdb)';
-        break;
+        let javaDebugPath: string | null = null;
+        
+        // Try to find java-debug adapter
+        for (const searchPath of javaDebugPaths) {
+          if (searchPath.includes('*')) {
+            // Handle glob pattern for VS Code extensions
+            const baseDir = path.dirname(searchPath);
+            if (fs.existsSync(path.dirname(baseDir))) {
+              try {
+                const dirs = fs.readdirSync(path.dirname(baseDir));
+                const match = dirs.find(d => d.startsWith('vscjava.vscode-java-debug-'));
+                if (match) {
+                  const scriptPath = path.join(path.dirname(baseDir), match, 'scripts');
+                  if (fs.existsSync(scriptPath)) {
+                    javaDebugPath = scriptPath;
+                    break;
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+          } else if (fs.existsSync(searchPath)) {
+            javaDebugPath = searchPath;
+            break;
+          }
+        }
 
-      case 'delve':
-      case 'go':
-        debuggerPath = 'dlv';
-        debuggerArgs = ['dap', '--listen=127.0.0.1:0', ...(configuration.args || [])];
-        requiredBinary = 'dlv';
-        installInstructions = 'Go debugging requires Delve.\nInstall with: go install github.com/go-delve/delve/cmd/dlv@latest';
-        break;
+        if (!javaDebugPath) {
+          _window.webContents.send('debug:adapter-missing', { 
+            type, 
+            requiredBinary: 'java-debug', 
+            installInstructions: 'Java debugging requires the Java Debug Server (vscode-java-debug).\n\nInstall via VS Code:\n  1. Install "Extension Pack for Java" or "Debugger for Java"\n  2. The debug adapter will be available automatically\n\nOr configure manually with a DAP-compliant Java debugger.' 
+          });
+          throw new Error(`Java debug adapter not found. Install the "Debugger for Java" VS Code extension or a DAP-compliant Java debugger.`);
+        }
 
-      case 'java':
-        debuggerPath = 'java';
-        debuggerArgs = ['-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=0', ...(configuration.runtimeArgs || []), configuration.program || ''];
-        requiredBinary = 'java';
-        installInstructions = 'Java debugging requires JDK.\nDownload from https://adoptium.net/';
-        break;
+        // The Java debug adapter is typically launched via a script
+        const javaPort = await this.getAvailablePort();
+        debuggerPath = await this.resolveBinaryPath('java');
+        
+        // Look for the launcher JAR in the extension
+        const launcherJar = path.join(javaDebugPath, 'com.microsoft.java.debug.plugin.jar');
+        
+        if (!fs.existsSync(launcherJar)) {
+          // Try alternative location
+          const altJar = path.join(path.dirname(javaDebugPath), 'server', 'com.microsoft.java.debug.plugin.jar');
+          if (fs.existsSync(altJar)) {
+            debuggerArgs = [
+              '-jar', altJar,
+              '--port', javaPort.toString()
+            ];
+          } else {
+            // Fallback: use the scripts launcher
+            debuggerArgs = [
+              '-jar', path.join(javaDebugPath, 'launcher.jar'),
+              '--port', javaPort.toString()
+            ];
+          }
+        } else {
+          debuggerArgs = [
+            '-jar', launcherJar,
+            '--port', javaPort.toString()
+          ];
+        }
+
+        console.log(`[Debug] Using Java debug adapter at port ${javaPort}`);
+
+        // Spawn the Java debug adapter
+        const javaChildProcess = spawn(debuggerPath, debuggerArgs, {
+          cwd: configuration.cwd || workspacePath,
+          env: this.getSafeDebugEnv(configuration.env as Record<string, string> | undefined),
+        });
+
+        javaChildProcess.on('error', (err) => {
+          console.error(`[Debug][Java Spawn Error] ${err.message}`);
+          _window.webContents.send('debug:error', { sessionId: 'initializing', error: `Java debugger failed to start: ${err.message}` });
+        });
+
+        adapter.process = javaChildProcess;
+
+        // Establish socket connection to Java debug adapter
+        const javaSocket = new net.Socket();
+        let javaConnected = false;
+        const javaMaxRetries = 10;
+
+        for (let attempt = 1; attempt <= javaMaxRetries; attempt++) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                javaSocket.destroy();
+                reject(new Error('Timeout'));
+              }, 3000);
+
+              javaSocket.once('connect', () => {
+                clearTimeout(timeout);
+                resolve();
+              });
+
+              javaSocket.once('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+              });
+
+              javaSocket.connect(javaPort, '127.0.0.1');
+            });
+            javaConnected = true;
+            break;
+          } catch (e) {
+            if (attempt === javaMaxRetries) {
+              throw new Error(`Failed to connect to Java debugger after ${javaMaxRetries} attempts on port ${javaPort}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+
+        if (!javaConnected) {
+          throw new Error(`Failed to establish connection to Java debug adapter on port ${javaPort}`);
+        }
+
+        adapter.socket = javaSocket;
+        return adapter;
+      }
 
       case 'coreclr':
         debuggerPath = 'vsdbg';
@@ -430,7 +810,14 @@ class DebugSessionManager {
         break;
 
       default:
-        throw new Error(`Unsupported debug type: ${type}`);
+        requiredBinary = `${type}-debug-adapter`;
+        installInstructions = `Debugging for '${type}' requires an external Debug Adapter Protocol (DAP) server.\nPlease install the appropriate DAP-compliant debugger for your system.`;
+        _window.webContents.send('debug:adapter-missing', { 
+            type, 
+            requiredBinary, 
+            installInstructions 
+        });
+        throw new Error(`Unsupported debug type: ${type}. Please install the required debug adapter.`);
     }
 
     // Validate that the required binary exists before attempting to spawn
@@ -444,7 +831,7 @@ class DebugSessionManager {
             debuggerPath = bundled;
         } else {
             // Notify frontend that adapter is missing and offer installation
-            window.webContents.send('debug:adapter-missing', { 
+            _window.webContents.send('debug:adapter-missing', { 
                 type, 
                 requiredBinary, 
                 installInstructions 
@@ -457,14 +844,6 @@ class DebugSessionManager {
       }
       
       console.log(`[Debug] Using debugger at: ${debuggerPath}`);
-
-      // For Python, also check if debugpy module is installed
-      if (type === 'python' || type === 'debugpy') {
-        const debugpyInstalled = await this.checkPythonModule('debugpy');
-        if (!debugpyInstalled) {
-          throw new Error(`Python debugger module not found.\n\nInstall with: pip install debugpy`);
-        }
-      }
     }
 
     // Spawn debugger process
@@ -823,6 +1202,7 @@ class DebugSessionManager {
     };
 
     if (adapter.socket) {
+      // Socket is handling DAP. stdout/stderr are pure console output.
       adapter.socket.on('data', dataHandler);
       adapter.socket.on('error', (err) => {
         console.error(`[Debug][${sessionId}] Socket error:`, err);
@@ -832,7 +1212,20 @@ class DebugSessionManager {
         console.log(`[Debug][${sessionId}] Socket closed`);
         window.webContents.send('debug:terminated', { sessionId });
       });
+
+      // Forward pure console output
+      adapter.process?.stdout?.on('data', (data: Buffer) => {
+        window.webContents.send('debug:output', { type: 'stdout', output: data.toString() });
+      });
+      adapter.process?.stderr?.on('data', (data: Buffer) => {
+        window.webContents.send('debug:output', { type: 'stderr', output: data.toString() });
+      });
+      adapter.process?.on('exit', (code) => {
+        window.webContents.send('debug:terminated', { exitCode: code });
+      });
+
     } else if (adapter.process) {
+      // Process stdout is handling DAP stream.
       adapter.process.stdout?.on('data', dataHandler);
 
       adapter.process.stderr?.on('data', (data: Buffer) => {
@@ -872,21 +1265,48 @@ class DebugSessionManager {
    */
   private processAdapterMessages(adapter: DebugAdapter, _window: BrowserWindow, sessionId: string) {
     while (adapter.messageBuffer.length > 0) {
-      // Find the header end
+      const contentLengthPrefix = 'Content-Length: ';
+      const headerStartIndex = adapter.messageBuffer.indexOf(contentLengthPrefix);
+
+      if (headerStartIndex === -1) {
+          // No DAP header found. If we are not expecting DAP on this channel (e.g. stdout when using socket), 
+          // this shouldn't happen, but just in case, we wait for more data.
+          // However, if we know it's noise, we could clear it, but we can't be sure until we see a header.
+          if (adapter.messageBuffer.length > 10000) {
+              // Safety valve to prevent unbounded memory growth if a process is just spamming non-DAP logs
+              console.warn(`[Debug][${sessionId}] Buffer overflowed without finding DAP header, discarding data.`);
+              _window.webContents.send('debug:output', { type: 'stdout', output: adapter.messageBuffer });
+              adapter.messageBuffer = '';
+          }
+          break;
+      }
+
+      // Drop any noise BEFORE the Content-Length header.
+      if (headerStartIndex > 0) {
+          const noise = adapter.messageBuffer.substring(0, headerStartIndex);
+          console.log(`[Debug][${sessionId}] Dropped noise before DAP packet:`, noise);
+          // Send noise to debug console so the user sees it (often it's startup logs/errors)
+          _window.webContents.send('debug:output', { type: 'stdout', output: noise });
+          adapter.messageBuffer = adapter.messageBuffer.substring(headerStartIndex);
+          continue; // Restart loop so index is now 0
+      }
+
+      // Now adapter.messageBuffer starts exactly at "Content-Length: "
       const headerEndIndex = adapter.messageBuffer.indexOf('\r\n\r\n');
-      if (headerEndIndex === -1) break;
+      if (headerEndIndex === -1) break; // Incomplete header
 
       // Extract Content-Length
       const header = adapter.messageBuffer.substring(0, headerEndIndex);
       const contentLengthMatch = /Content-Length: (\d+)/i.exec(header);
+      
       if (!contentLengthMatch) {
-          // Bad header, skip this chunk
-          adapter.messageBuffer = adapter.messageBuffer.substring(headerEndIndex + 4);
+          // Extremely malformed header, advance by 1 to try searching again
+          adapter.messageBuffer = adapter.messageBuffer.substring(1);
           continue;
       }
 
       const contentLength = parseInt(contentLengthMatch[1], 10);
-      const messageStartIndex = headerEndIndex + 4;
+      const messageStartIndex = headerEndIndex + 4; // \r\n\r\n is 4 bytes
 
       // Check if we have the full message body
       if (adapter.messageBuffer.length < messageStartIndex + contentLength) break;
@@ -920,11 +1340,25 @@ class DebugSessionManager {
       const event = message as DAPEvent;
       window.webContents.send('debug:event', event);
 
+      // Dispatch to wait listeners if any
+      const sessionListeners = this.eventListeners.get(sessionId);
+      if (sessionListeners && sessionListeners.has(event.event)) {
+        const callbacks = sessionListeners.get(event.event)!;
+        callbacks.forEach(cb => cb(event));
+        sessionListeners.set(event.event, []); // Clear after firing
+      }
+
       // Handle specific events
       switch (event.event) {
-        case 'stopped':
+        case 'stopped': {
+          // Store threadId for subsequent operations
+          const session = this.sessions.get(sessionId);
+          if (session && event.body?.threadId !== undefined) {
+            session.threadId = event.body.threadId;
+          }
           window.webContents.send('debug:stopped', event.body);
           break;
+        }
         case 'continued':
           window.webContents.send('debug:continued', event.body);
           break;
@@ -1004,16 +1438,65 @@ class DebugSessionManager {
       const header = `Content-Length: ${Buffer.byteLength(message, 'utf8')}\r\n\r\n`;
       const packet = header + message;
 
-      if (adapter.process?.stdin) {
-        adapter.process.stdin.write(packet);
-      } else if (adapter.socket) {
+      if (adapter.socket) {
         adapter.socket.write(packet);
+      } else if (adapter.process?.stdin) {
+        adapter.process.stdin.write(packet);
       } else {
         clearTimeout(timeoutId);
         adapter.pendingRequests.delete(request.seq);
         reject(new Error('No communication channel available'));
       }
     });
+  }
+
+  /**
+   * Wait for a specific DAP event from the debug adapter
+   */
+  private waitForEvent(sessionId: string, eventName: string, timeoutMs: number = 10000): Promise<DAPEvent> {
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => reject(new Error(`Timeout waiting for event: ${eventName}`)), timeoutMs);
+      
+      if (!this.eventListeners.has(sessionId)) {
+        this.eventListeners.set(sessionId, new Map());
+      }
+      const sessionListeners = this.eventListeners.get(sessionId)!;
+      if (!sessionListeners.has(eventName)) {
+        sessionListeners.set(eventName, []);
+      }
+      
+      sessionListeners.get(eventName)!.push((event: DAPEvent) => {
+        clearTimeout(timeoutId);
+        resolve(event);
+      });
+    });
+  }
+
+  /**
+   * Filter configuration to only include valid DAP launch arguments
+   * Removes VS Code-specific properties that are not part of DAP
+   */
+  private filterLaunchArguments(config: DebugConfiguration): Record<string, any> {
+    // Properties that are VS Code specific and should not be sent to DAP adapter
+    const vscodeSpecificProps = new Set([
+      'type',           // Debug type (handled by adapterID in initialize)
+      'request',        // launch/attach (used as command name)
+      'name',           // Configuration name (UI only)
+      'preLaunchTask',  // VS Code task system
+      'postDebugTask',  // VS Code task system
+      'internalConsoleOptions', // VS Code UI option
+      'presentation',   // VS Code UI presentation
+    ]);
+
+    const filtered: Record<string, any> = {};
+    
+    for (const [key, value] of Object.entries(config)) {
+      if (!vscodeSpecificProps.has(key)) {
+        filtered[key] = value;
+      }
+    }
+    
+    return filtered;
   }
 
   /**

@@ -1,6 +1,6 @@
 {
     "name": "@kalynt/desktop",
-    "version": "1.0.4-beta",
+    "version": "1.0.5-beta",
     "private": true,
     "productName": "Kalynt",
     "author": {
@@ -18,8 +18,8 @@
         "build:prod": "cross-env NODE_ENV=production tsc && cross-env NODE_ENV=production vite build && electron-builder",
         "build:secure": "cross-env NODE_ENV=production OBFUSCATE=false tsc && cross-env NODE_ENV=production vite build && electron-builder",
         "preview": "vite preview",
-        "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox --disable-gpu --disable-software-rasterizer\"",
-        "electron:dev:linux": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox --disable-gpu --disable-software-rasterizer --ozone-platform-hint=auto\"",
+        "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox\"",
+        "electron:dev:linux": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox --ozone-platform-hint=auto\"",
         "electron:build": "vite build && electron-builder",
         "electron:build:secure": "cross-env NODE_ENV=production OBFUSCATE=false vite build && electron-builder"
     },
@@ -67,7 +67,8 @@
         "zustand": "^4.4.0"
     },
     "devDependencies": {
-        "@electron/rebuild": "^4.0.3",
+        "@electron/rebuild": "^4.0.1",
+
         "@types/better-sqlite3": "^7.6.0",
         "@types/lodash.debounce": "^4.0.9",
         "@types/path-browserify": "^1.0.3",
@@ -80,9 +81,9 @@
         "autoprefixer": "^10.4.23",
         "concurrently": "^8.2.0",
         "cross-env": "^10.1.0",
-        "electron": "28.0.0",
-        "electron-builder": "^24.13.2",
-        "javascript-obfuscator": "^5.2.1",
+        "electron": "^40.6.1",
+        "electron-builder": "^25.1.8",
+        "javascript-obfuscator": ">=5.0.0",
         "postcss": "^8.5.6",
         "react-syntax-highlighter": "^16.1.0",
         "rollup-plugin-javascript-obfuscator": "^1.0.4",
@@ -96,10 +97,14 @@
         "vite-plugin-electron-renderer": "^0.14.0",
         "wait-on": "^7.2.0"
     },
+    "overrides": {
+        "ajv": "^8.17.1",
+        "ajv-keywords": "^5.1.0"
+    },
     "build": {
         "appId": "com.kalynt.app",
         "productName": "Kalynt",
-        "electronVersion": "28.0.0",
+        "electronVersion": "40.6.1",
         "directories": {
             "output": "release"
         },

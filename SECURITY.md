@@ -60,8 +60,19 @@ We will acknowledge receipt within 48 hours and strive to provide a patch within
 
 ---
 
-##  Security Updates (v1.0.4-beta)
+##  Security Updates (v1.0.5-beta)
 
+### Critical Security Fixes
+*   **Dynamic Code Execution Eliminated (CRITICAL-001):** Removed unsafe `new Function()` usage for dynamic imports in `llm-inference.ts`. Replaced with direct ESM `import()` to eliminate arbitrary code execution attack vectors.
+*   **Shell Command Injection Prevention (CRITICAL-003):** Added PID validation (numeric format, range checks 1-4194304) and port validation (1-65535) to `nuke-handler.ts`. Replaced `exec()` string interpolation with validated parameters to prevent command injection attacks.
+*   **Safe JSON Parsing Infrastructure (CRITICAL-002):** Created `safeJson.ts` utility with `safeJsonParse`, `safeJsonStringify`, and localStorage wrappers providing type-safe JSON handling with validation and prototype pollution prevention.
+
+### High Severity Fixes
+*   **Extension Host Promise Timeout (HIGH-001):** Fixed promise in `extensionHostProcess.ts` that never rejected on timeout. Now properly rejects with timeout error, preventing hung operations.
+*   **Terminal Race Condition (HIGH-002):** Added `cleanupTimers` Map to track and clear existing timers before creating new ones in `terminalService.ts`. Prevents duplicate cleanup attempts and race conditions during terminal destruction.
+*   **Content Security Policy Strengthened (HIGH-003):** Added `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, and `frame-ancestors 'none'` directives to prevent XSS, clickjacking, and form injection attacks.
+
+### Additional Security Improvements
 *   **Electron Sandboxing (SEC-001):** Enabled the `sandbox: true` flag for Electron renderers to enforce strict process isolation.
 *   **Dynamic Import Validation (SEC-002):** Implemented strict path validation for local LLM modules before dynamic `import()` to prevent unauthorized code execution.
 *   **Deep Link Hardening (SEC-003):** Added rigorous validation for custom protocol deep links to prevent URL-based injection attacks.

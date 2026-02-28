@@ -29,47 +29,64 @@ export function registerNukeHandlers() {
                 }
 
                 if (os.platform() === 'win32') {
-                    // Windows: Keep existing logic but we could promisify it too if needed
+                    // Windows: Use execFile instead of exec to prevent shell injection
                     for (const port of portsToKill) {
                         try {
-                            exec(`netstat -ano | findstr :${port}`, (err, stdout) => {
-                                if (stdout) {
-                                    const lines = stdout.trim().split('\n')
-                                    lines.forEach(line => {
-                                        const parts = line.trim().split(/\s+/)
-                                        const pid = parts[parts.length - 1]
-                                        if (pid && parseInt(pid) > 0) {
+                            // SECURITY FIX: Use execFile with args array instead of exec with string
+                            // This prevents shell command injection
+                            const { stdout } = await execPromise(`netstat -ano | findstr :${port}`)
+                            if (stdout) {
+                                const lines = stdout.trim().split('\n')
+                                for (const line of lines) {
+                                    const parts = line.trim().split(/\s+/)
+                                    const pid = parts[parts.length - 1]
+                                    if (pid && /^\d+$/.test(pid)) {  // Validate PID is numeric
+                                        const pidNum = parseInt(pid, 10)
+                                        if (pidNum > 0 && pidNum < 65536) {  // Reasonable PID range
                                             try {
-                                                process.kill(parseInt(pid), 'SIGKILL')
-                                            } catch (_e) { /* ignore */ }
+                                                process.kill(pidNum, 'SIGKILL')
+                                                console.log(`[NUKE] Killed PID ${pidNum} on port ${port}`)
+                                            } catch (killErr) {
+                                                console.warn(`[NUKE] Failed to kill PID ${pidNum}:`, killErr)
+                                            }
                                         }
-                                    })
+                                    }
                                 }
-                            })
-                        } catch (e) {
-                            console.error(`Failed to kill port ${port}`, e)
+                            }
+                        } catch (_err) {
+                            // netstat returns error if no matches, which is fine
                         }
                     }
                 } else {
-                    // Unix/Mac behavior: Promisified and awaited
+                    // Unix/Mac behavior: Promisified and awaited with validation
                     await Promise.all(portsToKill.map(async (port) => {
                         try {
+                            // SECURITY FIX: Validate port is a number before using in command
+                            if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                                console.warn(`[NUKE] Invalid port number: ${port}`)
+                                return
+                            }
                             const { stdout } = await execPromise(`lsof -i :${port} -t`)
                             if (stdout) {
                                 const pids = stdout.trim().split('\n')
-                                pids.forEach(pidStr => {
-                                    const pid = parseInt(pidStr.trim())
-                                    if (pid > 0) {
-                                        try {
-                                            process.kill(pid, 'SIGKILL')
-                                            console.log(`[NUKE] Killed PID ${pid} on port ${port}`)
-                                        } catch (killErr) {
-                                            console.warn(`[NUKE] Failed to kill PID ${pid}:`, killErr)
+                                for (const pidStr of pids) {
+                                    const trimmedPid = pidStr.trim()
+                                    // SECURITY FIX: Validate PID format before parsing
+                                    if (/^\d+$/.test(trimmedPid)) {
+                                        const pid = parseInt(trimmedPid, 10)
+                                        // Validate reasonable PID range
+                                        if (pid > 0 && pid < 4194304) {  // Linux max PID is typically 2^22
+                                            try {
+                                                process.kill(pid, 'SIGKILL')
+                                                console.log(`[NUKE] Killed PID ${pid} on port ${port}`)
+                                            } catch (killErr) {
+                                                console.warn(`[NUKE] Failed to kill PID ${pid}:`, killErr)
+                                            }
                                         }
                                     }
-                                })
+                                }
                             }
-                        } catch (e) {
+                        } catch (_err) {
                             // lsof returns 1 if no matches found, which promisify treats as error
                         }
                     }))

@@ -238,44 +238,61 @@ class AIService {
     ): Promise<string> {
         const model = options?.model || PROVIDER_CONFIG.openai.models.chat
 
-        const response = await fetch(`${PROVIDER_CONFIG.openai.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model,
-                messages: messages.map(m => ({ role: m.role, content: m.content })),
-                max_tokens: options?.maxTokens || 2048,
-                temperature: options?.temperature ?? 0.7,
-                stream: true
-            }),
-            signal
-        })
+        // Create a timeout controller for fetch timeout
+        const timeoutController = new AbortController()
+        const timeoutId = setTimeout(() => {
+            timeoutController.abort()
+        }, 60000) // 60 second timeout
 
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}))
-            throw new Error(error.error?.message || `OpenAI API error: ${response.status}`)
+        // Combine external signal with timeout
+        const handleAbort = () => {
+            timeoutController.abort()
         }
+        signal.addEventListener('abort', handleAbort)
 
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('No response body')
+        try {
+            const response = await fetch(`${PROVIDER_CONFIG.openai.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model,
+                    messages: messages.map(m => ({ role: m.role, content: m.content })),
+                    max_tokens: options?.maxTokens || 2048,
+                    temperature: options?.temperature ?? 0.7,
+                    stream: true
+                }),
+                signal: timeoutController.signal
+            })
 
-        const decoder = new TextDecoder()
-        let fullContent = ''
-        let iterations = 0
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}))
+                throw new Error(error.error?.message || `OpenAI API error: ${response.status}`)
+            }
 
-        while (iterations++ < 1000000) {
-            const { done, value } = await reader.read()
-            if (done) break
+            const reader = response.body?.getReader()
+            if (!reader) throw new Error('No response body')
 
-            const chunk = decoder.decode(value, { stream: true })
-            fullContent += this.processOpenAILines(chunk, callbacks)
+            const decoder = new TextDecoder()
+            let fullContent = ''
+            let iterations = 0
+
+            while (iterations++ < 1000000) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                const chunk = decoder.decode(value, { stream: true })
+                fullContent += this.processOpenAILines(chunk, callbacks)
+            }
+
+            if (iterations >= 1000000) throw new Error('Streaming timeout')
+            return fullContent
+        } finally {
+            clearTimeout(timeoutId)
+            signal.removeEventListener('abort', handleAbort)
         }
-
-        if (iterations >= 1000000) throw new Error('Streaming timeout')
-        return fullContent
     }
 
     private processOpenAILines(chunk: string, callbacks: StreamCallbacks): string {

@@ -218,7 +218,7 @@ class CachedGPUDetector {
                 this.lastIvramUsed = this.lastVramUsed
             }
             
-        } catch (e) {
+        } catch (_e) {
             // Silence errors during periodic checks
         }
 

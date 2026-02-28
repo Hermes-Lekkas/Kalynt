@@ -9,7 +9,6 @@ import { EditorMode } from '../config/editorModes'
 import { executeTool, ToolContext, stopActiveTool } from './ideAgentTools'
 import { logger } from '../utils/logger'
 import { getInstructionsForModel, InstructionConfig } from '../instructions'
-import { useModelStore } from '../stores/modelStore'
 import { aimeService } from './aimeService'
 import { agentLoopService } from './agentLoopService'
 import {
@@ -43,7 +42,8 @@ class AgentService {
     private provider: AIProvider = 'openai'
     private useOfflineAI: boolean = false
     private workspacePath: string = ''
-    private missionHistory: any[] = []
+    private missionHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
+    private loadedModelId: string | null = null
 
     private onStateChange: StateCallback | null = null
     private onSuggestions: SuggestionsCallback | null = null
@@ -108,6 +108,10 @@ class AgentService {
         void aimeService.indexWorkspace(path)
     }
 
+    setLoadedModelId(modelId: string | null) {
+        this.loadedModelId = modelId
+    }
+
     private setState(state: AgentState) {
         this.state = state
         this.onStateChange?.(state)
@@ -132,26 +136,56 @@ class AgentService {
     start(doc: Y.Doc) {
         if (!this.config.enabled) return
 
+        // Store doc reference first for cleanup
         this.doc = doc
-        this.setState('observing')
-        this.addActivity('analysis', 'Agent started observing workspace')
+        
+        try {
+            this.setState('observing')
+            this.addActivity('analysis', 'Agent started observing workspace')
 
-        const editorText = doc.getText('editor-content')
-        this.editorObserver = () => {
-            this.handleEdit()
+            const editorText = doc.getText('editor-content')
+            this.editorObserver = () => {
+                this.handleEdit()
+            }
+            editorText.observe(this.editorObserver)
+
+            const tasksArray = doc.getArray('tasks')
+            this.tasksObserver = () => {
+                this.handleEdit()
+            }
+            tasksArray.observe(this.tasksObserver)
+
+            this.loadSuggestions()
+            this.startAnalysisTimer()
+        } catch (error) {
+            // Clean up observers on error to prevent memory leak
+            this.cleanupObservers()
+            this.doc = null
+            logger.agent.error('Failed to start agent, cleaned up observers', error)
+            throw error
         }
-        editorText.observe(this.editorObserver)
+    }
 
-        const tasksArray = doc.getArray('tasks')
-        this.tasksObserver = () => {
-
-            this.handleEdit()
+    private cleanupObservers() {
+        if (!this.doc) return
+        
+        if (this.editorObserver) {
+            try {
+                this.doc.getText('editor-content').unobserve(this.editorObserver)
+            } catch (e) {
+                // Observer might not be attached
+            }
+            this.editorObserver = null
         }
-        tasksArray.observe(this.tasksObserver)
-
-        this.loadSuggestions()
-
-        this.startAnalysisTimer()
+        
+        if (this.tasksObserver) {
+            try {
+                this.doc.getArray('tasks').unobserve(this.tasksObserver)
+            } catch (e) {
+                // Observer might not be attached
+            }
+            this.tasksObserver = null
+        }
     }
 
     private async loadSuggestions() {
@@ -159,17 +193,22 @@ class AgentService {
             const db = await this.openDB()
             const transaction = db.transaction(['suggestions'], 'readonly')
             const store = transaction.objectStore('suggestions')
-            const request = store.getAll()
-
-            request.onsuccess = () => {
-                if (Array.isArray(request.result)) {
-                    this.suggestions = request.result
-                    this.onSuggestions?.(this.suggestions)
+            
+            await new Promise<void>((resolve, reject) => {
+                const request = store.getAll()
+                request.onsuccess = () => {
+                    if (Array.isArray(request.result)) {
+                        this.suggestions = request.result
+                        this.onSuggestions?.(this.suggestions)
+                    }
+                    resolve()
                 }
-            }
+                request.onerror = () => reject(new Error('Failed to load suggestions from IndexedDB'))
+            })
         } catch (e) {
             logger.agent.warn('Failed to load agent suggestions from IndexedDB', e)
-
+            // Continue with empty suggestions - don't break the agent
+            this.suggestions = []
         }
     }
 
@@ -179,17 +218,26 @@ class AgentService {
             const transaction = db.transaction(['suggestions'], 'readwrite')
             const store = transaction.objectStore('suggestions')
 
-            await new Promise((resolve, reject) => {
+            // Clear existing suggestions
+            await new Promise<void>((resolve, reject) => {
                 const clearRequest = store.clear()
-                clearRequest.onsuccess = () => resolve(true)
+                clearRequest.onsuccess = () => resolve()
                 clearRequest.onerror = () => reject(new Error('IndexedDB clear failed'))
             })
 
-            for (const suggestion of this.suggestions) {
-                store.add(suggestion)
-            }
+            // Add all current suggestions with proper error handling
+            const addPromises = this.suggestions.map(suggestion => {
+                return new Promise<void>((resolve, reject) => {
+                    const addRequest = store.add(suggestion)
+                    addRequest.onsuccess = () => resolve()
+                    addRequest.onerror = () => reject(new Error(`Failed to save suggestion ${suggestion.id}`))
+                })
+            })
+            
+            await Promise.all(addPromises)
         } catch (e) {
             logger.agent.warn('Failed to save agent suggestions to IndexedDB', e)
+            // Non-critical: suggestions will be rebuilt on next analysis
         }
     }
 
@@ -217,15 +265,7 @@ class AgentService {
             this.abortController = null
         }
 
-        if (this.editorObserver) {
-            this.doc.getText('editor-content').unobserve(this.editorObserver)
-            this.editorObserver = null
-        }
-        if (this.tasksObserver) {
-            this.doc.getArray('tasks').unobserve(this.tasksObserver)
-            this.tasksObserver = null
-        }
-
+        this.cleanupObservers()
         this.clearTimers()
         void stopActiveTool() // Also stop any executing tools
         this.doc = null
@@ -324,10 +364,8 @@ class AgentService {
      * - Flagship (online): Maximum capability, thinking mode
      */
     private buildPrompt(context: WorkspaceContext): string {
-        // Get current loaded model ID for tier detection
-        const loadedModelId = this.useOfflineAI
-            ? useModelStore.getState().loadedModelId
-            : null
+        // Use the loaded model ID set via setLoadedModelId
+        const loadedModelId = this.useOfflineAI ? this.loadedModelId : null
 
         // Build instruction config
         const instructionConfig: InstructionConfig = {
@@ -367,6 +405,10 @@ class AgentService {
         this.setState('thinking')
         this.addActivity('analysis', 'Analyzing workspace...')
 
+        // Retry configuration
+        const maxRetries = 2
+        const retryDelay = 1000 // ms
+
         try {
             // Build the suggestion-specific prompt (no tool loop needed)
             const systemPrompt = this.buildPrompt(context)
@@ -375,39 +417,56 @@ class AgentService {
             // Direct LLM call — bypass the ReAct tool loop for background analysis.
             // The analyze() method only needs JSON suggestions, not tool execution.
             let result = ''
+            let lastError: Error | null = null
 
-            if (this.useOfflineAI) {
-                // Offline: use generateStream with no-op token handler
-                const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-                    { role: 'system', content: systemPrompt },
-                    ...this.missionHistory.slice(-6).map(m => ({
-                        role: m.role as 'system' | 'user' | 'assistant',
-                        content: m.content
-                    })),
-                    { role: 'user', content: instruction }
-                ]
-                result = await offlineLLMService.generateStream(messages, () => { }, {
-                    temperature: 0.3,
-                    maxTokens: 2048
-                })
-            } else {
-                // Cloud: use non-streaming chat() for simplicity and speed
-                const messages: AIMessage[] = [
-                    { role: 'system', content: systemPrompt },
-                    ...this.missionHistory.slice(-6).map(m => ({
-                        role: m.role as 'system' | 'user' | 'assistant',
-                        content: m.content
-                    })),
-                    { role: 'user', content: instruction }
-                ]
-                const response = await aiService.chat(messages, this.provider, {
-                    temperature: 0.3,
-                    maxTokens: 2048
-                })
-                if (response.error) {
-                    throw new Error(response.error)
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    if (this.useOfflineAI) {
+                        // Offline: use generateStream with no-op token handler
+                        const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+                            { role: 'system', content: systemPrompt },
+                            ...this.missionHistory.slice(-6).map(m => ({
+                                role: m.role as 'system' | 'user' | 'assistant',
+                                content: m.content
+                            })),
+                            { role: 'user', content: instruction }
+                        ]
+                        result = await offlineLLMService.generateStream(messages, () => { }, {
+                            temperature: 0.3,
+                            maxTokens: 2048
+                        })
+                    } else {
+                        // Cloud: use non-streaming chat() for simplicity and speed
+                        const messages: AIMessage[] = [
+                            { role: 'system', content: systemPrompt },
+                            ...this.missionHistory.slice(-6).map(m => ({
+                                role: m.role as 'system' | 'user' | 'assistant',
+                                content: m.content
+                            })),
+                            { role: 'user', content: instruction }
+                        ]
+                        const response = await aiService.chat(messages, this.provider, {
+                            temperature: 0.3,
+                            maxTokens: 2048
+                        })
+                        if (response.error) {
+                            throw new Error(response.error)
+                        }
+                        result = response.content
+                    }
+                    // Success - break out of retry loop
+                    break
+                } catch (error) {
+                    lastError = error instanceof Error ? error : new Error(String(error))
+                    if (attempt < maxRetries) {
+                        logger.agent.warn(`Analysis attempt ${attempt + 1} failed, retrying...`, { error: lastError.message })
+                        await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)))
+                    }
                 }
-                result = response.content
+            }
+
+            if (!result && lastError) {
+                throw lastError
             }
 
             // Keep history short — only the latest analyze round
@@ -443,8 +502,16 @@ class AgentService {
                     status: 'pending' as const
                 }))
 
-            if (newSuggestions.length > 0) {
-                this.suggestions = [...newSuggestions, ...this.suggestions.filter(s => s.status !== 'pending')]
+            // Filter out duplicate suggestions based on description hash
+            const existingDescriptions = new Set(this.suggestions.map(s => 
+                `${s.action}:${s.target}:${s.description.substring(0, 50)}`
+            ))
+            const uniqueSuggestions = newSuggestions.filter(s => 
+                !existingDescriptions.has(`${s.action}:${s.target}:${s.description.substring(0, 50)}`)
+            )
+
+            if (uniqueSuggestions.length > 0) {
+                this.suggestions = [...uniqueSuggestions, ...this.suggestions.filter(s => s.status !== 'pending')]
 
                 if (this.suggestions.length > 100) {
                     this.suggestions = this.suggestions.slice(0, 100)
@@ -453,7 +520,7 @@ class AgentService {
                 this.saveSuggestions()
                 this.onSuggestions?.(this.suggestions)
                 this.setState('waiting-approval')
-                this.addActivity('suggestion', `Generated ${newSuggestions.length} suggestion(s)`)
+                this.addActivity('suggestion', `Generated ${uniqueSuggestions.length} suggestion(s)`)
             } else {
                 this.setState('idle')
             }

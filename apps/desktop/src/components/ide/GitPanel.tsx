@@ -161,7 +161,10 @@ export default function GitPanel({ workspacePath, isVisible = true }: GitPanelPr
             }, 500)
         }
 
-        fetchStatus()
+        const init = async () => {
+            await fetchStatus()
+        }
+        init()
 
         const watchId = `git-panel-${workspacePath.replace(/[^a-zA-Z0-9]/g, '-')}`
         window.electronAPI?.fs.watchDir({ id: watchId, dirPath: workspacePath })

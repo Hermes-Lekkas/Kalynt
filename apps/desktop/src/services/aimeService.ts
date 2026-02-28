@@ -261,13 +261,54 @@ class AIMEService {
         const res = await electronAPI.fs.readDir(dir)
         if (!res?.success || !res.items) return files
 
-        const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out'])
-        const INCLUDE_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'java', 'c', 'cpp', 'cs', 'md'])
+        const EXCLUDE_DIRS = new Set([
+            'node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage',
+            '.cache', '.vscode', '.idea', '__pycache__', 'target', 'bin', 'obj',
+            '.gradle', '.nuget', 'vendor', '.terraform', '.serverless'
+        ])
+        
+        // Comprehensive language support
+        const INCLUDE_EXTS = new Set([
+            // JavaScript/TypeScript ecosystem
+            'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'esm',
+            // Python
+            'py', 'pyw', 'pyi',
+            // Java/Kotlin/JVM
+            'java', 'kt', 'kts', 'groovy', 'scala', 'sc',
+            // C/C++
+            'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx',
+            // C#/.NET
+            'cs', 'csx', 'vb', 'fs', 'fsx',
+            // Go
+            'go',
+            // Rust
+            'rs', 'rlib',
+            // Ruby
+            'rb', 'rbw', 'rake', 'gemspec',
+            // PHP
+            'php', 'phtml', 'php3', 'php4', 'php5', 'phps',
+            // Swift/Objective-C
+            'swift', 'm', 'mm',
+            // Web
+            'html', 'htm', 'xhtml', 'css', 'scss', 'sass', 'less', 'styl',
+            // Shell/Scripts
+            'sh', 'bash', 'zsh', 'fish', 'ps1', 'psm1', 'bat', 'cmd',
+            // Data/Config
+            'json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'cfg', 'conf',
+            // SQL
+            'sql', 'psql', 'mysql',
+            // Documentation
+            'md', 'mdx', 'rst', 'txt',
+            // Other languages
+            'lua', 'r', 'rmd', 'dart', 'flutter', 'kotlin', 'clj', 'cljs',
+            'elm', 'erl', 'hrl', 'ex', 'exs', 'hs', 'lhs', 'ml', 'mli',
+            'nim', 'nims', 'cr', 'odin', 'zig', 'v', 'vsh', 'wat', 'wast'
+        ])
 
         for (const item of res.items) {
             const itemPath = `${dir}/${item.name}`
             if (item.isDirectory) {
-                if (!EXCLUDE_DIRS.has(item.name)) {
+                if (!EXCLUDE_DIRS.has(item.name) && !item.name.startsWith('.')) {
                     await this.collectFiles(itemPath, files)
                 }
             } else {
@@ -346,13 +387,38 @@ class AIMEService {
         const res = await electronAPI.fs.readDir(dir)
         if (!res?.success || !res.items) return
 
-        const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out'])
-        const INCLUDE_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'java', 'c', 'cpp', 'cs', 'md'])
+        const EXCLUDE_DIRS = new Set([
+            'node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage',
+            '.cache', '.vscode', '.idea', '__pycache__', 'target', 'bin', 'obj',
+            '.gradle', '.nuget', 'vendor', '.terraform', '.serverless'
+        ])
+        
+        // Comprehensive language support (same as collectFiles)
+        const INCLUDE_EXTS = new Set([
+            'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'esm',
+            'py', 'pyw', 'pyi',
+            'java', 'kt', 'kts', 'groovy', 'scala', 'sc',
+            'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx',
+            'cs', 'csx', 'vb', 'fs', 'fsx',
+            'go',
+            'rs', 'rlib',
+            'rb', 'rbw', 'rake', 'gemspec',
+            'php', 'phtml', 'php3', 'php4', 'php5', 'phps',
+            'swift', 'm', 'mm',
+            'html', 'htm', 'xhtml', 'css', 'scss', 'sass', 'less', 'styl',
+            'sh', 'bash', 'zsh', 'fish', 'ps1', 'psm1', 'bat', 'cmd',
+            'json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'cfg', 'conf',
+            'sql', 'psql', 'mysql',
+            'md', 'mdx', 'rst', 'txt',
+            'lua', 'r', 'rmd', 'dart', 'flutter', 'kotlin', 'clj', 'cljs',
+            'elm', 'erl', 'hrl', 'ex', 'exs', 'hs', 'lhs', 'ml', 'mli',
+            'nim', 'nims', 'cr', 'odin', 'zig', 'v', 'vsh', 'wat', 'wast'
+        ])
 
         for (const item of res.items) {
             const itemPath = `${dir}/${item.name}`
             if (item.isDirectory) {
-                if (!EXCLUDE_DIRS.has(item.name)) {
+                if (!EXCLUDE_DIRS.has(item.name) && !item.name.startsWith('.')) {
                     await this.scanDirectory(itemPath)
                 }
             } else {

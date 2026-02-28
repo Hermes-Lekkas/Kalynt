@@ -4,6 +4,7 @@
 
 import path from 'path'
 import fs from 'fs'
+import { pathToFileURL } from 'url'
 import type { Llama, LlamaModel, LlamaContext } from 'node-llama-cpp'
 import { nativeHelperService } from '../services/native-helper-service'
 
@@ -59,10 +60,15 @@ async function dynamicImportESM(modulePath: string): Promise<any> {
         throw new Error(`Unauthorized module path: ${modulePath}`)
     }
 
-    // Use Function constructor to prevent bundler transformation
-    // This creates: (async () => await import(modulePath))()
-    const importFn = new Function('modulePath', 'return import(modulePath)')
-    return importFn(modulePath)
+    // WINDOWS FIX: Convert file paths to file:// URLs for ESM compatibility
+    // On Windows, absolute paths like C:\Users\... cause "Received protocol 'c:'" error
+    // pathToFileURL handles both Windows and Unix paths correctly
+    const importPath = isBareModuleName ? modulePath : pathToFileURL(modulePath).href
+
+    // SECURITY FIX: Use direct dynamic import instead of new Function()
+    // This prevents arbitrary code execution while still supporting ESM
+    // The import path is already validated above
+    return import(importPath)
 }
 
 let useNativeInference = false

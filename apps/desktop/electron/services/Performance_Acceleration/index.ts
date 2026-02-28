@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, ipcMain } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { MemoryAccelerator, PerformanceMode } from './MemoryAccelerator'
@@ -97,8 +97,8 @@ class PerformanceAccelerationService {
                 fs.unlinkSync(testFile)
 
                 return { read: readSpeed, write: writeSpeed }
-            } catch (e) {
-                console.error('[PerformanceAcceleration] Disk test failed:', e)
+            } catch (_e) {
+                console.error('[PerformanceAcceleration] Disk test failed:', _e)
                 if (fs.existsSync(testFile)) fs.unlinkSync(testFile)
                 return { read: 0, write: 0 }
             }

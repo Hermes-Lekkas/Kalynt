@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
     Search,
     Clock,
@@ -70,11 +70,37 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         'kubectl get pods'
     ].filter(s => s.toLowerCase().includes(query.toLowerCase()))
 
+    // Pre-calculate formatted times to avoid calling Date.now during render
+    const [now] = useState(() => Date.now())
+    const formattedTimes = useMemo(() => {
+        const times = new Map<number, string>()
+        
+        const format = (timestamp: number) => {
+            const diff = now - timestamp
+            const mins = Math.floor(diff / 60000)
+            const hours = Math.floor(diff / 3600000)
+            const days = Math.floor(diff / 86400000)
+
+            if (days > 0) return `${days}d ago`
+            if (hours > 0) return `${hours}h ago`
+            if (mins > 0) return `${mins}m ago`
+            return 'just now'
+        }
+
+        displayCommands.slice(0, 20).forEach(item => {
+            times.set(item.timestamp, format(item.timestamp))
+        })
+        return times
+    }, [displayCommands, now])
+
     useEffect(() => {
         if (isOpen) {
-            inputRef.current?.focus()
-            setQuery('')
-            setSelectedIndex(0)
+            const init = async () => {
+                inputRef.current?.focus()
+                setQuery('')
+                setSelectedIndex(0)
+            }
+            init()
         }
     }, [isOpen])
 
@@ -121,18 +147,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }, [activeTab, displayCommands, aiSuggestions, selectedIndex, onSelectCommand, onClose])
 
     if (!isOpen) return null
-
-    const formatTime = (timestamp: number) => {
-        const diff = Date.now() - timestamp
-        const mins = Math.floor(diff / 60000)
-        const hours = Math.floor(diff / 3600000)
-        const days = Math.floor(diff / 86400000)
-
-        if (days > 0) return `${days}d ago`
-        if (hours > 0) return `${hours}h ago`
-        if (mins > 0) return `${mins}m ago`
-        return 'just now'
-    }
 
     return (
         <div style={{
@@ -336,7 +350,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                     color: '#52525b',
                                     whiteSpace: 'nowrap'
                                 }}>
-                                    {formatTime(item.timestamp)}
+                                    {formattedTimes.get(item.timestamp)}
                                 </span>
                                 <button
                                     onClick={(e) => {

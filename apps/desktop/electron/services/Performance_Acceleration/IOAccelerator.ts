@@ -59,8 +59,8 @@ export class IOAccelerator {
                     this.indexCache.set(dirPath, result)
                     return result
                 }
-            } catch (e) {
-                console.warn('[IOAccelerator] Native scan failed, falling back:', e)
+            } catch (_e) {
+                console.warn('[IOAccelerator] Native scan failed, falling back:', _e)
             }
         }
 
@@ -116,7 +116,7 @@ export class IOAccelerator {
                 try {
                     const stats = await fs.promises.stat(file)
                     this.fileMetadataCache.set(file, stats)
-                } catch (e) {
+                } catch (_e) {
                     // Ignore errors for missing files
                 }
             }))
@@ -138,7 +138,7 @@ export class IOAccelerator {
             })
 
             nativeHelperService.request('fs:watch', { path: dirPath })
-                .catch(e => console.error('[IOAccelerator] Failed to setup native watcher:', e))
+                .catch(_e => console.error('[IOAccelerator] Failed to setup native watcher:', _e))
         } else {
             // Fallback to Chokidar (which should be handled by the FileSystemHandler)
             console.log('[IOAccelerator] Native watcher not available for this platform.')

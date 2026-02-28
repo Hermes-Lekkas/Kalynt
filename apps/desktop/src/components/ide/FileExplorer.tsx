@@ -118,7 +118,7 @@ export default function FileExplorer({
         }
 
         expandPath()
-    }, [requestedExpansion, workspacePath, onExpansionComplete])
+    }, [requestedExpansion, workspacePath, onExpansionComplete, expandedDirs])
 
     // Load root directory
     useEffect(() => {
@@ -166,7 +166,7 @@ export default function FileExplorer({
     }, [workspacePath, loadDirectory])
 
     // Toggle directory expansion
-    const toggleDir = async (dirPath: string) => {
+    const toggleDir = useCallback(async (dirPath: string) => {
         const newExpanded = new Set(expandedDirs)
 
         if (newExpanded.has(dirPath)) {
@@ -204,7 +204,7 @@ export default function FileExplorer({
                 setExpandedDirs(new Set(newExpanded))
             }
         }
-    }
+    }, [expandedDirs, loadDirectory, files])
 
     const refreshTree = async () => {
         if (!workspacePath) return
@@ -300,7 +300,7 @@ export default function FileExplorer({
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [flattenedFiles, focusedIndex, newItemInput, renameInput])
+    }, [flattenedFiles, focusedIndex, newItemInput, renameInput, onSelectFile, toggleDir])
 
     // Handle context menu
     const handleContextMenu = (e: React.MouseEvent, path: string, isDir: boolean) => {

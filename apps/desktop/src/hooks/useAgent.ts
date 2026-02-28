@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { agentService } from '../services/agentService'
 import { useAppStore } from '../stores/appStore'
+import { useModelStore } from '../stores/modelStore'
 import { useYDoc } from './useYjs'
 import {
     AgentState,
@@ -18,6 +19,7 @@ import { AIProvider } from '../services/aiService'
 
 export function useAgent(spaceId: string | null, mode: EditorMode = 'general', useOfflineAI: boolean = false, workspacePath: string = '') {
     const { apiKeys } = useAppStore()
+    const { loadedModelId } = useModelStore()
     const { doc } = useYDoc(spaceId)
 
     const [state, setState] = useState<AgentState>('disabled')
@@ -35,37 +37,38 @@ export function useAgent(spaceId: string | null, mode: EditorMode = 'general', u
         return null
     }, [apiKeys])
 
-    // Initialize agent when doc is ready
-    // Initialize agent and handle config updates
+    // Update service configuration whenever props change
     useEffect(() => {
-        if (!doc || !spaceId) return
-
-        // Always update config, even if already initialized
         agentService.setConfig(config)
         agentService.setUseOfflineAI(useOfflineAI)
         agentService.setWorkspacePath(workspacePath)
-
-        if (isInitialized.current) return
-
+        agentService.setMode(mode)
+        agentService.setLoadedModelId(loadedModelId)
+        
         const provider = getProvider()
-        if (!provider && !useOfflineAI) {
-            setState('disabled')
-            return
+        if (provider) {
+            agentService.setProvider(provider)
         }
+    }, [config, useOfflineAI, workspacePath, mode, getProvider, loadedModelId])
 
-        // Set up callbacks
+    // Initialize agent when doc is ready - only runs once per doc/spaceId
+    useEffect(() => {
+        if (!doc || !spaceId) return
+
+        // Set up callbacks with fresh state setters
         agentService.setCallbacks(
             (newState) => setState(newState),
             (newSuggestions) => setSuggestions([...newSuggestions]),
             (entry) => setActivityLog(prev => [entry, ...prev].slice(0, 50))
         )
 
-        if (provider) {
-            agentService.setProvider(provider)
+        const provider = getProvider()
+        
+        if (!provider && !useOfflineAI) {
+            return
         }
-        agentService.setMode(mode)
 
-        if (config.enabled) {
+        if (config.enabled && !isInitialized.current) {
             agentService.start(doc)
             isInitialized.current = true
         }
@@ -76,7 +79,7 @@ export function useAgent(spaceId: string | null, mode: EditorMode = 'general', u
                 isInitialized.current = false
             }
         }
-    }, [doc, spaceId, config, getProvider, mode, useOfflineAI, workspacePath])
+    }, [doc, spaceId]) // Minimal deps - only re-init when doc/space changes
 
     // Update mode when it changes
     useEffect(() => {
@@ -107,9 +110,9 @@ export function useAgent(spaceId: string | null, mode: EditorMode = 'general', u
     }, [config, doc])
 
     // Approve a suggestion
-    const approveSuggestion = (id: string) => {
+    const approveSuggestion = useCallback((id: string) => {
         agentService.approveSuggestion(id)
-    }
+    }, [doc, config, state])
 
     // Reject a suggestion
     const rejectSuggestion = useCallback((id: string) => {

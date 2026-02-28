@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useAppStore } from '../stores/appStore'
 import ResourceMonitor from './ResourceMonitor'
 
@@ -14,6 +14,13 @@ const FilesPanel = lazy(() => import('./FilesPanel'))
 
 type Tab = 'editor' | 'tasks' | 'files' | 'history'
 
+interface ResourceVisibility {
+  cpu: boolean
+  ram: boolean
+  disk: boolean
+  network: boolean
+}
+
 interface MainContentProps {
   activeTab: Tab
   onShowCollaboration?: () => void
@@ -22,23 +29,22 @@ interface MainContentProps {
 export default function MainContent({ activeTab }: MainContentProps) {
   const { currentSpace } = useAppStore()
 
-  const [resourceVisibility, setResourceVisibility] = useState({
-    cpu: true,
-    ram: true,
-    disk: true,
-    network: true
-  })
-
-  useEffect(() => {
+  const [resourceVisibility, setResourceVisibility] = useState<ResourceVisibility>(() => {
     const saved = localStorage.getItem('resource-monitor-visibility')
     if (saved) {
       try {
-        setResourceVisibility(JSON.parse(saved))
-      } catch (e) {
-        console.warn('Failed to parse resource visibility', e)
+        return JSON.parse(saved)
+      } catch (_e) {
+        console.warn('Failed to parse resource visibility', _e)
       }
     }
-  }, [])
+    return {
+      cpu: true,
+      ram: true,
+      disk: true,
+      network: true
+    }
+  })
 
   const handleToggleResource = (metric: 'cpu' | 'ram' | 'disk' | 'network') => {
     setResourceVisibility(prev => {

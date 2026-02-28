@@ -46,29 +46,29 @@ export default function CommandPalette({
     const mode = (propMode === 'files' || propMode === 'commands') ? propMode : 'commands'
     const [search, setSearch] = useState('')
 
+    // Reset search when palette opens
     useEffect(() => {
-        if (open) setSearch('')
+        if (open) {
+            const reset = async () => {
+                setSearch('')
+            }
+            reset()
+        }
     }, [open])
 
-    const [fileFuse, setFileFuse] = useState<Fuse<FileItem> | null>(null)
-    useEffect(() => {
-        const fuseInstance = new Fuse(files, {
+    const fileFuse = useMemo(() => {
+        return new Fuse(files, {
             keys: ['name', 'path'],
             threshold: 0.4,
             distance: 100
         })
-        setFileFuse(fuseInstance)
-        return () => setFileFuse(null)
     }, [files])
 
-    const [commandFuse, setCommandFuse] = useState<Fuse<IDECommand> | null>(null)
-    useEffect(() => {
-        const fuseInstance = new Fuse(commands, {
+    const commandFuse = useMemo(() => {
+        return new Fuse(commands, {
             keys: ['title', 'category'],
             threshold: 0.3
         })
-        setCommandFuse(fuseInstance)
-        return () => setCommandFuse(null)
     }, [commands])
 
     const filteredFiles = useMemo(() => {
@@ -149,7 +149,7 @@ export default function CommandPalette({
                     <Command.Empty className="omnibar-empty">
                         <div className="empty-content">
                             <Sparkles size={24} className="opacity-10 mb-2" />
-                            <p>No results found for "{search}"</p>
+                            <p>No results found for &quot;{search}&quot;</p>
                         </div>
                     </Command.Empty>
 

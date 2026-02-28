@@ -10,6 +10,92 @@ import type { BrowserWindow as BrowserWindowType } from 'electron'
 import { nativeHelperService } from '../services/native-helper-service'
 import { binaryManager } from '../services/binary-manager'
 
+// JavaScript search result type
+interface JSSearchResult {
+    file: string
+    line: number
+    content: string
+}
+
+// JavaScript fallback search function - used when ripgrep is unavailable or fails
+async function performJSSearch(
+    searchPath: string,
+    pattern: string,
+    filePattern: string | undefined,
+    maxResults: number
+): Promise<JSSearchResult[]> {
+    const results: JSSearchResult[] = []
+    const searchRegex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    
+    const shouldSearchFile = (filename: string): boolean => {
+        if (filePattern) {
+            const fp = filePattern.replace(/\*/g, '.*')
+            return new RegExp(fp, 'i').test(filename)
+        }
+        return true
+    }
+    
+    const binaryExts = new Set([
+        '.exe', '.dll', '.so', '.dylib', '.bin', '.png', '.jpg', '.jpeg', '.gif',
+        '.bmp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.rar', '.7z', '.mp3',
+        '.mp4', '.avi', '.mov', '.woff', '.woff2', '.ttf', '.otf'
+    ])
+    
+    const searchDirectory = async (dirPath: string, relativePath: string): Promise<void> => {
+        if (results.length >= maxResults) return
+        
+        // Yield to event loop to keep UI responsive
+        await new Promise(resolve => setImmediate(resolve))
+        
+        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+        
+        for (const entry of entries) {
+            if (results.length >= maxResults) break
+            
+            const entryName = entry.name
+            const entryRelativePath = path.join(relativePath, entryName)
+            const entryFullPath = path.join(dirPath, entryName)
+            
+            // Skip hidden dirs, node_modules, etc.
+            if (entry.isDirectory()) {
+                if (entryName.startsWith('.') || entryName === 'node_modules' || entryName === 'dist' || entryName === 'build') {
+                    continue
+                }
+                await searchDirectory(entryFullPath, entryRelativePath)
+            } else if (entry.isFile() && shouldSearchFile(entryName)) {
+                // Skip binary files and very large files
+                const ext = path.extname(entryName).toLowerCase()
+                
+                if (binaryExts.has(ext)) continue
+                
+                try {
+                    const stats = await fs.promises.stat(entryFullPath)
+                    if (stats.size > 5 * 1024 * 1024) continue // Skip files > 5MB
+                    
+                    const content = await fs.promises.readFile(entryFullPath, 'utf-8')
+                    const lines = content.split('\n')
+                    
+                    lines.forEach((line, index) => {
+                        if (results.length >= maxResults) return
+                        if (searchRegex.test(line)) {
+                            results.push({
+                                file: entryRelativePath,
+                                line: index + 1,
+                                content: line.trim().substring(0, 200) // Limit line length
+                            })
+                        }
+                    })
+                } catch {
+                    // Skip files that can't be read
+                }
+            }
+        }
+    }
+    
+    await searchDirectory(searchPath, '')
+    return results
+}
+
 // Stateful maps for file watchers
 const watchers = new Map<string, chokidar.FSWatcher>()
 const nativeWatchers = new Set<string>() // Track IDs using native watcher
@@ -418,7 +504,9 @@ export function registerFileSystemHandlers(
 
         if (nativeWatchers.has(id)) {
             if (nativeHelperService.isAvailable()) {
-                await nativeHelperService.request('watch-stop', { watcherId: id }).catch(() => {})
+                await nativeHelperService.request('watch-stop', { watcherId: id }).catch((error) => {
+                    console.warn(`[FS] Failed to stop native watcher ${id}:`, error)
+                })
             }
             nativeWatchers.delete(id)
         }
@@ -473,7 +561,9 @@ export function registerFileSystemHandlers(
                                         content: entry.data.lines.text.trim().substring(0, 200)
                                     })
                                 }
-                            } catch (e) {}
+                            } catch (_e) {
+                                // Ignore malformed lines
+                            }
                         }
                     })
 
@@ -481,71 +571,26 @@ export function registerFileSystemHandlers(
                         resolve({ success: true, results, truncated: results.length >= maxResults })
                     })
 
-                    rg.on('error', (err) => {
+                    rg.on('error', async (err) => {
                         console.error('[FS] Ripgrep error:', err)
-                        // Fallback to JS search logic (not implemented here for brevity, 
-                        // but normally we would resolve with the JS search result)
+                        // FALLBACK: Use JS search when ripgrep fails
+                        console.log('[FS] Falling back to JavaScript search')
+                        try {
+                            const jsResults = await performJSSearch(safePath, options.pattern, options.filePattern, maxResults)
+                            resolve({ success: true, results: jsResults, truncated: jsResults.length >= maxResults })
+                        } catch (jsError) {
+                            console.error('[FS] JavaScript search also failed:', jsError)
+                            resolve({ success: false, error: `Search failed: ripgrep error (${err.message}), JS fallback also failed (${String(jsError)})` })
+                        }
                     })
                 })
             }
             
-            // Fallback: Recursive JS search function - optimized with setImmediate to prevent UI blocking
-            const searchDirectory = async (dirPath: string, relativePath: string): Promise<void> => {
-                if (results.length >= maxResults) return
-                
-                // Yield to event loop to keep UI responsive
-                await new Promise(resolve => setImmediate(resolve))
-                
-                const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
-                
-                for (const entry of entries) {
-                    if (results.length >= maxResults) break
-                    
-                    const entryName = entry.name
-                    const entryRelativePath = path.join(relativePath, entryName)
-                    const entryFullPath = path.join(dirPath, entryName)
-                    
-                    // Skip hidden dirs, node_modules, etc.
-                    if (entry.isDirectory()) {
-                        if (entryName.startsWith('.') || entryName === 'node_modules' || entryName === 'dist' || entryName === 'build') {
-                            continue
-                        }
-                        await searchDirectory(entryFullPath, entryRelativePath)
-                    } else if (entry.isFile() && shouldSearchFile(entryName)) {
-                        // Skip binary files and very large files
-                        const ext = path.extname(entryName).toLowerCase()
-                        const binaryExts = new Set(['.exe', '.dll', '.so', '.dylib', '.bin', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.rar', '.7z', '.mp3', '.mp4', '.avi', '.mov', '.woff', '.woff2', '.ttf', '.otf'])
-                        
-                        if (binaryExts.has(ext)) continue
-                        
-                        try {
-                            const stats = await fs.promises.stat(entryFullPath)
-                            if (stats.size > 5 * 1024 * 1024) continue // Skip files > 5MB
-                            
-                            const content = await fs.promises.readFile(entryFullPath, 'utf-8')
-                            const lines = content.split('\n')
-                            
-                            lines.forEach((line, index) => {
-                                if (results.length >= maxResults) return
-                                if (searchRegex.test(line)) {
-                                    results.push({
-                                        file: entryRelativePath,
-                                        line: index + 1,
-                                        content: line.trim().substring(0, 200) // Limit line length
-                                    })
-                                }
-                            })
-                        } catch {
-                            // Skip files that can't be read
-                        }
-                    }
-                }
-            }
+            // Use JavaScript fallback search when ripgrep is not available
+            const results = await performJSSearch(safePath, options.pattern, options.filePattern, maxResults)
             
-            await searchDirectory(safePath, '')
-            
-            return { 
-                success: true, 
+            return {
+                success: true,
                 results,
                 truncated: results.length >= maxResults
             }

@@ -20,25 +20,29 @@ export function useP2P(roomId: string | null, doc: Y.Doc | null) {
     useEffect(() => {
         if (!roomId || !doc || isInitialized.current) return
 
-        // Set up callbacks
-        p2pService.setCallbacks(
-            (peerId, connected) => {
-                console.log(`Peer ${peerId} ${connected ? 'connected' : 'disconnected'}`)
-            },
-            (synced) => {
-                setSynced(synced)
-            },
-            (peerList) => {
-                setPeers(peerList)
-                setPeerCount(peerList.length)
-            }
-        )
+        const init = async () => {
+            // Set up callbacks
+            p2pService.setCallbacks(
+                (peerId, connected) => {
+                    console.log(`Peer ${peerId} ${connected ? 'connected' : 'disconnected'}`)
+                },
+                (synced) => {
+                    setSynced(synced)
+                },
+                (peerList) => {
+                    setPeers(peerList)
+                    setPeerCount(peerList.length)
+                }
+            )
 
-        // Connect
-        const webrtcProvider = p2pService.connect(roomId, doc)
-        setProvider(webrtcProvider)
-        setIsConnected(true)
-        isInitialized.current = true
+            // Connect
+            const webrtcProvider = p2pService.connect(roomId, doc)
+            setProvider(webrtcProvider)
+            setIsConnected(true)
+            isInitialized.current = true
+        }
+
+        init()
 
         return () => {
             if (isInitialized.current && roomId) {

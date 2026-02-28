@@ -133,7 +133,7 @@ export default function IDEWorkspace() {
         try {
             const saved = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_WIDTH)
             return saved ? parseInt(saved, 10) : 400
-        } catch (_error) {
+        } catch {
             return 400
         }
     })
@@ -178,14 +178,14 @@ export default function IDEWorkspace() {
         try {
             const saved = localStorage.getItem(STORAGE_KEYS.SPLIT_EDITOR_ENABLED)
             return saved === 'true'
-        } catch (_error) {
+        } catch {
             return false
         }
     })
     const [secondaryActiveFile, setSecondaryActiveFile] = useState<string | null>(() => {
         try {
             return localStorage.getItem(STORAGE_KEYS.SECONDARY_ACTIVE_FILE)
-        } catch (_error) {
+        } catch {
             return null
         }
     })
@@ -193,7 +193,7 @@ export default function IDEWorkspace() {
         try {
             const saved = localStorage.getItem(STORAGE_KEYS.SPLIT_EDITOR_RATIO)
             return saved ? parseFloat(saved) : 0.5
-        } catch (_error) {
+        } catch {
             return 0.5
         }
     })
@@ -222,7 +222,7 @@ export default function IDEWorkspace() {
         try {
             const saved = localStorage.getItem(STORAGE_KEYS.WORD_WRAP)
             return saved === 'on' || saved === 'off' ? saved : 'on'
-        } catch (_error) {
+        } catch {
             return 'on'
         }
     })
@@ -230,7 +230,7 @@ export default function IDEWorkspace() {
         try {
             const saved = localStorage.getItem(STORAGE_KEYS.MINIMAP_ENABLED)
             return saved !== null ? saved === 'true' : true
-        } catch (_error) {
+        } catch {
             return true
         }
     })
@@ -238,7 +238,7 @@ export default function IDEWorkspace() {
         try {
             const saved = localStorage.getItem(STORAGE_KEYS.STICKY_SCROLL_ENABLED)
             return saved !== null ? saved === 'true' : true
-        } catch (_error) {
+        } catch {
             return true
         }
     })
@@ -257,7 +257,9 @@ export default function IDEWorkspace() {
         if (saved) {
             try {
                 setPerformanceOptions(JSON.parse(saved))
-            } catch (e) { }
+            } catch (_e) {
+                // Ignore parse errors
+            }
         }
 
         return () => window.removeEventListener('kalynt-monaco-optimize', handleOptimize)
@@ -424,7 +426,7 @@ export default function IDEWorkspace() {
             }
         }
         restoreWorkspace()
-    }, [])
+    }, [workspacePath])
 
     // Close workspace handler
     const handleCloseWorkspace = useCallback(() => {
@@ -443,7 +445,7 @@ export default function IDEWorkspace() {
 
 
     // Open folder dialog
-    const handleOpenFolder = async () => {
+    const handleOpenFolder = useCallback(async () => {
         const result = await globalThis.window.electronAPI?.fs.openFolder()
         if (result?.success && result.path) {
             setWorkspacePath(result.path)
@@ -451,10 +453,10 @@ export default function IDEWorkspace() {
             setOpenFiles([])
             setActiveFile(null)
         }
-    }
+    }, [])
 
     // Open file in editor
-    const handleOpenFile = async (filePath: string, line?: number) => {
+    const handleOpenFile = useCallback(async (filePath: string, line?: number) => {
         // SECURITY FIX: Validate path to prevent traversal attacks
         const validation = validatePath(filePath, workspacePath)
         if (!validation.valid) {
@@ -500,9 +502,9 @@ export default function IDEWorkspace() {
             isDirty: false
         }
 
-        setOpenFiles([...openFiles, newFile])
+        setOpenFiles(prev => [...prev, newFile])
         setActiveFile(validatedPath)
-    }
+    }, [workspacePath, addNotification, openFiles])
 
     const getLanguageFromFileName = (fileName: string): string => {
         const ext = fileName.split('.').pop()?.toLowerCase()
@@ -594,7 +596,13 @@ export default function IDEWorkspace() {
                         await window.electronAPI?.debug.setBreakpoints(
                             debugSessionIdRef.current!,
                             filePath,
-                            lines.map(line => ({ line, verified: false }))
+                            lines.map((line, index) => ({
+                                id: `bp-${filePath}-${line}-${index}`,
+                                file: filePath,
+                                line,
+                                enabled: true,
+                                verified: false
+                            }))
                         )
                     } catch (error) {
                         console.error('Failed to sync breakpoints for', filePath, error)
@@ -760,14 +768,14 @@ export default function IDEWorkspace() {
         }
     }, [activeFileObj, handleSaveFile, workspacePath, addNotification])
 
-    const handleStopCode = () => {
+    const handleStopCode = useCallback(() => {
         if (executionIdRef.current) {
             window.electronAPI?.code.kill(executionIdRef.current)
             writeToActiveTerminal(`\r\n\x1b[33m⚠ Execution stopped by user\x1b[0m\r\n`)
             setIsRunning(false)
             executionIdRef.current = null
         }
-    }
+    }, [writeToActiveTerminal])
 
     const handleOutputInput = useCallback((data: string) => {
         if (executionIdRef.current) {
@@ -795,13 +803,80 @@ export default function IDEWorkspace() {
             if (!configsResult?.success || !configsResult.configurations || configsResult.configurations.length === 0) {
                 addNotification('No debug configurations found. Creating auto-detected configuration...', 'info')
 
-                // Use auto-detected configuration
-                const autoConfig = {
-                    type: 'node' as const,
-                    request: 'launch' as const,
+                // Detect language from file extension
+                const fileExt = activeFile.split('.').pop()?.toLowerCase()
+                let autoConfig: any = {
+                    type: 'node',
+                    request: 'launch',
                     name: 'Auto Debug',
                     program: activeFile,
-                    skipFiles: ['<node_internals>/**'],
+                }
+
+                // Set appropriate debug type based on file extension
+                switch (fileExt) {
+                    case 'py':
+                        autoConfig = {
+                            type: 'debugpy',
+                            request: 'launch',
+                            name: 'Python: Current File',
+                            program: activeFile,
+                            console: 'integratedTerminal',
+                        }
+                        break
+                    case 'go':
+                        autoConfig = {
+                            type: 'delve',
+                            request: 'launch',
+                            name: 'Go: Debug',
+                            mode: 'debug',
+                            program: '${workspaceFolder}',
+                        }
+                        break
+                    case 'rs':
+                        autoConfig = {
+                            type: 'lldb',
+                            request: 'launch',
+                            name: 'Rust: Debug',
+                            program: activeFile,
+                        }
+                        break
+                    case 'c':
+                    case 'cpp':
+                    case 'cc':
+                        autoConfig = {
+                            type: 'cppdbg',
+                            request: 'launch',
+                            name: 'C/C++: Debug',
+                            program: activeFile,
+                        }
+                        break
+                    case 'java':
+                        autoConfig = {
+                            type: 'java',
+                            request: 'launch',
+                            name: 'Java: Debug',
+                            mainClass: activeFile,
+                        }
+                        break
+                    case 'ts':
+                        autoConfig = {
+                            type: 'node',
+                            request: 'launch',
+                            name: 'TypeScript: Debug',
+                            program: activeFile,
+                            runtimeArgs: ['-r', 'ts-node/register'],
+                            skipFiles: ['<node_internals>/**'],
+                        }
+                        break
+                    default:
+                        // Default to Node.js for .js and other files
+                        autoConfig = {
+                            type: 'node',
+                            request: 'launch',
+                            name: 'Node.js: Debug',
+                            program: activeFile,
+                            skipFiles: ['<node_internals>/**'],
+                        }
                 }
 
                 const result = await window.electronAPI?.debug.start(autoConfig, workspacePath, activeFile)
@@ -831,7 +906,7 @@ export default function IDEWorkspace() {
         } catch (error: any) {
             addNotification(`Debug error: ${error.message}`, 'error')
         }
-    }, [activeFileObj, activeFile, handleSaveFile, workspacePath, showTerminal, addNotification])
+    }, [activeFileObj, activeFile, handleSaveFile, workspacePath, showTerminal, addNotification, writeToActiveTerminal])
 
     const handleStopDebug = useCallback(async () => {
         if (debugSessionIdRef.current) {
@@ -846,7 +921,7 @@ export default function IDEWorkspace() {
                 addNotification(`Failed to stop debug session: ${error.message}`, 'error')
             }
         }
-    }, [addNotification])
+    }, [addNotification, writeToActiveTerminal])
 
     // Debug control handlers
     const handleDebugContinue = useCallback(async () => {
@@ -940,7 +1015,7 @@ export default function IDEWorkspace() {
         } catch (error: any) {
             addNotification(`Build error: ${error.message}`, 'error')
         }
-    }, [workspacePath, showTerminal, addNotification])
+    }, [workspacePath, showTerminal, addNotification, writeToActiveTerminal])
 
     const handleStopBuild = useCallback(async () => {
         if (buildTaskIdRef.current) {
@@ -955,7 +1030,7 @@ export default function IDEWorkspace() {
                 addNotification(`Failed to stop build task: ${error.message}`, 'error')
             }
         }
-    }, [addNotification])
+    }, [addNotification, writeToActiveTerminal])
 
     const indexFiles = useCallback(async () => {
         if (!workspacePath) { setWorkspaceFiles([]); return }
@@ -1017,7 +1092,7 @@ export default function IDEWorkspace() {
             }
         })
         return () => { removeListener?.(); window.electronAPI?.fs.unwatchDir(watchId) }
-    }, [workspacePath]) // ONLY depend on workspacePath
+    }, [workspacePath, indexFiles]) // ONLY depend on workspacePath and indexFiles
 
     // Build event listeners
     useEffect(() => {
@@ -1100,7 +1175,7 @@ export default function IDEWorkspace() {
         }
     }, [addNotification])
 
-    const handleNewFile = async () => {
+    const handleNewFile = useCallback(async () => {
         if (!workspacePath) return
         const fileName = window.prompt('Enter file name:')
         if (!fileName) return
@@ -1123,7 +1198,7 @@ export default function IDEWorkspace() {
         } else {
             addNotification(`Failed to create: ${result?.error}`, 'error')
         }
-    }
+    }, [workspacePath, addNotification, handleOpenFile, indexFiles])
 
     // Add extension command
     const handleShowExtensions = useCallback(() => {
@@ -1167,7 +1242,7 @@ export default function IDEWorkspace() {
         }
 
         return [...baseCommands, extensionCommand]
-    }, [activeFile, workspacePath, handleNewFile, handleSaveFile, handleCloseFile, handleRunCode, handleDebugCode, handleBuildCode, agentOpen, handleShowExtensions])
+    }, [activeFile, workspacePath, handleNewFile, handleSaveFile, handleCloseFile, handleRunCode, handleDebugCode, handleBuildCode, agentOpen, handleShowExtensions, setShowSettings, handleOpenFolder])
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1243,7 +1318,7 @@ export default function IDEWorkspace() {
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [activeFile, openFiles, handleSaveFile, handleNewFile, handleOpenFolder, handleCloseFile, handleRunCode, handleStopCode, isRunning, handleDebugCode, handleStopDebug, isDebugging, handleBuildCode, handleStopBuild, isBuilding, handleDebugContinue, handleDebugStepOver, handleDebugStepInto, handleDebugStepOut, handleDebugPause])
+    }, [activeFile, openFiles, handleSaveFile, handleNewFile, handleOpenFolder, handleCloseFile, handleRunCode, handleStopCode, isRunning, handleDebugCode, handleStopDebug, isDebugging, handleBuildCode, handleStopBuild, isBuilding, handleDebugContinue, handleDebugStepOver, handleDebugStepInto, handleDebugStepOut, handleDebugPause, handleToggleSplitEditor, setShowSettings])
 
     useEffect(() => {
         if (activeFile && pendingLine && editorRef.current) {
@@ -1674,7 +1749,7 @@ export default function IDEWorkspace() {
                             <button className="btn-secondary" onClick={() => {
                                 if (unsavedDialog.filePath) forceCloseFile(unsavedDialog.filePath)
                                 setUnsavedDialog({ isOpen: false, filePath: null })
-                            }}>Don't Save</button>
+                            }}>Don&apos;t Save</button>
                             <button className="btn-secondary" onClick={() => setUnsavedDialog({ isOpen: false, filePath: null })}>Cancel</button>
                             <button className="btn-primary" onClick={async () => {
                                 if (unsavedDialog.filePath) {

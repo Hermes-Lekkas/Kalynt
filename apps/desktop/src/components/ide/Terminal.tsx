@@ -85,11 +85,14 @@ export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalPr
 
     // Track connection status based on active tab
     useEffect(() => {
-        if (activeTabId && tabs.length > 0) {
-            setIsConnected(true)
-        } else {
-            setIsConnected(false)
+        const check = async () => {
+            if (activeTabId && tabs.length > 0) {
+                setIsConnected(true)
+            } else {
+                setIsConnected(false)
+            }
         }
+        check()
     }, [activeTabId, tabs.length])
 
     // Handle context menu
@@ -120,6 +123,11 @@ export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalPr
             document.removeEventListener('click', handleClick)
         }
     }, [contextMenu.visible])
+
+    const handleClearTerminal = useCallback(() => {
+        clearTerminal()
+        setContextMenu({ visible: false, x: 0, y: 0 })
+    }, [clearTerminal])
 
     // Handle keyboard shortcuts
     useEffect(() => {
@@ -153,7 +161,7 @@ export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalPr
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [searchVisible, commandPaletteOpen, addTab])
+    }, [searchVisible, commandPaletteOpen, addTab, handleClearTerminal])
 
     // Context menu handlers
     const handleCopy = useCallback(async () => {
@@ -174,11 +182,6 @@ export default function Terminal({ cwd, onActiveTabChange }: Readonly<TerminalPr
         }
         setContextMenu({ visible: false, x: 0, y: 0 })
     }, [activeTabId])
-
-    const handleClearTerminal = useCallback(() => {
-        clearTerminal()
-        setContextMenu({ visible: false, x: 0, y: 0 })
-    }, [clearTerminal])
 
     const handleCloseTab = useCallback((id: string) => {
         destroyTerminal(id)

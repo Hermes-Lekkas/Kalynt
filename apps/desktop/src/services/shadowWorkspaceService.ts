@@ -208,16 +208,71 @@ class ShadowWorkspaceService {
     private async validateViaLSP(
         filePath: string,
         language: string,
-        _workspacePath: string
+        workspacePath: string
     ): Promise<ValidationResult | null> {
         const electronAPI = globalThis.window?.electronAPI as any
         if (!electronAPI?.runtime?.sendLSPRequest) return null
 
-        const sessionId = this.lspSessions.get(language)
+        let sessionId = this.lspSessions.get(language)
+        
+        // Start LSP session if not running
+        if (!sessionId) {
+            const lspLanguage = this.mapToLSPLanguage(language)
+            if (!lspLanguage) return null
+            
+            try {
+                const startResult = await electronAPI.runtime.startLSP({
+                    languageId: lspLanguage,
+                    workspacePath
+                })
+                
+                if (startResult?.success && startResult?.sessionId) {
+                    sessionId = startResult.sessionId
+                    if (sessionId) {
+                        this.lspSessions.set(language, sessionId)
+                    }
+                    
+                    // Open the document in the language server
+                    const content = await this.readFileContent(filePath)
+                    if (content !== null) {
+                        await electronAPI.runtime.sendLSPRequest(
+                            sessionId,
+                            'textDocument/didOpen',
+                            {
+                                textDocument: {
+                                    uri: `file://${filePath}`,
+                                    languageId: lspLanguage,
+                                    version: 1,
+                                    text: content
+                                }
+                            }
+                        )
+                    }
+                }
+            } catch (err) {
+                logger.agent.debug('Failed to start LSP session', { language, error: err })
+                return null
+            }
+        }
+        
         if (!sessionId) return null
 
         try {
             const startTime = Date.now()
+            
+            // Update document content
+            const content = await this.readFileContent(filePath)
+            if (content !== null) {
+                await electronAPI.runtime.sendLSPRequest(
+                    sessionId,
+                    'textDocument/didChange',
+                    {
+                        textDocument: { uri: `file://${filePath}`, version: Date.now() },
+                        contentChanges: [{ text: content }]
+                    }
+                )
+            }
+            
             // Request diagnostics from the language server
             const result = await electronAPI.runtime.sendLSPRequest(
                 sessionId,
@@ -244,8 +299,42 @@ class ShadowWorkspaceService {
                 command: 'LSP diagnostics',
                 duration: Date.now() - startTime
             }
-        } catch {
+        } catch (err) {
+            logger.agent.debug('LSP validation failed', { filePath, error: err })
             return null // LSP unavailable, fall back to command
+        }
+    }
+    
+    /**
+     * Map internal language names to LSP language IDs
+     */
+    private mapToLSPLanguage(language: string): string | null {
+        const mapping: Record<string, string> = {
+            'typescript': 'typescript',
+            'javascript': 'javascript',
+            'python': 'python',
+            'rust': 'rust',
+            'go': 'go',
+            'java': 'java',
+            'csharp': 'csharp',
+            'cpp': 'cpp',
+            'c': 'c'
+        }
+        return mapping[language] || null
+    }
+    
+    /**
+     * Read file content for LSP operations
+     */
+    private async readFileContent(filePath: string): Promise<string | null> {
+        try {
+            const electronAPI = globalThis.window?.electronAPI as any
+            if (!electronAPI?.fs?.readFile) return null
+            
+            const result = await electronAPI.fs.readFile(filePath)
+            return result?.success ? result.content : null
+        } catch {
+            return null
         }
     }
 

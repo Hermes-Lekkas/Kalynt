@@ -25,7 +25,12 @@ function loadKeys(userDataPath: string): EncryptedKeys {
         const filePath = getKeysFilePath(userDataPath)
         if (fs.existsSync(filePath)) {
             const data = fs.readFileSync(filePath, 'utf-8')
-            return JSON.parse(data)
+            // CRITICAL-002 FIX: Validate parsed data is an object before returning
+            const parsed = JSON.parse(data)
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                return parsed as EncryptedKeys
+            }
+            console.error('[SafeStorage] Invalid keys file format: not an object')
         }
     } catch (error) {
         console.error('[SafeStorage] Failed to load keys:', error)

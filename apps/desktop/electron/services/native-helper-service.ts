@@ -4,7 +4,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
-import { app } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { EventEmitter } from 'events'
 
 interface JSONRPCRequest {
@@ -28,6 +28,7 @@ class NativeHelperService extends EventEmitter {
     private requestId = 0
     private pendingRequests = new Map<number, { resolve: (res: any) => void, reject: (err: Error) => void }>()
     private buffer = ''
+    private mainWindow: BrowserWindow | null = null
 
     constructor() {
         super()
@@ -122,6 +123,14 @@ class NativeHelperService extends EventEmitter {
 
     isAvailable(): boolean {
         return this.process !== null
+    }
+
+    setMainWindow(window: BrowserWindow | null): void {
+        this.mainWindow = window
+    }
+
+    getMainWindow(): BrowserWindow | null {
+        return this.mainWindow
     }
 
     dispose() {

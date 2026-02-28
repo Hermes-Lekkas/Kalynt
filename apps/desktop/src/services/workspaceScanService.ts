@@ -206,7 +206,9 @@ export class WorkspaceScanService {
 
         if (options.aiMode === 'offline' && options.loadedModelId) {
             // Cancel any lingering generation from a previous file
-            await offlineLLMService.cancelGeneration().catch(() => {})
+            await offlineLLMService.cancelGeneration().catch((error) => {
+                console.warn('[WorkspaceScan] Failed to cancel previous generation:', error)
+            })
 
             const timeoutMs = 60000 // 60s per file for offline - small models should be fast
             let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -221,7 +223,9 @@ export class WorkspaceScanService {
                     timeoutId = setTimeout(() => {
                         // Reject IMMEDIATELY - don't await cancel (it could hang and block rejection)
                         reject(new Error('Analysis timeout'))
-                        offlineLLMService.cancelGeneration().catch(() => {})
+                        offlineLLMService.cancelGeneration().catch((error) => {
+                            console.warn('[WorkspaceScan] Failed to cancel generation on timeout:', error)
+                        })
                     }, timeoutMs)
                 })
 

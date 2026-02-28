@@ -5,7 +5,7 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { spawn, ChildProcess, execFileSync } from 'node:child_process'
-import { shell, app } from 'electron'
+import { shell } from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import treeKill from 'tree-kill'
 import { binaryManager } from '../services/binary-manager'
@@ -876,7 +876,7 @@ export function registerCodeExecutionHandlers(
             if (currentWorkspacePath) {
                 try {
                     safeCwd = validatePath(currentWorkspacePath, cwd)
-                } catch (error_) {
+                } catch (_error_) {
                     return { success: false, error: 'Invalid Working Directory' }
                 }
             }

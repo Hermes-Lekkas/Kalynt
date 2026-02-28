@@ -462,7 +462,10 @@ export default function PluginsPanel({ onClose }: { onClose: () => void }) {
 
     // Check installations on mount and set up listeners
     useEffect(() => {
-        checkInstallations()
+        const init = async () => {
+            await checkInstallations()
+        }
+        init()
 
         // Set up progress listeners
         if (window.electronAPI?.runtimeMgmt) {

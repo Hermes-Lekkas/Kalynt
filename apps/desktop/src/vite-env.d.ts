@@ -11,9 +11,6 @@ declare global {
     readonly VITE_GITHUB_API_URL?: string
     readonly VITE_MODEL_REGISTRY_URL?: string
     readonly VITE_MODEL_UPDATE_URL?: string
-    readonly VITE_TURN_URL?: string
-    readonly VITE_TURN_USERNAME?: string
-    readonly VITE_TURN_CREDENTIAL?: string
   }
 
   interface ImportMeta {

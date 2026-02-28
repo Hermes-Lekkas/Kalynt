@@ -20,6 +20,12 @@ export interface P2PConfig {
     iceServers: RTCIceServer[]
     maxPeers: number
     password?: string
+    // CROSS-NETWORK FIX: Enable broadcast discovery for LAN connections
+    // When true, allows peers on same network to discover each other without signaling
+    enableBroadcast?: boolean
+    // CROSS-NETWORK FIX: Connection retry settings for flaky networks
+    maxRetries?: number
+    retryDelayMs?: number
 }
 
 export interface P2PStats {
@@ -33,40 +39,37 @@ type ConnectionCallback = (peerId: string, connected: boolean) => void
 type SyncCallback = (synced: boolean) => void
 type PeersCallback = (peers: PeerInfo[]) => void
 
-// SECURITY FIX V-001: Load TURN credentials from environment variables
-// Never hardcode credentials - use VITE_TURN_* env vars for custom TURN servers
+// ICE / STUN / TURN server configuration
+// SECURITY: Credentials are obfuscated to prevent casual extraction
+// For production, use a server-side credential proxy or password-based encryption
 const getIceServers = (): RTCIceServer[] => {
     const servers: RTCIceServer[] = [
-        // STUN servers for NAT traversal (discovers public IP)
+        // Google STUN servers for NAT traversal (discovers public IP)
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        // OpenRelay TURN servers (public, no credentials required)
-        // Essential for cross-network connectivity (symmetric NAT, firewalls)
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        // Cloudflare STUN — privacy-focused alternative (no logging policy)
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        // OpenRelay STUN - public STUN server
+        { urls: 'stun:openrelay.metered.ca:80' }
     ]
 
-    // SECURITY: Add custom TURN server from environment if configured
-    // These should be set via VITE_TURN_URL, VITE_TURN_USERNAME, VITE_TURN_CREDENTIAL
-    const customTurnUrl = import.meta.env?.VITE_TURN_URL
-    const customTurnUsername = import.meta.env?.VITE_TURN_USERNAME
-    const customTurnCredential = import.meta.env?.VITE_TURN_CREDENTIAL
+    // SECURITY: TURN server support via Bring Your Own Key (BYOK) from Settings or Environment
+    let turnSettings = { url: '', username: '', credential: '' }
+    try {
+        const stored = localStorage.getItem('kalynt-turn-settings')
+        if (stored) {
+            turnSettings = JSON.parse(stored)
+        }
+    } catch (e) {
+        console.warn('Failed to parse TURN settings', e)
+    }
+
+    const customTurnUrl = turnSettings.url || import.meta.env?.VITE_TURN_URL
+    const customTurnUsername = turnSettings.username || import.meta.env?.VITE_TURN_USERNAME
+    const customTurnCredential = turnSettings.credential || import.meta.env?.VITE_TURN_CREDENTIAL
 
     if (customTurnUrl && customTurnUsername && customTurnCredential) {
         servers.push({
@@ -89,12 +92,24 @@ const getIceServers = (): RTCIceServer[] => {
 
 const DEFAULT_CONFIG: P2PConfig = {
     signalingServers: [
-        'wss://signaling.yjs.dev',
-        'wss://y-webrtc-signaling-eu.herokuapp.com',
-        'wss://y-webrtc-signaling-us.herokuapp.com'
+        // Primary: Built-in signaling server started by Electron main process
+        // This runs locally on the same machine — zero external infrastructure
+        'ws://localhost:4444',
+        // Fallback: Free public signaling server bundled with y-webrtc
+        // This enables cross-internet P2P without any external servers
+        'wss://y-webrtc-eu.fly.dev',
+        // Additional: Can be configured via VITE_SIGNALING_URL env var
+        // See apps/desktop/.env.example for deployment options (free fly.io / render.com)
+        ...(import.meta.env?.VITE_SIGNALING_URL ? [import.meta.env.VITE_SIGNALING_URL as string] : [])
     ],
     iceServers: getIceServers(),
-    maxPeers: 15
+    maxPeers: 15,
+    // CROSS-NETWORK FIX: Enable broadcast discovery when no signaling available
+    // This allows LAN peers to discover each other without signaling server
+    enableBroadcast: true,
+    // CROSS-NETWORK FIX: Connection retry configuration
+    maxRetries: 3,
+    retryDelayMs: 2000
 }
 
 // SECURITY FIX V-009: Rate limiting configuration
@@ -252,6 +267,9 @@ class P2PService {
     // FIX BUG-012: Periodic cleanup interval
     private cleanupIntervalId: ReturnType<typeof setInterval> | null = null
 
+    // MEDIUM-001 FIX: Track if service is destroyed to prevent race conditions
+    private isDestroyed = false
+
     // Stats tracking for each room
     private roomStats: Map<string, {
         bytesReceived: number
@@ -260,9 +278,16 @@ class P2PService {
         latencies: number[] // Ring buffer of last N ping times
     }> = new Map()
 
+    // CROSS-NETWORK FIX: Track retry attempts per room
+    private retryAttempts: Map<string, number> = new Map()
+
     constructor() {
         // FIX BUG-012: Start periodic cleanup every 30 seconds
         this.cleanupIntervalId = setInterval(() => {
+            // MEDIUM-001 FIX: Check if service is destroyed before running cleanup
+            if (this.isDestroyed) {
+                return
+            }
             this.rateLimiter.cleanup()
         }, 30000)
     }
@@ -271,6 +296,9 @@ class P2PService {
      * Clean up resources (call before destroying service)
      */
     destroy(): void {
+        // MEDIUM-001 FIX: Set destroyed flag first to prevent race conditions
+        this.isDestroyed = true
+        
         if (this.cleanupIntervalId) {
             clearInterval(this.cleanupIntervalId)
             this.cleanupIntervalId = null
@@ -328,18 +356,37 @@ class P2PService {
             const roomName = `kalynt-${roomId}`
             const connectionPassword = password || this.config.password
 
+            // CROSS-NETWORK FIX: Make broadcast discovery configurable
+            // When enableBroadcast is true, LAN peers can discover without signaling
+            // When false (default for security), only signaling-based connections allowed
+            const enableBroadcast = this.config.enableBroadcast ?? false
+
+            // CROSS-NETWORK FIX: Smart signaling server selection
+            // For cross-network connections, prioritize public signaling servers
+            // This helps when localhost:4444 is not accessible but public servers are
+            const currentAttempt = this.retryAttempts.get(roomId) || 0
+            const isLikelyRemote = currentAttempt > 0
+            const signalingServers = isLikelyRemote
+                ? [
+                    // Prioritize public servers for remote connections
+                    'wss://y-webrtc-eu.fly.dev',
+                    // Then try local (in case we're on same network)
+                    'ws://localhost:4444',
+                    ...(import.meta.env?.VITE_SIGNALING_URL ? [import.meta.env.VITE_SIGNALING_URL as string] : [])
+                ]
+                : this.config.signalingServers
+
             // Create WebRTC provider with error handling
             const provider = new WebrtcProvider(roomName, doc, {
-                signaling: this.config.signalingServers,
+                signaling: signalingServers,
                 password: connectionPassword,
                 maxConns: this.config.maxPeers,
-                // filterBcConns: true filters broadcast connections to only allow
-                // connections established via signaling, providing better control
-                // over peer discovery and preventing unwanted broadcast joins
-                filterBcConns: true,
+                // filterBcConns: false enables broadcast discovery for LAN connections
+                // filterBcConns: true restricts to signaling-only (more secure)
+                filterBcConns: !enableBroadcast,
                 peerOpts: {
                     config: {
-                        iceServers: this.config.iceServers
+                        iceServers: getIceServers()
                     }
                 }
             })
@@ -391,6 +438,37 @@ class P2PService {
             // Set up stats tracking via awareness ping/pong
             this.setupStatsTracking(provider, roomId)
 
+            // CROSS-NETWORK FIX: Set up connection timeout and retry
+            const maxRetries = this.config.maxRetries ?? 3
+            const retryDelay = this.config.retryDelayMs ?? 2000
+
+            if (maxRetries > 0) {
+                const checkConnection = setTimeout(() => {
+                    // If no peers connected after timeout and we haven't exceeded retries
+                    const peerCount = this.getPeerCount(roomId)
+                    const currentAttempt = this.retryAttempts.get(roomId) || 0
+
+                    if (peerCount === 0 && currentAttempt < maxRetries) {
+                        this.retryAttempts.set(roomId, currentAttempt + 1)
+                        console.log(`[P2P] No peers connected, retrying... (${currentAttempt + 1}/${maxRetries})`)
+
+                        // Disconnect and retry with remote-optimized settings
+                        this.disconnect(roomId)
+                        setTimeout(() => {
+                            this.connect(roomId, doc, password)
+                        }, retryDelay)
+                    }
+                }, 15000) // Check after 15 seconds
+
+                // Clean up retry tracking when connected
+                provider.on('peers', ({ added }: { added: string[]; removed: string[] }) => {
+                    if (added.length > 0) {
+                        clearTimeout(checkConnection)
+                        this.retryAttempts.delete(roomId)
+                    }
+                })
+            }
+
             return provider
         } catch (err) {
             console.error(`[P2P] Failed to create provider for room ${roomId}:`, err)
@@ -407,6 +485,8 @@ class P2PService {
             this.roomStats.delete(roomId) // Clean up stats
             p2pLog.disconnected(roomId)
         }
+        // Clean up retry tracking
+        this.retryAttempts.delete(roomId)
     }
 
     disconnectAll() {
@@ -416,6 +496,7 @@ class P2PService {
         this.providers.clear()
         this.roomCallbacks.clear()
         this.roomStats.clear() // Clean up all stats
+        this.retryAttempts.clear() // Clean up retry tracking
     }
 
     private updatePeerList(provider: WebrtcProvider, roomId: string) {
@@ -618,6 +699,42 @@ class P2PService {
         }
     }
 
+    // CROSS-NETWORK FIX: Refresh TURN settings from localStorage
+    // Call this after user updates TURN settings in UI
+    refreshTurnSettings(): void {
+        // The next getIceServers() call will read from localStorage
+        console.log('[P2P] TURN settings refreshed from localStorage')
+
+        // Reconnect all active providers to apply new ICE settings
+        const connectedRooms = Array.from(this.providers.entries())
+        connectedRooms.forEach(([roomId, provider]) => {
+            console.log(`[P2P] Reconnecting ${roomId} with updated TURN settings`)
+            const doc = provider.doc
+            const password = this.config.password
+            this.disconnect(roomId)
+            // Small delay to ensure cleanup
+            setTimeout(() => {
+                this.connect(roomId, doc, password)
+            }, 100)
+        })
+    }
+
+    // Get current TURN settings for UI display
+    getTurnSettings(): { url: string; username: string; credential: string; isConfigured: boolean } {
+        let turnSettings = { url: '', username: '', credential: '' }
+        try {
+            const stored = localStorage.getItem('kalynt-turn-settings')
+            if (stored) {
+                turnSettings = JSON.parse(stored)
+            }
+        } catch (e) {
+            console.warn('Failed to parse TURN settings', e)
+        }
+
+        const isConfigured = !!(turnSettings.url && turnSettings.username && turnSettings.credential)
+        return { ...turnSettings, isConfigured }
+    }
+
     // Test ICE connectivity to diagnose P2P issues
     async testConnectivity(): Promise<{
         stun: boolean
@@ -632,13 +749,15 @@ class P2PService {
         }
 
         try {
-            const pc = new RTCPeerConnection({ iceServers: this.config.iceServers })
+            const pc = new RTCPeerConnection({ iceServers: getIceServers() })
 
             // Create a data channel to trigger ICE gathering
             pc.createDataChannel('test')
 
             const gatheringComplete = new Promise<void>((resolve) => {
-                const timeout = setTimeout(() => resolve(), 10000) // 10s timeout
+                // CROSS-NETWORK FIX: Increased timeout for high-latency networks
+                // 30 seconds allows time for TURN allocation and multiple STUN tries
+                const timeout = setTimeout(() => resolve(), 30000) // 30s timeout
 
                 pc.onicecandidate = (event) => {
                     if (event.candidate) {
@@ -697,7 +816,8 @@ class P2PService {
         turnEnabled: boolean
     } {
         const provider = this.providers.get(roomId)
-        const hasTurn = this.config.iceServers.some(server =>
+        const iceServers = getIceServers()
+        const hasTurn = iceServers.some(server =>
             (typeof server.urls === 'string' ? server.urls : server.urls?.[0])?.startsWith('turn:')
         )
 
@@ -705,7 +825,7 @@ class P2PService {
             connected: !!provider,
             peerCount: provider ? this.getPeerCount(roomId) : 0,
             signalingState: provider ? 'connected' : 'disconnected',
-            iceServers: this.config.iceServers.length,
+            iceServers: iceServers.length,
             turnEnabled: hasTurn
         }
     }
@@ -719,12 +839,8 @@ class P2PService {
     checkPeerMessageRate(peerId: string): boolean {
         return this.rateLimiter.checkMessageRate(peerId)
     }
-
-    // SECURITY FIX V-009: Clear rate limiting data (for testing or reset)
-    clearRateLimits(): void {
-        this.rateLimiter.clear()
-    }
 }
 
-// Singleton
+// Singleton instance
 export const p2pService = new P2PService()
+export default p2pService

@@ -86,7 +86,7 @@ export default function PerformanceTab() {
         </div>
         <div className="hero-text">
           <h3>System Performance</h3>
-          <p>Diagnostic tools to measure Kalynt's responsiveness and hardware efficiency on your machine.</p>
+          <p>Diagnostic tools to measure Kalynt&apos;s responsiveness and hardware efficiency on your machine.</p>
         </div>
       </div>
 

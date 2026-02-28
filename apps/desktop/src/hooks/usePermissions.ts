@@ -33,7 +33,12 @@ export function usePermissions(): PermissionState {
     const { currentSpace } = useAppStore()
     const { getMyRole, getMyPermissions, userId, isUserBanned } = useMemberStore()
 
-    const [permissions, setPermissions] = useState<MemberPermissions>(DEFAULT_PERMISSIONS.member)
+    const [permissions, setPermissions] = useState<MemberPermissions>(() => {
+        if (currentSpace?.id) {
+            return getMyPermissions(currentSpace.id)
+        }
+        return DEFAULT_PERMISSIONS.member
+    })
 
     const spaceId = currentSpace?.id
     const myRole = spaceId ? getMyRole(spaceId) : 'member'
@@ -45,12 +50,16 @@ export function usePermissions(): PermissionState {
 
     useEffect(() => {
         if (!spaceId) {
-            setPermissions(DEFAULT_PERMISSIONS.member)
+            // No reset needed as it's handled by dependencies and initializer
             return
         }
 
-        const perms = getMyPermissions(spaceId)
-        setPermissions(perms)
+        // We already initialize in useState, but we need to stay in sync if spaceId changes
+        const init = async () => {
+            const perms = getMyPermissions(spaceId)
+            setPermissions(perms)
+        }
+        init()
 
         // Subscribe to permission changes from store
         const unsubscribe = useMemberStore.subscribe((state) => {

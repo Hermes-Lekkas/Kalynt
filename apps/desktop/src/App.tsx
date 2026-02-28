@@ -14,6 +14,7 @@ import { NotificationSystem } from './components/NotificationSystem'
 import UpdateModal from './components/UpdateModal'
 import { setModelsDirectory } from './services/modelDownloadService'
 import { logger } from './utils/logger'
+import { p2pService } from './services/p2pService'
 
 // Heavy components loaded on-demand
 const ExtensionManager = lazy(() => import('./components/extensions').then(m => ({ default: m.ExtensionManager })))
@@ -123,17 +124,50 @@ function App() {
     initModels()
   }, [])
 
-  // Handle Deep Links
+  // Handle Deep Links — IPC listener (dispatches custom DOM event)
   useEffect(() => {
     if (window.electronAPI?.on) {
       window.electronAPI.on('deep-link', (url: string) => {
         logger.general.info('Received deep link', { url })
-        // We'll let CollaborationPanel or a global handler process this
-        // For now, let's just expose it via an event or store
-        // Actually, simplest is to dispatch a custom DOM event that components can listen to
         window.dispatchEvent(new CustomEvent('kalynt-deep-link', { detail: { url } }))
       })
     }
+  }, [])
+
+  // Handle Deep Links — DOM event listener (actually joins the workspace)
+  useEffect(() => {
+    const handleDeepLink = (e: Event) => {
+      const { url } = (e as CustomEvent<{ url: string }>).detail
+      logger.general.info('Processing deep link join', { url })
+
+      const parsed = p2pService.parseRoomLink(url)
+      if (!parsed) {
+        logger.general.warn('Could not parse deep link', { url })
+        return
+      }
+
+      // Save password if included in the link
+      if (parsed.password) {
+        localStorage.setItem(`space-settings-${parsed.roomId}`, JSON.stringify({
+          encryptionEnabled: true,
+          roomPassword: parsed.password
+        }))
+      }
+
+      // Switch to or create the shared workspace
+      const store = useAppStore.getState()
+      const existing = store.spaces.find((s) => s.id === parsed.roomId)
+      if (existing) {
+        store.setCurrentSpace(existing)
+      } else {
+        const name = parsed.spaceName || 'Shared Workspace'
+        const newSpace = store.createSpace(name, parsed.roomId)
+        store.setCurrentSpace(newSpace)
+      }
+    }
+
+    window.addEventListener('kalynt-deep-link', handleDeepLink)
+    return () => window.removeEventListener('kalynt-deep-link', handleDeepLink)
   }, [])
 
   // Initialize auto-update system

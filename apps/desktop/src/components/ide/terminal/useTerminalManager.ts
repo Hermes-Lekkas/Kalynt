@@ -13,7 +13,21 @@ export function useTerminalManager(workspacePath?: string | null) {
     const [tabs, setTabs] = useState<TerminalTab[]>(() => {
         try {
             const saved = localStorage.getItem(STORAGE_KEY)
-            return saved ? JSON.parse(saved) : []
+            const parsed = saved ? JSON.parse(saved) : []
+            
+            // If we have tabs, use them
+            if (parsed.length > 0) return parsed
+            
+            // Otherwise create an initial tab if we're not in a test/headless env
+            // We'll use a placeholder and update it in an effect if needed
+            const id = uuidv4()
+            return [{
+                id,
+                title: 'Terminal',
+                shell: window.electronAPI?.platform === 'win32' ? 'powershell.exe' : 'bash',
+                cwd: workspacePath || '',
+                processType: 'shell'
+            }]
         } catch (e) {
             console.error('Failed to load terminal tabs:', e)
             return []
@@ -21,22 +35,35 @@ export function useTerminalManager(workspacePath?: string | null) {
     })
     const [activeTabId, setActiveTabId] = useState<string>(() => {
         try {
-            return localStorage.getItem(ACTIVE_TAB_KEY) || ''
-        } catch (e) {
+            const saved = localStorage.getItem(ACTIVE_TAB_KEY)
+            if (saved) return saved
+            return tabs[0]?.id || ''
+        } catch (_e) {
             return ''
         }
     })
-    const initialized = useRef(false)
     const [defaultShell, setDefaultShell] = useState(window.electronAPI?.platform === 'win32' ? 'powershell.exe' : 'bash')
+    const shellInitialized = useRef(false)
 
-    // Fetch default shell from backend
+    const updateTab = useCallback((id: string, updates: Partial<TerminalTab>) => {
+        setTabs(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
+    }, [])
+
+    // Fetch default shell from backend - only run once on mount
     useEffect(() => {
+        if (shellInitialized.current) return
+        
         window.electronAPI?.terminal.getDefaultShell().then(result => {
             if (result.success && result.shell) {
                 setDefaultShell(result.shell)
+                // Also update the first tab if it was created with a guess and shell is different
+                if (tabs.length === 1 && tabs[0]?.title === 'Terminal' && tabs[0]?.shell !== result.shell) {
+                    updateTab(tabs[0].id, { shell: result.shell })
+                }
+                shellInitialized.current = true
             }
         })
-    }, [])
+    }, []) // Empty dependency array - only run once on mount
 
     // Persist tabs
     useEffect(() => {
@@ -47,23 +74,6 @@ export function useTerminalManager(workspacePath?: string | null) {
     useEffect(() => {
         localStorage.setItem(ACTIVE_TAB_KEY, activeTabId)
     }, [activeTabId])
-
-    // Auto-create initial tab on first mount if none exist
-    useEffect(() => {
-        if (!initialized.current && tabs.length === 0) {
-            initialized.current = true
-            const id = uuidv4()
-            const newTab: TerminalTab = {
-                id,
-                title: 'Terminal',
-                shell: defaultShell,
-                cwd: workspacePath || '',
-                processType: 'shell'
-            }
-            setTabs([newTab])
-            setActiveTabId(id)
-        }
-    }, [tabs.length, defaultShell, workspacePath])
 
     const addTab = useCallback((options?: Partial<TerminalTab>) => {
         const id = uuidv4()
@@ -98,10 +108,6 @@ export function useTerminalManager(workspacePath?: string | null) {
 
     const renameTab = useCallback((id: string, title: string) => {
         setTabs(prev => prev.map(t => t.id === id ? { ...t, title } : t))
-    }, [])
-
-    const updateTab = useCallback((id: string, updates: Partial<TerminalTab>) => {
-        setTabs(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
     }, [])
 
     return {

@@ -24,6 +24,8 @@ import { offlineLLMService, ChatMessage as OfflineChatMessage } from './offlineL
 import { executeTool, stopActiveTool, type ToolContext } from './ideAgentTools'
 import { aimeService } from './aimeService'
 import { shadowWorkspaceService } from './shadowWorkspaceService'
+import { cycleDetectionService } from './cycleDetectionService'
+import { toolCacheService } from './toolCacheService'
 import { useModelStore } from '../stores/modelStore'
 import { estimateTokens, truncateToTokens } from '../utils/tokenCounter'
 import { detectModelTier } from '../instructions'
@@ -202,6 +204,9 @@ class AgentLoopService {
     private workspacePath: string = ''
     private useOfflineAI: boolean = false
     private cloudProvider: AIProvider = 'openai'
+    
+    // Cache for this run
+    private cacheEnabled = true
 
     // --- Configuration ---
 
@@ -294,6 +299,14 @@ class AgentLoopService {
         }
 
         this.emit({ type: 'started', runId, userMessage })
+        
+        // Initialize cycle detection
+        cycleDetectionService.startRun(runId)
+        
+        // Clear tool cache for new run
+        if (this.cacheEnabled) {
+            toolCacheService.clear()
+        }
 
         try {
             // 1. Gather context from AIME (RAG)
@@ -503,6 +516,26 @@ class AgentLoopService {
                     }
                 }
 
+                // Record state for cycle detection
+                const toolNames = toolCalls.map(tc => tc.name)
+                const fileOps = this.state.modifiedFiles.slice(-5) // Last 5 modified files
+                const cycle = cycleDetectionService.recordState(toolNames, fileOps, response)
+                
+                if (cycle) {
+                    this.addStep({
+                        type: 'error',
+                        content: `Cycle detected: ${cycle.type}. Suggested action: ${cycle.suggestedAction.type}`
+                    })
+                    this.emit({ type: 'error', error: `Cycle detected: ${cycle.type}` })
+                    
+                    // Add cycle break suggestion to tool results
+                    toolResults.push(
+                        `\n⚠️ CYCLE DETECTED: The agent appears to be stuck in a ${cycle.type} pattern. ` +
+                        `Suggestion: ${JSON.stringify(cycle.suggestedAction)}. ` +
+                        `Try a completely different approach or ask for clarification.`
+                    )
+                }
+
                 // Append assistant response ONCE + combined tool results as a single user message
                 // This prevents conversation corruption from duplicating the assistant response per tool
                 if (toolResults.length > 0) {
@@ -541,6 +574,26 @@ class AgentLoopService {
                 this.state.isGenerating = false
             }
             this.abortController = null
+            
+            // End cycle detection and log results
+            const cycles = cycleDetectionService.endRun()
+            if (cycles.length > 0) {
+                logger.agent.warn('Cycles detected during run', {
+                    count: cycles.length,
+                    types: cycles.map(c => c.type)
+                })
+            }
+            
+            // Log cache statistics
+            if (this.cacheEnabled) {
+                const cacheStats = toolCacheService.getStats()
+                const hitRate = toolCacheService.getHitRate()
+                logger.agent.debug('Tool cache statistics', {
+                    hitRate: `${hitRate.toFixed(1)}%`,
+                    hits: cacheStats.hits,
+                    misses: cacheStats.misses
+                })
+            }
         }
     }
 
@@ -567,11 +620,15 @@ class AgentLoopService {
         this.abortController?.abort()
 
         // Cancel active tool execution
-        await stopActiveTool().catch(() => { })
+        await stopActiveTool().catch((error) => {
+            logger.agent.warn('Failed to stop active tool during abort', { error: String(error) })
+        })
 
         // Cancel LLM generation
         if (this.useOfflineAI) {
-            await offlineLLMService.cancelGeneration().catch(() => { })
+            await offlineLLMService.cancelGeneration().catch((error) => {
+                logger.agent.warn('Failed to cancel offline generation during abort', { error: String(error) })
+            })
         } else {
             aiService.cancelStream()
         }

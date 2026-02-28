@@ -1,7 +1,7 @@
 ﻿/*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebrtcProvider } from 'y-webrtc'
@@ -225,6 +225,18 @@ export function useYDoc(spaceId: string | null) {
 
             if (!isMountedRef.current) return
 
+            // FIX: Initialize member sync IMMEDIATELY after connecting
+            // (before the 500ms encryption await so role/permission management starts right away)
+            const { userId: memberUserId, displayName: memberDisplayName } = useMemberStore.getState()
+            memberSyncService.initializeSpace(
+                spaceId,
+                ydoc,
+                yprovider.awareness,
+                memberUserId,
+                memberDisplayName
+            )
+            console.log(`[Members] Initialized P2P sync for space ${spaceId}`)
+
             // CRITICAL FIX: Initialize encryption AFTER connecting so we can receive salt from peers
             // This fixes the issue where each peer generates different salts and can't decrypt each other's messages
             if (passwordValue) {
@@ -292,17 +304,6 @@ export function useYDoc(spaceId: string | null) {
                     console.error('[CRDT] Failed to initialize encryption:', e)
                 }
             }
-
-            // Initialize member sync for P2P role/permission management
-            const { userId, displayName } = useMemberStore.getState()
-            memberSyncService.initializeSpace(
-                spaceId,
-                ydoc,
-                yprovider.awareness,
-                userId,
-                displayName
-            )
-            console.log(`[Members] Initialized P2P sync for space ${spaceId}`)
 
             // Track sync state
             const persistence = persistences.get(spaceId)
@@ -428,7 +429,9 @@ export function useYText(doc: Y.Doc | null, key: string) {
         yTextRef.current.delete(index, length)
     }, [])
 
-    return { text, updateText, insertText, deleteText, yText: yTextRef.current }
+    const yText = useMemo(() => yTextRef.current, [])
+
+    return { text, updateText, insertText, deleteText, yText }
 }
 
 /**
@@ -479,7 +482,9 @@ export function useYArray<T>(doc: Y.Doc | null, key: string) {
         })
     }, [doc])
 
-    return { items, push, insert, remove, update, yArray: yArrayRef.current }
+    const yArray = useMemo(() => yArrayRef.current, [])
+
+    return { items, push, insert, remove, update, yArray }
 }
 
 /**
@@ -521,7 +526,9 @@ export function useYMap<T>(doc: Y.Doc | null, key: string) {
         return yMapRef.current?.get(k)
     }, [])
 
-    return { data, set, remove, get, yMap: yMapRef.current }
+    const yMap = useMemo(() => yMapRef.current, [])
+
+    return { data, set, remove, get, yMap }
 }
 
 /**
@@ -532,7 +539,10 @@ export function useAwareness(provider: WebrtcProvider | null) {
 
     useEffect(() => {
         if (!provider) {
-            setUsers(new Map())
+            const reset = async () => {
+                setUsers(new Map())
+            }
+            reset()
             return
         }
 

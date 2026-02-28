@@ -2,12 +2,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import React from 'react'
-import { useAppStore } from '../stores/appStore'
 import { useNotificationStore, Notification } from '../stores/notificationStore'
 import { X, Info, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react'
 
 export const NotificationSystem: React.FC = () => {
-    const { } = useAppStore()
     const { notifications, removeNotification } = useNotificationStore()
 
     if (notifications.length === 0) return null

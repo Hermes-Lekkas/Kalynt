@@ -3,6 +3,9 @@
  */
 const APP_START_TIME = Date.now()
 import { app, BrowserWindow, ipcMain, dialog, session } from 'electron'
+// SECURITY FIX: Enable sandbox mode for all platforms
+// This must be called before app.whenReady() for full effect
+app.enableSandbox()
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -27,10 +30,15 @@ import { setupBuildHandlers } from './handlers/build'
 import { setupDebugHandlers } from './handlers/debug'
 import { registerUpdateHandlers, initializeAutoUpdater } from './handlers/update-handler'
 import { extensionHostManager } from './extensions/extensionHostManager'
+import { startSignalingServer } from './signalingServer'
+import type { SignalingServerHandle } from './signalingServer'
 
 // Window and workspace state
 let mainWindow: BrowserWindowType | null = null
 let currentWorkspacePath: string | null = null
+
+// Built-in P2P signaling server handle
+let signalingServer: SignalingServerHandle | null = null
 
 // SECURITY: Deep link validation to prevent URL-based attacks
 // Only allow safe paths that match expected patterns
@@ -69,21 +77,22 @@ function validateDeepLink(link: string): string | null {
     }
 }
 
-// Environment
+// VITE_DEV_SERVER_URL
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 
-// Linux Optimization: Disable hardware acceleration to prevent persistent VSync/GL errors
-if (process.platform === 'linux') {
-    app.disableHardwareAcceleration()
-}
+// Hardware Acceleration: Enable by default for better UI performance. 
+// If Linux users experience GL errors, they can use --disable-gpu flag.
+// if (process.platform === 'linux') {
+//     app.disableHardwareAcceleration()
+// }
 
-// RAM Optimization: Expose V8 Garbage Collector & Optimize for Memory Size
-app.commandLine.appendSwitch('js-flags', '--expose_gc --optimize_for_size --max-old-space-size=256 --lite-mode')
+// Performance Optimization: Increase heap size and allow V8 to optimize for speed.
+app.commandLine.appendSwitch('js-flags', '--expose_gc --max-old-space-size=4096')
 
-// RAM Optimization: Chromium-level memory savings
-app.commandLine.appendSwitch('disable-gpu-compositing')       // Reduces GPU process memory ~50MB
+// GPU Optimization: Enable GPU compositing for smooth animations.
+// app.commandLine.appendSwitch('disable-gpu-compositing')       // Reduces GPU process memory ~50MB
 app.commandLine.appendSwitch('disable-software-rasterizer')   // Prevent fallback software renderer
-app.commandLine.appendSwitch('in-process-gpu')                // Merge GPU into main process (~80MB saved)
+// app.commandLine.appendSwitch('in-process-gpu')                // Merge GPU into main process (~80MB saved)
 app.commandLine.appendSwitch('disable-background-networking') // No idle network threads
 app.commandLine.appendSwitch('disable-breakpad')              // No crash reporter memory overhead
 app.commandLine.appendSwitch('disable-component-update')      // No background component updates
@@ -91,7 +100,7 @@ app.commandLine.appendSwitch('disable-domain-reliability')    // No domain relia
 app.commandLine.appendSwitch('disable-features', 'TranslateUI,BlinkGenPropertyTrees,AudioServiceOutOfProcess')
 app.commandLine.appendSwitch('enable-features', 'CalculateNativeWinOcclusion') // Trim RS when occluded
 app.commandLine.appendSwitch('force-color-profile', 'srgb')   // Simpler color management
-app.commandLine.appendSwitch('renderer-process-limit', '1')   // Only one renderer process
+// app.commandLine.appendSwitch('renderer-process-limit', '1')   // Only one renderer process
 app.commandLine.appendSwitch('disable-renderer-backgrounding')// Stop renderer from going to background priority
 
 // Directory constants (initialized after app is ready)
@@ -154,7 +163,7 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: !isLinux,  // Disable sandbox on Linux for dev stability
+            sandbox: true,  // SECURITY FIX: Enable sandbox on all platforms for production security
             spellcheck: false,  // RAM: Saves ~20-30MB (no dictionary loaded)
             v8CacheOptions: 'bypassHeatCheck',  // RAM: Faster V8 code caching, less heap growth
             backgroundThrottling: true,  // RAM: Throttle timers/requestAnimationFrame when hidden
@@ -167,20 +176,28 @@ function createWindow() {
     mainWindow = win
 
     // SECURITY FIX: Add Content Security Policy headers
-    // This prevents XSS attacks from loading external scripts
+    // HIGH-003: Strengthened CSP with additional directives
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
         callback({
             responseHeaders: {
                 ...details.responseHeaders,
                 'Content-Security-Policy': [
                     "default-src 'self';" +
+                    // HIGH-003 NOTE: unsafe-eval required for some bundler features
+                    // Consider removing if app works without it after testing
                     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net http://localhost:8097;" +
                     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net;" +
                     "img-src 'self' data: blob: https:;" +
                     "font-src 'self' data: https://fonts.gstatic.com;" +
-                    "connect-src 'self' ws: wss: https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://*.signaling.yjs.dev http://localhost:8097 ws://localhost:8097 https://open-vsx.org;" +
+                    // P2P signaling: ws://localhost:4444 (built-in server) + explicit external hosts only
+                    "connect-src 'self' ws://localhost:4444 https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com http://localhost:8097 ws://localhost:8097 https://open-vsx.org;" +
                     "media-src 'self' blob:;" +
-                    "worker-src 'self' blob:;"
+                    "worker-src 'self' blob:;" +
+                    // HIGH-003 FIX: Additional security directives
+                    "object-src 'none';" +  // Prevent Flash/Java applets
+                    "base-uri 'self';" +    // Restrict base tag manipulation
+                    "form-action 'self';" + // Restrict form submissions
+                    "frame-ancestors 'none';"  // Prevent clickjacking (Electron apps shouldn't be framed)
                 ]
             }
         })
@@ -384,6 +401,17 @@ if (!gotTheLock) {
         // Register handlers BEFORE creating window to ensure they are available
         registerAllHandlers()
 
+        // Start built-in P2P signaling server (used by y-webrtc in the renderer)
+        console.log('[Main] Starting built-in signaling server...');
+        startSignalingServer(4444)
+            .then(handle => {
+                signalingServer = handle
+                console.log(`[Main] Signaling server ready at ${handle.url}`)
+            })
+            .catch(err => {
+                console.error('[Main] Failed to start signaling server:', err)
+            })
+
         console.log('[Main] Creating window...');
         createWindow()
 
@@ -413,6 +441,13 @@ app.on('open-url', (event, url) => {
         if (validatedLink) {
             mainWindow.webContents.send('deep-link', validatedLink)
         }
+    }
+})
+
+app.on('before-quit', () => {
+    if (signalingServer) {
+        signalingServer.close()
+        signalingServer = null
     }
 })
 

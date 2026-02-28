@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { useYDoc, useYArray, useAwareness } from '../hooks/useYjs'
 import { usePermissions } from '../hooks/usePermissions'
@@ -104,9 +104,12 @@ export interface ChatMessage {
 // --- Component ---
 interface UnifiedAgentPanelProps {
     readonly workspacePath: string | null
-    readonly currentFile: string | null
-    readonly currentFileContent: string | null
+    /** @deprecated These props are not used internally but kept for API compatibility */
+    readonly currentFile?: string | null
+    /** @deprecated These props are not used internally but kept for API compatibility */
+    readonly currentFileContent?: string | null
     readonly editorMode?: any
+    /** @deprecated These props are not used internally but kept for API compatibility */
     readonly onRunCommand?: (command: string) => void
 }
 
@@ -161,7 +164,7 @@ export default function UnifiedAgentPanel({
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
-    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isMountedRef = useRef(true)
     const processedMessagesRef = useRef<Set<string>>(new Set())
     const initializedRef = useRef(false)
@@ -191,25 +194,12 @@ export default function UnifiedAgentPanel({
             if (session) {
                 setAiMessages(session.messages)
             }
-        } else if (sessions.length > 0) {
-            // Load most recent if none selected
-            setCurrentSession(sessions[0].id)
-        } else {
-            // Create first session if none exist
+        } else if (sessions.length === 0) {
+            // Create first session if none exist - only when sessions array is empty
             createSession('First Chat')
         }
-    }, [currentSessionId])
-
-    // Update session when messages change (if not just loading)
-    useEffect(() => {
-        if (currentSessionId && aiMessages.length > 0) {
-            const session = sessions.find(s => s.id === currentSessionId)
-            if (session && session.messages.length !== aiMessages.length) {
-                // We don't use updateSession here to avoid infinite loops, 
-                // messages are added via addMessageToSession usually
-            }
-        }
-    }, [aiMessages, currentSessionId])
+        // Note: setCurrentSession is not used here, removed from deps
+    }, [currentSessionId, sessions, createSession])
 
     // --- Mention Notifications ---
     useEffect(() => {
@@ -303,7 +293,7 @@ export default function UnifiedAgentPanel({
         const p2p = fileTransferService.getFiles().map(f => ({ name: f.name, path: f.id, type: 'p2p' }))
         const local = localFiles.map(f => ({ name: f.name, path: f.path, type: 'local' }))
         return [...p2p, ...local]
-    }, [currentSpace?.id, localFiles])
+    }, [localFiles])
 
     const filteredSuggestions = useMemo(() => {
         if (!showSuggestions) return []
@@ -424,6 +414,14 @@ export default function UnifiedAgentPanel({
         isMountedRef.current = true
         return () => {
             isMountedRef.current = false
+            // Clear typing timeout to prevent state updates on unmounted component
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current)
+            }
+            // Clear scroll timeout
+            if (scrollTimeoutRef.current) {
+                clearTimeout(scrollTimeoutRef.current)
+            }
         }
     }, [])
 
@@ -555,6 +553,7 @@ export default function UnifiedAgentPanel({
                     resolve: (result) => {
                         resolve(result)
                         setPendingToolRequest(null)
+                        setToolConfirmationResolver(null)
                         setTimeout(scrollToBottom, 100)
                     }
                 })
@@ -567,22 +566,39 @@ export default function UnifiedAgentPanel({
         toolPermissionManager.setReadOnlyAutoAllow(true)
 
         return () => {
+            // FIX: Reject any pending confirmation before cleanup to unblock agent loop
+            if (toolConfirmationResolver) {
+                toolConfirmationResolver.resolve({ approved: false, alwaysAllow: false })
+                setToolConfirmationResolver(null)
+            }
             toolPermissionManager.setConfirmationHandler(null as any)
             toolPermissionManager.setTrustedMode(false)
             toolPermissionManager.clearSession()
         }
+    }, [toolConfirmationResolver])
+
+
+    // Scroll to bottom helper with debounce
+    const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    
+    const scrollToBottom = useCallback(() => {
+        if (scrollTimeoutRef.current) {
+            clearTimeout(scrollTimeoutRef.current)
+        }
+        scrollTimeoutRef.current = setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }, 100)
     }, [])
 
-
-    // Scroll to bottom helper
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-
-    // Scroll to bottom on changes
+    // Scroll to bottom on message changes only (not on activity log changes)
     useEffect(() => {
         scrollToBottom()
-    }, [p2pMessages, aiMessages, streamingContent, activeMode, agent.activityLog, showLog])
+        return () => {
+            if (scrollTimeoutRef.current) {
+                clearTimeout(scrollTimeoutRef.current)
+            }
+        }
+    }, [p2pMessages.length, aiMessages.length, streamingContent, activeMode, showLog, scrollToBottom])
 
     // Focus input
     useEffect(() => {
@@ -593,41 +609,52 @@ export default function UnifiedAgentPanel({
     // --- P2P Encryption Logic ---
     useEffect(() => {
         if (!currentSpace || !encryptionEnabled) return
+        
         const decryptAll = async () => {
             const roomKey = encryptionService.getRoomKey(currentSpace.id)
             if (!roomKey) return
-            const newCache = new Map(decryptedCache)
-            const newErrors = new Set(decryptionErrors)
-            let changed = false
+            
+            // Use functional updates to avoid dependency on state
+            const processedIds = new Set<string>()
+            
+            // Process each message
             for (const msg of p2pMessages) {
-                if (!msg.encrypted || newCache.has(msg.id) || newErrors.has(msg.id)) continue
+                if (!msg.encrypted || processedIds.has(msg.id)) continue
+                processedIds.add(msg.id)
+                
+                // Skip already processed messages using functional state check
+                let shouldSkip = false
+                setDecryptedCache(prev => {
+                    if (prev.has(msg.id)) shouldSkip = true
+                    return prev
+                })
+                setDecryptionErrors(prev => {
+                    if (prev.has(msg.id)) shouldSkip = true
+                    return prev
+                })
+                
+                if (shouldSkip) continue
+                
                 try {
                     const payload: EncryptedPayload = JSON.parse(msg.content)
                     const decrypted = await encryptionService.decryptToString(payload, roomKey)
 
                     // Handle structured message format
+                    let content: string
                     try {
                         const parsed = JSON.parse(decrypted)
-                        if (parsed.text) {
-                            newCache.set(msg.id, parsed.text)
-                        } else {
-                            newCache.set(msg.id, decrypted)
-                        }
+                        content = parsed.text || decrypted
                     } catch {
-                        newCache.set(msg.id, decrypted)
+                        content = decrypted
                     }
 
-                    changed = true
+                    setDecryptedCache(prev => new Map(prev).set(msg.id, content))
                 } catch (_e) {
-                    newErrors.add(msg.id)
-                    changed = true
+                    setDecryptionErrors(prev => new Set(prev).add(msg.id))
                 }
             }
-            if (changed) {
-                setDecryptedCache(newCache)
-                setDecryptionErrors(newErrors)
-            }
         }
+        
         decryptAll()
     }, [p2pMessages, currentSpace, encryptionEnabled])
 

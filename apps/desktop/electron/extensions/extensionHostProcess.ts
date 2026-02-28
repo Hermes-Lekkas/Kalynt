@@ -6,7 +6,6 @@
 
 import * as path from 'path'
 import * as fs from 'fs'
-import { fork, ChildProcess } from 'child_process'
 import Module from 'module'
 
 // Message types for communication with main process
@@ -55,28 +54,28 @@ class ExtensionHost {
     const originalWarn = console.warn
     const originalError = console.error
 
-    console.log = (...args: unknown[]) => {
+    console.log = (..._args: unknown[]) => {
       this.sendMessage({
         type: 'log-message',
-        payload: { level: 'info', message: args.map(String).join(' ') }
+        payload: { level: 'info', message: _args.map(String).join(' ') }
       })
-      originalLog.apply(console, args)
+      originalLog.apply(console, _args)
     }
 
-    console.warn = (...args: unknown[]) => {
+    console.warn = (..._args: unknown[]) => {
       this.sendMessage({
         type: 'log-message',
-        payload: { level: 'warn', message: args.map(String).join(' ') }
+        payload: { level: 'warn', message: _args.map(String).join(' ') }
       })
-      originalWarn.apply(console, args)
+      originalWarn.apply(console, _args)
     }
 
-    console.error = (...args: unknown[]) => {
+    console.error = (..._args: unknown[]) => {
       this.sendMessage({
         type: 'log-message',
-        payload: { level: 'error', message: args.map(String).join(' ') }
+        payload: { level: 'error', message: _args.map(String).join(' ') }
       })
-      originalError.apply(console, args)
+      originalError.apply(console, _args)
     }
   }
 
@@ -519,7 +518,7 @@ class ExtensionHost {
       
       // Commands
       commands: {
-        registerCommand: (command: string, callback: (...args: unknown[]) => unknown) => {
+        registerCommand: (command: string, _callback: (...args: unknown[]) => unknown) => {
           this.sendMessage({
             type: 'register-command',
             payload: { extensionId, command }
@@ -539,7 +538,7 @@ class ExtensionHost {
         },
         executeCommand: (command: string, ...args: unknown[]) => {
           const messageId = this.nextMessageId++
-          return new Promise((resolve) => {
+          return new Promise((resolve, reject) => {
             this.pendingResponses.set(messageId, { resolve })
             this.sendMessage({
               type: 'execute-command',
@@ -549,7 +548,8 @@ class ExtensionHost {
             setTimeout(() => {
               if (this.pendingResponses.has(messageId)) {
                 this.pendingResponses.delete(messageId)
-                resolve(undefined)
+                // HIGH-001 FIX: Properly reject the promise on timeout instead of resolving with undefined
+                reject(new Error(`Command execution timeout: ${command}`))
               }
             }, 10000)
           })
@@ -580,7 +580,7 @@ class ExtensionHost {
 
       // Workspace
       workspace: {
-        getConfiguration: (section?: string) => ({
+        getConfiguration: (_section?: string) => ({
           get: (key: string, defaultValue?: unknown) => defaultValue,
           update: async () => {}
         }),

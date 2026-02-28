@@ -2,7 +2,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { useState, useEffect, useRef } from 'react'
-import { useAppStore } from '../stores/appStore'
 import { hardwareService, type RealTimeStats } from '../services/hardwareService'
 import { Cpu, HardDrive, Wifi, WifiOff, MemoryStick, Gpu, Play, Pause, RotateCcw } from 'lucide-react'
 
@@ -19,7 +18,6 @@ interface ResourceMonitorProps {
 }
 
 export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
-  const { } = useAppStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [stats, setStats] = useState<RealTimeStats | null>(null)
 
@@ -41,8 +39,13 @@ export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
   const [showIntegrated, setShowIntegrated] = useState(false)
 
   // Session timer state
-  const [timerSeconds, setTimerSeconds] = useState(0)
-  const [timerRunning, setTimerRunning] = useState(false)
+  const [timerSeconds, setTimerSeconds] = useState(() => {
+    const saved = localStorage.getItem('session-timer-seconds')
+    return saved ? parseInt(saved, 10) : 0
+  })
+  const [timerRunning, setTimerRunning] = useState(() => {
+    return localStorage.getItem('session-timer-running') === 'true'
+  })
 
   // ALWAYS show all metrics for now
   const showCpu = true
@@ -52,14 +55,6 @@ export default function ResourceMonitor({ onToggle }: ResourceMonitorProps) {
   const showGpu = true
   const showVram = true
   const showTimer = true
-
-  // Load initial state
-  useEffect(() => {
-    const savedTime = localStorage.getItem('session-timer-seconds')
-    const savedRunning = localStorage.getItem('session-timer-running')
-    if (savedTime) setTimerSeconds(parseInt(savedTime, 10))
-    if (savedRunning === 'true') setTimerRunning(true)
-  }, [])
 
   // Timer persistence
   useEffect(() => {

@@ -51,11 +51,8 @@ export default function FilesPanel() {
       (fileId, progress) => setUploadProgress(prev => ({ ...prev, [fileId]: progress }))
     )
 
-    setFiles(fileTransferService.getFiles())
-    setPeers(fileTransferService.getPeers())
-
     return () => fileTransferService.destroy()
-  }, [currentSpace?.id, isBanned])
+  }, [currentSpace, isBanned])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -78,7 +75,7 @@ export default function FilesPanel() {
   }
 
   const filteredAndSortedFiles = useMemo(() => {
-    let result = files.filter(file => {
+    const result = files.filter(file => {
       const matchesSearch = file.name.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesCategory = activeCategory === 'all' || categorizeFile(file.type) === activeCategory
       return matchesSearch && matchesCategory

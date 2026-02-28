@@ -28,6 +28,56 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
   const [newSpaceName, setNewSpaceName] = useState('')
   const [cloneUrl, setCloneUrl] = useState('')
   
+  // Dynamic Greeting State
+  const [msgIndex, setMsgIndex] = useState(0)
+  const [isAnimating, setIsAnimating] = useState(false)
+
+  const suggestions = useMemo(() => [
+    {
+      title: (
+        <>Welcome Back, <span className="gradient-text">{userName.split(' ')[0]}.</span></>
+      ),
+      subtitle: "Authorized access verified. All local nodes are operational and synchronized.",
+      isGreeting: true
+    },
+    {
+      title: "Ready to Build?",
+      subtitle: "Initialize a new workspace to start your next big project.",
+      action: "Initialize"
+    },
+    {
+      title: "Need Collaboration?",
+      subtitle: "Join a secure P2P session and code with your team in real-time.",
+      action: "Join"
+    },
+    {
+      title: "Importing Code?",
+      subtitle: "Clone a repository directly into a new Kalynt workspace.",
+      action: "Clone"
+    },
+    {
+      title: "Security First?",
+      subtitle: "Configure your node's end-to-end encryption in the security settings.",
+      action: "Security"
+    },
+    {
+      title: "Check Performance?",
+      subtitle: "Monitor your system's neural latency and engine RAM load.",
+      action: "Monitor"
+    }
+  ], [userName])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsAnimating(true)
+      setTimeout(() => {
+        setMsgIndex((prev) => (prev + 1) % suggestions.length)
+        setIsAnimating(false)
+      }, 500)
+    }, 6000)
+    return () => clearInterval(interval)
+  }, [suggestions.length])
+
   // Real-time Stats State
   const [stats, setStats] = useState<RealTimeStats | null>(null)
 
@@ -183,10 +233,12 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
           <div className="bento-grid">
             <div className="bento-card welcome-hero">
               <div className="card-bg-glow" />
-              <div className="hero-content">
-                <div className="version-tag">Kalynt Core {version.split(' ')[0]}</div>
-                <h1>Welcome Back, <span className="gradient-text">{userName.split(' ')[0]}.</span></h1>
-                <p>Authorized access verified. All local nodes are operational and synchronized.</p>
+              <div className={`hero-content ${isAnimating ? 'animating-out' : 'animating-in'}`} key={msgIndex}>
+                <div className="version-tag">
+                  {suggestions[msgIndex].isGreeting ? `Kalynt Core ${version.split(' ')[0]}` : 'Pro Tip'}
+                </div>
+                <h1>{suggestions[msgIndex].title}</h1>
+                <p>{suggestions[msgIndex].subtitle}</p>
               </div>
             </div>
 
@@ -385,6 +437,24 @@ export default function WorkspaceManager({ onShowCollaboration }: WelcomeScreenP
         .version-tag { font-size: 10px; font-weight: 800; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
         .welcome-hero h1 { font-size: 28px; font-weight: 800; color: var(--color-text); margin-bottom: 8px; letter-spacing: -0.02em; }
         .welcome-hero p { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
+
+        .animating-in {
+          animation: text-reveal-in 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        .animating-out {
+          animation: text-reveal-out 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        @keyframes text-reveal-in {
+          from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+
+        @keyframes text-reveal-out {
+          from { opacity: 1; transform: translateY(0); filter: blur(0); }
+          to { opacity: 0; transform: translateY(-10px); filter: blur(4px); }
+        }
 
         .gradient-text { background: linear-gradient(135deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 

@@ -33,7 +33,7 @@ export class BuildAccelerator {
         if (fs.existsSync(this.metadataPath)) {
             try {
                 this.metadata = JSON.parse(fs.readFileSync(this.metadataPath, 'utf-8'))
-            } catch (e) {
+            } catch (_e) {
                 this.metadata = {}
             }
         }

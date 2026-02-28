@@ -19,6 +19,7 @@ export interface InferenceOptions {
     stopSequences?: string[]
     jsonSchema?: object
     onToken?: (token: string) => void
+    timeoutMs?: number
 }
 
 const DEFAULT_OPTIONS: InferenceOptions = {
@@ -301,8 +302,7 @@ class OfflineLLMService {
         messages: ChatMessage[],
         options: InferenceOptions = {}
     ): Promise<string> {
-
-        return await this.generateStream(
+        return await this.generateStreamWithRetry(
             messages,
             () => { },
             options
@@ -333,16 +333,25 @@ class OfflineLLMService {
         console.log('[OfflineLLM] Stop sequences:', stopSequences)
 
         try {
-
             const streamFn = globalThis.window.electronAPI?.generateCompletionStream
             if (!streamFn) {
-
                 throw new Error('Streaming generation is not supported by the current app version.')
             }
 
             return await new Promise((resolve, reject) => {
                 let fullText = ''
                 let completed = false
+
+                // Timeout mechanism
+                const timeoutMs = opts.timeoutMs || 60000
+                const timeoutId = setTimeout(() => {
+                    if (!completed) {
+                        completed = true
+                        this.currentRequestId = null
+                        console.warn('[OfflineLLM] Generation timeout, returning partial result')
+                        resolve(cleanResponse(fullText))
+                    }
+                }, timeoutMs)
 
                 const requestId = streamFn(
                     {
@@ -358,12 +367,12 @@ class OfflineLLMService {
                         onToken(token)
                     },
                     (error) => {
+                        clearTimeout(timeoutId)
                         if (completed) return
                         completed = true
                         this.currentRequestId = null
 
                         if (error) {
-
                             if (error.includes('Aborted') || error.includes('abort')) {
                                 console.log('[OfflineLLM] Generation aborted, returning partial result')
                                 resolve(cleanResponse(fullText))
@@ -419,6 +428,118 @@ class OfflineLLMService {
 
     isGenerating(): boolean {
         return this.currentRequestId !== null
+    }
+
+    // Health check for loaded model
+    async checkModelHealth(): Promise<boolean> {
+        if (!this.isModelLoaded) return false
+        
+        try {
+            const result = await this.generate([
+                { role: 'user', content: 'Hello' }
+            ], { maxTokens: 5, timeoutMs: 5000 })
+            return result.length > 0
+        } catch (error) {
+            console.error('[OfflineLLM] Model health check failed:', error)
+            await this.unloadModel()
+            return false
+        }
+    }
+
+    // Load model with fallback mechanism
+    async loadModelWithFallback(modelId: string, maxRetries: number = 1): Promise<boolean> {
+        let attempt = 0
+        
+        while (attempt <= maxRetries) {
+            try {
+                console.log(`[OfflineLLM] Loading model attempt ${attempt + 1}/${maxRetries + 1}: ${modelId}`)
+                const success = await this.loadModel(modelId)
+                if (success) {
+                    const healthCheck = await this.checkModelHealth()
+                    if (healthCheck) {
+                        console.log('[OfflineLLM] Model loaded and healthy:', modelId)
+                        return true
+                    } else {
+                        console.warn('[OfflineLLM] Model loaded but failed health check:', modelId)
+                        await this.unloadModel()
+                    }
+                }
+            } catch (error) {
+                console.error(`[OfflineLLM] Load attempt ${attempt + 1} failed for ${modelId}:`, error)
+            }
+            
+            attempt++
+            if (attempt <= maxRetries) {
+                console.log(`[OfflineLLM] Retrying in ${1000 * Math.pow(2, attempt)}ms...`)
+                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)))
+            }
+        }
+        
+        // Try fallback models
+        return await this.tryFallbackModels(modelId)
+    }
+
+    private async tryFallbackModels(originalModelId: string): Promise<boolean> {
+        const fallbackModels = ['llama2-7b-chat', 'mistral-7b'] // Common small models
+        const store = useModelStore.getState()
+        
+        for (const fallbackId of fallbackModels) {
+            if (fallbackId === originalModelId) continue
+            
+            if (store.downloadedModels[fallbackId]) {
+                try {
+                    console.log(`[OfflineLLM] Trying fallback model: ${fallbackId}`)
+                    const success = await this.loadModel(fallbackId)
+                    if (success) {
+                        const healthCheck = await this.checkModelHealth()
+                        if (healthCheck) {
+                            console.log('[OfflineLLM] Fallback model loaded successfully:', fallbackId)
+                            return true
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[OfflineLLM] Fallback model ${fallbackId} failed:`, error)
+                }
+            }
+        }
+        
+        return false
+    }
+
+    // Generate with retry mechanism
+    async generateStreamWithRetry(
+        messages: ChatMessage[],
+        onToken: (token: string) => void,
+        options: InferenceOptions = {},
+        maxRetries: number = 2
+    ): Promise<string> {
+        let lastError: Error | null = null
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                // Check model health before generation if not first attempt
+                if (attempt > 0 && (!this.isModelLoaded || !await this.checkModelHealth())) {
+                    console.log(`[OfflineLLM] Model not healthy, reloading for attempt ${attempt + 1}`)
+                    if (this.currentModelId) {
+                        await this.loadModel(this.currentModelId)
+                    }
+                }
+                
+                console.log(`[OfflineLLM] Generation attempt ${attempt + 1}/${maxRetries + 1}`)
+                return await this.generateStream(messages, onToken, options)
+            } catch (error) {
+                lastError = error as Error
+                console.warn(`[OfflineLLM] Generation attempt ${attempt + 1} failed:`, lastError.message)
+                
+                if (attempt < maxRetries) {
+                    const delay = 1000 * Math.pow(2, attempt)
+                    console.log(`[OfflineLLM] Retrying in ${delay}ms...`)
+                    await new Promise(resolve => setTimeout(resolve, delay))
+                }
+            }
+        }
+        
+        throw lastError || new Error('All generation attempts failed')
     }
 
     /**
