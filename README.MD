@@ -11,7 +11,7 @@
   </p>
 
   [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-  [![Version](https://img.shields.io/badge/version-v1.0.4--beta-green)](https://github.com/Hermes-Lekkas/Kalynt/releases)
+  [![Version](https://img.shields.io/badge/version-v1.0.5--beta-green)](https://github.com/Hermes-Lekkas/Kalynt/releases)
   [![Platform](https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey)](https://github.com/Hermes-Lekkas/Kalynt/releases)
 </div>
 
@@ -62,6 +62,23 @@
 *   **Cloud Fallback:** Seamlessly switch to OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet), or Google (Gemini 1.5 Pro) when you need extra horsepower.
 *   **RAG Engine:** AIME indexes your entire codebase semantically, allowing the agent to retrieve relevant context for complex tasks.
 *   **Model Manager:** Download, manage, and configure local GGUF models directly from the IDE.
+*   **50+ Language Support:** Expanded file extension coverage including TypeScript, Python, Go, Rust, Java, C/C++, C#, Ruby, PHP, Swift, and more.
+
+### Agentic AI System (New in v1.0.5)
+A comprehensive architecture overhaul with 26 new services enabling autonomous decision-making and intelligent task execution:
+
+*   **Transaction Service:** ACID-compliant file operations with shadow file system and commit/rollback support
+*   **Cycle Detection:** Automatic detection and breaking of infinite loops in agent execution with randomized backoff
+*   **Tool Cache:** LRU cache with TTL invalidation and file dependency tracking for automatic cache invalidation
+*   **Goal Stack:** Hierarchical task planning with goal decomposition, dependency management, and plan persistence
+*   **Intent Classification:** 14 task categories (code generation, debugging, refactoring, etc.) with intelligent routing
+*   **Confidence Scoring:** Tool performance tracking with historical success rates and auto-approval for high-confidence operations
+*   **Learning Service:** Correction history database with pattern matching for similar errors and adaptive tool selection
+*   **Symbol Service:** Comprehensive symbol relationship tracking with impact analysis for refactoring
+*   **Semantic Operations:** High-level refactoring (extract method, rename symbol, move symbol) with automatic reference updates
+*   **Parallel Execution:** Concurrent tool execution with dependency analysis, topological sorting, and resource conflict detection
+*   **Context Assembly:** Priority-based context management with token budget management and intelligent deduplication
+*   **Token Optimization:** Context window optimization with compression strategies and conversation window management
 
 ### Privacy & Security by Design
 *   **Local-First:** Your code, chat history, and vector embeddings live strictly on your disk.
@@ -72,6 +89,9 @@
 *   **Update Integrity:** GitHub token validation and checksum verification for all updates.
 *   **Security Scanning:** Integrated workspace scanner for code quality and vulnerability detection.
 *   **Audit Logging:** Security event tracking via `auditLogService`.
+*   **Safe JSON Parsing:** Type-safe JSON handling infrastructure with validation and error recovery.
+*   **Shell Injection Prevention:** PID and port validation with parameterized commands to prevent injection attacks.
+*   **CSP Hardening:** Strengthened Content Security Policy with `object-src 'none'`, `base-uri 'self'`, and `frame-ancestors 'none'` directives.
 
 ### Full-Featured IDE
 *   **Monaco Editor:** The battle-tested core of VS Code, with AI inline completions and model-aware editing.
@@ -80,7 +100,7 @@
 *   **File Explorer:** Tree view with drag-and-drop, context menus, and file operations.
 *   **Search Panel:** Full-text and regex search across the workspace.
 *   **Command Palette:** Fuzzy-matched command execution.
-*   **Debugger:** Integrated runtime debugging with breakpoints and inspection.
+*   **Debugger:** Integrated runtime debugging with breakpoints and inspection using VS Code's official js-debug-dap adapter.
 *   **Task Board:** Project task management directly in the IDE.
 *   **Version History:** Diff viewer for comparing file versions.
 
@@ -89,6 +109,12 @@
 *   **Process Isolation:** Extensions run in a forked Node.js process for safety.
 *   **Open VSX Support:** Install extensions from the Open VSX marketplace or local `.vsix` files.
 *   **Plugin Management:** Full-featured panel for discovering, installing, and managing extensions.
+
+### Shadow Workspace with LSP (v1.0.5)
+*   **Sandboxed Validation:** AI changes are tested in a temporary "shadow" environment before touching your real code
+*   **LSP Integration:** Automatic Language Server Protocol session startup with real-time diagnostics validation
+*   **Multi-Language Support:** Comprehensive language ID mapping for LSP compatibility across all major languages
+*   **Document Synchronization:** Real-time document change synchronization with language servers
 
 ### Performance Acceleration
 *   **Memory Optimization:** Multi-layer RAM reduction system (Chromium flags, V8 heap cap, idle GC loops, lazy loading) achieving ~450 MB idle on Windows.
@@ -116,7 +142,7 @@
 
 Kalynt is a cross-platform application:
 
-*   **Windows:** **Extensively Tested.** Full support for local LLM acceleration (CUDA/DirectML) and native PTY.
+*   **Windows:** **Extensively Tested.** Full support for local LLM acceleration (CUDA/DirectML) and native PTY. v1.0.5 includes ESM loader fix for Windows absolute paths (C:\) in AI engine loading.
 *   **Linux (Ubuntu/Debian):** **Extensively Tested.** Optimized for modern distributions (Ubuntu 24.04+). Includes stability fixes for Wayland and transparency.
 *   **macOS:** **Supported.** Apple Silicon (M1/M2/M3) with Swift native performance helper for FSEvents, CoreML, and memory management.
 
@@ -126,15 +152,17 @@ Kalynt is a cross-platform application:
 
 Kalynt is built on a robust, modern tech stack:
 
-*   **Runtime:** Electron 28 (Main Process), Chromium (Renderer)
+*   **Runtime:** Electron 40 (Main Process), Chromium (Renderer)
 *   **Frontend:** React 18, Vite, TypeScript (Strict Mode)
 *   **Editor:** Monaco Editor (VS Code core)
 *   **State Management:** Zustand (w/ Persistence), Yjs (CRDT for collaboration)
 *   **AI Engine:** `node-llama-cpp` (Local), OpenAI/Anthropic/Google (Cloud)
+*   **Agentic System:** 26 autonomous services for intelligent task execution
 *   **Terminal:** Xterm.js + node-pty
 *   **Styling:** CSS Variables + Glassmorphism aesthetic
 *   **Icons:** Lucide React
 *   **Security:** Context-bridged IPC, CSP, renderer sandbox, safeStorage
+*   **Database:** Better-sqlite3 v12.6 for local data persistence
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for a deep dive into the system design.
 
@@ -149,7 +177,7 @@ kalynt/
 │       │       └── Performance_Acceleration/
 │       └── src/                 # Renderer (React UI, services, stores)
 │           ├── components/      # 23 top-level + ide/ + collaboration/ + extensions/
-│           ├── services/        # 28 renderer services
+│           ├── services/        # 54+ renderer services (including 26 agentic AI services)
 │           └── stores/          # 6 Zustand stores
 ├── packages/
 │   ├── crdt/                    # Shared Yjs CRDT logic
