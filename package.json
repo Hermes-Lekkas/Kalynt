@@ -25,6 +25,7 @@
         "@types/node": "^20.10.0",
         "@typescript-eslint/eslint-plugin": "^8.53.0",
         "@typescript-eslint/parser": "^8.53.0",
+        "app-builder-bin": "^5.0.0-alpha.10",
         "electron": "^40.6.1",
         "eslint": "^8.57.1",
         "eslint-plugin-react": "^7.37.5",
@@ -45,7 +46,8 @@
         "class-validator": ">=0.14.1",
         "validator": ">=13.15.0",
         "rollup": ">=4.58.0",
-        "ajv": ">=6.14.0",
+        "ajv": "^6.12.5",
+        "ajv-keywords": "^3.5.2",
         "tmp": ">=0.2.3"
     },
     "author": {

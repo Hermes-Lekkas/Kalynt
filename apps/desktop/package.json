@@ -94,11 +94,12 @@
         "vite": "^7.3.1",
         "vite-plugin-electron": "^0.29.0",
         "vite-plugin-electron-renderer": "^0.14.0",
-        "wait-on": "^7.2.0"
+        "wait-on": "^7.2.0",
+        "app-builder-bin": "^4.2.0"
     },
     "overrides": {
-        "ajv": "^8.17.1",
-        "ajv-keywords": "^5.1.0"
+        "ajv": "^6.12.5",
+        "ajv-keywords": "^3.5.2"
     },
     "build": {
         "appId": "com.kalynt.app",
