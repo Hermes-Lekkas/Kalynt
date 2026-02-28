@@ -13,6 +13,7 @@
   [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
   [![Version](https://img.shields.io/badge/version-v1.0.5--beta-green)](https://github.com/Hermes-Lekkas/Kalynt/releases)
   [![Platform](https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey)](https://github.com/Hermes-Lekkas/Kalynt/releases)
+  [![Reddit](https://img.shields.io/badge/reddit-r%2FKalynt__IDE-FF4500?logo=reddit)](https://reddit.com/r/Kalynt_IDE)
 </div>
 
 ---
@@ -215,6 +216,14 @@ swift build -c release
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to submit PRs, report bugs, and request features.
+
+---
+
+## Community & Support
+
+Join our community for support, discussions, and updates:
+
+*   **Reddit:** [r/Kalynt_IDE](https://reddit.com/r/Kalynt_IDE) - Community support, feature requests, and discussions
 
 ---
 
