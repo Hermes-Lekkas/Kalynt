@@ -97,8 +97,12 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
     const getTierIcon = (tierIndex: number) => {
         if (tierIndex <= 2) return <Circle size={16} className="fill-green-500 text-green-500" />
         if (tierIndex <= 4) return <Circle size={16} className="fill-yellow-500 text-yellow-500" />
-        return <Circle size={16} className="fill-blue-500 text-blue-500" />
+        if (tierIndex <= 6) return <Circle size={16} className="fill-blue-500 text-blue-500" />
+        // Ultimate models (72B+) - purple icon
+        return <Circle size={16} className="fill-purple-500 text-purple-500" />
     }
+
+    // Note: Models requiring 64GB+ RAM (ramRequiredMB >= 65536) are visually marked as "Ultimate" models
 
     return (
         <div className="model-manager-overlay" onClick={onClose}>
@@ -147,7 +151,14 @@ export default function ModelManager({ onClose, onSelectModel }: Props) {
                                         <p className="model-desc">{model.description}</p>
                                         <div className="model-stats">
                                             <span className="stat flex items-center gap-1"><Package size={12} /> {model.size}</span>
-                                            <span className="stat flex items-center gap-1"><Cpu size={12} /> {model.ramRequired} RAM</span>
+                                            <span className={`stat flex items-center gap-1 ${model.ramRequiredMB >= 65536 ? 'text-orange-400 font-semibold' : ''}`}>
+                                                <Cpu size={12} /> {model.ramRequired} RAM
+                                                {model.ramRequiredMB >= 65536 && (
+                                                    <span title="Requires 64GB+ RAM - Ensure your system meets requirements">
+                                                        <AlertTriangle size={12} className="text-orange-400" />
+                                                    </span>
+                                                )}
+                                            </span>
                                             <span className="stat quality">{getQualityStars(model.quality)}</span>
                                         </div>
                                     </div>

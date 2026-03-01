@@ -94,6 +94,9 @@ const QWEN_TEMPLATE = '<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\
 // Devstral uses Mistral instruction format
 const DEVSTRAL_TEMPLATE = '<s>[INST] {system}\n\n{user} [/INST]'
 
+// Mistral/Mixtral uses standard Mistral format
+const MISTRAL_TEMPLATE = '<s>[INST] {system}\n\n{user} [/INST]'
+
 /**
  * Available offline models - Top 5 Coding Agent Models (2026)
  * Ordered by tier/complexity: smallest to largest
@@ -286,6 +289,60 @@ export const OFFLINE_MODELS: OfflineModel[] = [
         contextLength: 128000,
         promptTemplate: QWEN_TEMPLATE,
         role: 'The Flagship Agent',
+        capabilities: {
+            level: 'full',
+            canReadFiles: true,
+            canWriteFiles: true,
+            canExecuteCode: true,
+            canRunCommands: true,
+            maxContextForSpeed: 16384,
+            supportsToolCalling: true
+        }
+    },
+    // 7. The Architect - Qwen2-72B-Instruct (72B Parameter Beast)
+    {
+        id: 'qwen2-72b-instruct',
+        name: 'Qwen2 72B Instruct',
+        description: 'Massive 72B parameter model with exceptional coding capabilities. 128K context window for entire codebase understanding. Full agent capabilities including advanced tool calling. Requires 64GB+ RAM.',
+        size: '45 GB',
+        sizeBytes: 45_000_000_000,
+        ramRequired: '64 GB',
+        ramRequiredMB: 65536,
+        quality: 5,
+        downloadUrl: 'https://huggingface.co/Qwen/Qwen2-72B-Instruct-GGUF/resolve/main/qwen2-72b-instruct-q4_k_m.gguf',
+        filename: 'qwen2-72b-instruct-q4_k_m.gguf',
+        minTier: 'starter',
+        tierIndex: 7,
+        contextLength: 131072,
+        promptTemplate: QWEN_TEMPLATE,
+        role: 'The Architect',
+        capabilities: {
+            level: 'full',
+            canReadFiles: true,
+            canWriteFiles: true,
+            canExecuteCode: true,
+            canRunCommands: true,
+            maxContextForSpeed: 32768,
+            supportsToolCalling: true
+        }
+    },
+    // 8. The Multi-Tasker - Mixtral-8x22B MoE (Mixture of Experts)
+    {
+        id: 'mixtral-8x22b-instruct',
+        name: 'Mixtral 8x22B MoE',
+        description: 'Sparse mixture-of-experts with 141B total parameters (8 experts x 22B). Efficient inference with 64K context. Excels at multi-tasking and complex reasoning. Requires 96GB+ RAM.',
+        size: '80 GB',
+        sizeBytes: 80_000_000_000,
+        ramRequired: '96 GB',
+        ramRequiredMB: 98304,
+        quality: 5,
+        downloadUrl: 'https://huggingface.co/mistralai/Mixtral-8x22B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x22b-instruct-v0.1-q4_k_m.gguf',
+        filename: 'mixtral-8x22b-instruct-v0.1-q4_k_m.gguf',
+        minTier: 'starter',
+        tierIndex: 8,
+        contextLength: 65536,
+        promptTemplate: MISTRAL_TEMPLATE,
+        role: 'The Multi-Tasker',
         capabilities: {
             level: 'full',
             canReadFiles: true,

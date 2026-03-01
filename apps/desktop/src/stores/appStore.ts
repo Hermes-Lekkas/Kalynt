@@ -43,6 +43,7 @@ export const BETA_CONFIG = {
 }
 
 // Tier types for model gating (legacy - all models now free in beta)
+// All models are available to all users in this open-source project
 export type TierType = 'starter' | 'pro' | 'enterprise' | 'beta'
 
 export interface Space {
