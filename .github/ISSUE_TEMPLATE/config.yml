@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://reddit.com/r/Kalynt_IDE
+    about: Please ask and answer questions on our Reddit community
+  - name: Security Vulnerability
+    url: https://github.com/Hermes-Lekkas/Kalynt/security/advisories/new
+    about: Please report security vulnerabilities here
