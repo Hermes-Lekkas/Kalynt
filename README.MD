@@ -118,7 +118,7 @@ A comprehensive architecture overhaul with 26 new services enabling autonomous d
 *   **Document Synchronization:** Real-time document change synchronization with language servers
 
 ### Performance Acceleration
-*   **Memory Optimization:** Multi-layer RAM reduction system (Chromium flags, V8 heap cap, idle GC loops, lazy loading) achieving ~450 MB idle on Windows.
+*   **Memory Optimization:** Multi-layer RAM reduction system (Chromium flags, V8 heap cap, idle GC loops, lazy loading) achieving ~700 MB idle on Windows/Ubuntu.
 *   **Lazy Loading:** Monaco Editor, tab panels, and heavy services load on-demand via `React.lazy()` and `ServiceOrchestrator`.
 *   **Native Acceleration:** Swift native helper on macOS for FSEvents, CoreML, and memory management.
 *   **Performance Modes:** Balanced, High Performance, and Power Saver profiles.
