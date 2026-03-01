@@ -27,7 +27,7 @@ kalynt/
 ## Getting Started
 
 1.  **Prerequisites**:
-    *   Node.js >= 18.0.0
+    *   Node.js >= 22.0.0
     *   Python 3.10+ (for native module builds)
     *   C++ Build Tools
     *   Swift 5.9+ (for macOS native helper, optional)
