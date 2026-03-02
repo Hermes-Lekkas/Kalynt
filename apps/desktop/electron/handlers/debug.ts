@@ -1058,10 +1058,18 @@ class DebugSessionManager {
     // Remove shell metacharacters that could be used for injection
     let sanitized = filePath
       .replace(/[;&|`$(){}[\]\\'"!<>]/g, '')  // Remove shell special chars
-      .replace(/\.\.\//g, '')                   // Remove path traversal
-      .replace(/\.\.\\/g, '')                   // Remove Windows path traversal
-      .replace(/\0/g, '')                       // Remove null bytes
-      .trim();
+      .replace(/\0/g, '');                    // Remove null bytes
+
+    // Repeatedly remove path traversal patterns until none remain
+    let previous: string;
+    do {
+      previous = sanitized;
+      sanitized = sanitized
+        .replace(/\.\.\//g, '')               // Remove UNIX-style path traversal
+        .replace(/\.\.\\/g, '');              // Remove Windows-style path traversal
+    } while (sanitized !== previous);
+
+    sanitized = sanitized.trim();
 
     // Ensure it's a reasonable file path
     if (!sanitized || sanitized.length === 0) {
