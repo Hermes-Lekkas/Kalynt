@@ -303,10 +303,20 @@ export function registerGitHandlers(ipcMain: Electron.IpcMain, getCurrentWorkspa
             const token = await getGitHubToken(getUserDataPath())
             
             let cloneUrl = options.url
-            if (token && cloneUrl.includes('github.com')) {
-                // For cloning, we can inject the token into the URL
-                // e.g. https://token@github.com/user/repo.git
-                cloneUrl = cloneUrl.replace('https://', `https://token:${token}@`)
+            if (token) {
+                try {
+                    const urlObj = new URL(cloneUrl)
+                    const allowedHosts = ['github.com']
+                    if (allowedHosts.includes(urlObj.hostname) && urlObj.protocol === 'https:') {
+                        // For cloning, we can inject the token into the URL
+                        // e.g. https://token@github.com/user/repo.git
+                        urlObj.username = 'token'
+                        urlObj.password = token
+                        cloneUrl = urlObj.toString()
+                    }
+                } catch {
+                    // If the URL cannot be parsed, fall back to the original cloneUrl without token injection
+                }
             }
 
             await git.clone(cloneUrl, options.targetPath)
