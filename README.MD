@@ -14,6 +14,8 @@
   [![Version](https://img.shields.io/badge/version-v1.0.5--beta-green)](https://github.com/Hermes-Lekkas/Kalynt/releases)
   [![Platform](https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey)](https://github.com/Hermes-Lekkas/Kalynt/releases)
   [![Reddit](https://img.shields.io/badge/reddit-r%2FKalynt__IDE-FF4500?logo=reddit)](https://reddit.com/r/Kalynt_IDE)
+  [![YouTube](https://img.shields.io/badge/YouTube-Kalynt-FF0000?logo=youtube)](https://youtu.be/pV7THS2ZGls)
+  [![Spotify](https://img.shields.io/badge/Spotify-Podcast-1DB954?logo=spotify)](https://open.spotify.com/show/0Hm1TtyPtzpRkhGCZjaAbb)
 </div>
 
 ---
@@ -224,6 +226,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for gu
 Join our community for support, discussions, and updates:
 
 *   **Reddit:** [r/Kalynt_IDE](https://reddit.com/r/Kalynt_IDE) - Community support, feature requests, and discussions
+*   **YouTube:** [Kalynt Channel](https://youtu.be/pV7THS2ZGls) - Video demos and tutorials
+*   **Spotify:** [Kalynt Podcast](https://open.spotify.com/show/0Hm1TtyPtzpRkhGCZjaAbb) - Audio content and discussions
 
 ---
 
