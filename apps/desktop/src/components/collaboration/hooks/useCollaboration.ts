@@ -263,8 +263,7 @@ export function useCollaboration(spaceId: string | undefined) {
       if (parsed) {
         if (password) {
           localStorage.setItem(`space-settings-${parsed.roomId}`, JSON.stringify({
-            encryptionEnabled: true,
-            roomPassword: password
+            encryptionEnabled: true
           }))
         }
         
