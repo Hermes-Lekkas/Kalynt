@@ -279,7 +279,7 @@ async function findBinary(name: string, workspacePath?: string | null): Promise<
 function wrapWindowsCommand(command: string, args: string[]): { command: string; args: string[] } {
     if (process.platform === 'win32' && (command.endsWith('.cmd') || command.endsWith('.bat'))) {
         return {
-            command: process.env.COMSPEC || 'cmd.exe',
+            command: 'cmd.exe',
             args: ['/d', '/s', '/c', command, ...args]
         }
     }
