@@ -6,6 +6,7 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import crypto from 'crypto'
 
 export interface TerminalSession {
     id: string
@@ -71,7 +72,9 @@ export class TerminalSessionManager extends EventEmitter {
         processType?: 'shell' | 'task' | 'debug'
         metadata?: any
     }): TerminalSession {
-        const sessionId = options.id || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        const sessionId =
+            options.id ||
+            `session_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`
         const now = Date.now()
 
         const session: TerminalSession = {
