@@ -6,6 +6,11 @@
   <h3>Local-First AI. End-to-End Encrypted Collaboration. No Subscription Required.</h3>
 
   <p>
+    🚀 <strong>Kalynt is developing fast!</strong> We're shipping new features weekly. 
+    Star ⭐ the repo and join our <a href="https://reddit.com/r/Kalynt_IDE">Reddit community</a> to stay updated!
+  </p>
+
+  <p>
     Kalynt is a next-generation Integrated Development Environment designed for the post-GPT era. 
     It embeds an autonomous AI agent deeply into your workflow while ensuring your code never leaves your machine unless you want it to.
   </p>
@@ -171,17 +176,27 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for a deep dive into the system design.
 
 ### Monorepo Structure
 
+> **⚠️ IMPORTANT:** This repository contains **two separate projects** that are **built independently** and **distributed separately**:
+> - **Kalynt Desktop** - The main Electron IDE (this README)
+> - **Kalynt Mobile Companion** - Android companion app for remote management ([see README_KALYNT_MOBILE.md](./README_KALYNT_MOBILE.md))
+
 ```text
 kalynt/
 ├── apps/
-│   └── desktop/                 # Main Electron application
-│       ├── electron/            # Main process (services, IPC, native)
-│       │   └── services/
-│       │       └── Performance_Acceleration/
-│       └── src/                 # Renderer (React UI, services, stores)
-│           ├── components/      # 23 top-level + ide/ + collaboration/ + extensions/
-│           ├── services/        # 54+ renderer services (including 26 agentic AI services)
-│           └── stores/          # 6 Zustand stores
+│   ├── desktop/                 # Main Electron IDE (THIS PROJECT)
+│   │   ├── electron/            # Main process (services, IPC, native)
+│   │   │   └── services/
+│   │   │       └── Performance_Acceleration/
+│   │   └── src/                 # Renderer (React UI, services, stores)
+│   │       ├── components/      # 23 top-level + ide/ + collaboration/ + extensions/
+│   │       ├── services/        # 54+ renderer services (including 26 agentic AI services)
+│   │       └── stores/          # 6 Zustand stores
+│   │
+│   └── mobile/                  # Android Companion App (SEPARATE PROJECT)
+│       └── android/             # Kotlin/Jetpack Compose app
+│           ├── app/src/main/    # Mobile UI, P2P connection, security
+│           └── ...              # See README_KALYNT_MOBILE.md
+│
 ├── packages/
 │   ├── crdt/                    # Shared Yjs CRDT logic
 │   ├── networking/              # P2P WebRTC management
@@ -189,6 +204,12 @@ kalynt/
 │   └── native-macos/            # Swift native helper (FSEvents, CoreML, memory)
 └── ...
 ```
+
+**Build Separation:**
+- Desktop builds do NOT include mobile code
+- Mobile APKs do NOT include desktop code
+- Each project has its own build system (npm/esbuild for Desktop, Gradle for Mobile)
+- They communicate via P2P WebSocket when both are running
 
 ---
 

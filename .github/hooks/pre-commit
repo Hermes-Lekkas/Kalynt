@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# Pre-commit hook to prevent committing secrets and private keys
+# Install: cp .github/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+
+echo "🔒 Running secret detection pre-commit hook..."
+
+# Patterns to detect secrets
+PATTERNS=(
+    # Private keys
+    '-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----'
+    '-----BEGIN PRIVATE KEY-----'
+    '-----BEGIN ENCRYPTED PRIVATE KEY-----'
+    
+    # API Keys and Tokens (generic patterns)
+    'api[_-]?key\s*[=:]\s*["\']?[a-zA-Z0-9]{32,}["\']?'
+    'api[_-]?secret\s*[=:]\s*["\']?[a-zA-Z0-9]{32,}["\']?'
+    'auth[_-]?token\s*[=:]\s*["\']?[a-zA-Z0-9]{32,}["\']?'
+    'access[_-]?token\s*[=:]\s*["\']?[a-zA-Z0-9]{32,}["\']?'
+    'password\s*[=:]\s*["\'][^"\']{8,}["\']'
+    
+    # AWS
+    'AKIA[0-9A-Z]{16}'
+    'aws[_-]?secret[_-]?access[_-]?key'
+    
+    # GitHub tokens
+    'ghp_[a-zA-Z0-9]{36}'
+    'gho_[a-zA-Z0-9]{36}'
+    'ghu_[a-zA-Z0-9]{36}'
+    'ghs_[a-zA-Z0-9]{36}'
+    'ghr_[a-zA-Z0-9]{36}'
+    
+    # Slack
+    'xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*'
+    
+    # Generic high-entropy strings (potential secrets)
+    'sk-[a-zA-Z0-9]{20,}'
+    'sk_live_[a-zA-Z0-9]{20,}'
+    'sk_test_[a-zA-Z0-9]{20,}'
+)
+
+# Files to check (staged files only)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+FOUND_SECRETS=0
+
+for file in $STAGED_FILES; do
+    # Skip binary files and certain allowed files
+    if [[ "$file" =~ \.(png|jpg|jpeg|gif|ico|wasm|mp4|mp3|zip|tar|gz)$ ]]; then
+        continue
+    fi
+    
+    # Skip test fixtures that might contain example keys
+    if [[ "$file" =~ (test|spec|fixture|example|sample) ]]; then
+        continue
+    fi
+    
+    # Get staged content
+    content=$(git show :"$file" 2>/dev/null)
+    
+    if [ -z "$content" ]; then
+        continue
+    fi
+    
+    for pattern in "${PATTERNS[@]}"; do
+        matches=$(echo "$content" | grep -inE "$pattern" 2>/dev/null || true)
+        
+        if [ -n "$matches" ]; then
+            echo ""
+            echo "❌ POTENTIAL SECRET DETECTED in $file:"
+            echo "$matches" | head -5
+            echo ""
+            FOUND_SECRETS=$((FOUND_SECRETS + 1))
+        fi
+    done
+done
+
+if [ $FOUND_SECRETS -gt 0 ]; then
+    echo ""
+    echo "⚠️  WARNING: Potential secrets detected in your commit!"
+    echo ""
+    echo "If these are false positives (e.g., test data, documentation examples):"
+    echo "   git commit --no-verify"
+    echo ""
+    echo "If these are real secrets:"
+    echo "   1. Remove them from the files immediately"
+    echo "   2. Add them to .gitignore if they should never be committed"
+    echo "   3. Use environment variables or a secrets manager"
+    echo "   4. If already pushed, rotate/change the compromised credentials NOW"
+    echo ""
+    exit 1
+fi
+
+echo "✅ No secrets detected. Proceeding with commit."
+exit 0

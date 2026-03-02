@@ -2,7 +2,9 @@
 node_modules/
 .agents/skills/
 /video
-.github
+.github/*
+!.github/hooks/
+!.github/hooks/**
 
 # Build outputs
 /dist/
@@ -48,13 +50,26 @@ snyk_report.json
 
 # OS
 .DS_Store
+
+# Private Keys - NEVER commit these!
+deploy_key
+deploy_key.pub
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+ssh_key*
+.ssh/
 Thumbs.db
 
 # Sub-projects (if managed separately)
 Kalynt Website/
 
 # Internal Scripts
-/scripts/
+/scripts/*
+!/scripts/install-security-hooks.sh
 .claude/settings.local.json
 .agent/rules/snyk_rules.md
 .codesight/scan_configs/
@@ -66,7 +81,9 @@ SKILL.md
 # Documentation cleanup
 *.md
 !README.MD
+!README_KALYNT_MOBILE.md
 !SECURITY.md
+!SECURITY_HYGIENE.md
 !CONTRIBUTING.md
 !CHANGELOG.md
 !ARCHITECTURE.md
