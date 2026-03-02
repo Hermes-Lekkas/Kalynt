@@ -481,7 +481,7 @@ class DebugSessionManager {
             if (fs.existsSync(path.dirname(globDir))) {
               try {
                 const dirs = fs.readdirSync(path.dirname(globDir));
-                const match = dirs.find(d => d.startsWith(globPattern.replace('*', '')));
+                const match = dirs.find(d => d.startsWith(globPattern.replace(/\*/g, '')));
                 if (match) {
                   codelldbPath = path.join(path.dirname(globDir), match, globPattern.includes('adapter') ? '' : 'adapter', 'codelldb' + (process.platform === 'win32' ? '.exe' : ''));
                   if (fs.existsSync(codelldbPath)) break;
