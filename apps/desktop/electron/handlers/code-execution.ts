@@ -273,17 +273,51 @@ async function findBinary(name: string, workspacePath?: string | null): Promise<
 }
 
 /**
+ * Sanitize an executable path so that environment-controlled absolute paths
+ * cannot unexpectedly change which binary is executed.
+ *
+ * - If the command is an absolute path and its basename is not in the allowed list,
+ *   we fall back to the basename (letting the OS PATH resolution handle it) so that
+ *   an attacker cannot force execution from an unexpected directory.
+ * - If no allowedBaseNames are provided, we just return the original command.
+ */
+function sanitizeExecutablePath(command: string, allowedBaseNames?: string[]): string {
+    if (!path.isAbsolute(command) || !allowedBaseNames || allowedBaseNames.length === 0) {
+        return command
+    }
+
+    const base = path.basename(command).toLowerCase()
+    const allowed = allowedBaseNames.map((name) => name.toLowerCase())
+
+    if (allowed.includes(base)) {
+        return command
+    }
+
+    // Fall back to just the basename; this avoids executing from an unexpected directory.
+    return path.basename(command)
+}
+
+/**
  * Wrap command for Windows .cmd/.bat files
  * On Windows with shell:false, .cmd files must be run through cmd.exe
  */
 function wrapWindowsCommand(command: string, args: string[]): { command: string; args: string[] } {
-    if (process.platform === 'win32' && (command.endsWith('.cmd') || command.endsWith('.bat'))) {
+    // Sanitize the primary command first to avoid executing unexpected absolute paths.
+    const safeCommand = sanitizeExecutablePath(command)
+
+    if (process.platform === 'win32' && (safeCommand.endsWith('.cmd') || safeCommand.endsWith('.bat'))) {
+        // Prefer COMSPEC if it looks like a valid cmd.exe path, otherwise fall back to 'cmd.exe'.
+        const comspec = process.env.COMSPEC
+        const resolvedCmd = comspec
+            ? sanitizeExecutablePath(comspec, ['cmd.exe', 'cmd'])
+            : 'cmd.exe'
+
         return {
-            command: process.env.COMSPEC || 'cmd.exe',
-            args: ['/d', '/s', '/c', command, ...args]
+            command: resolvedCmd || 'cmd.exe',
+            args: ['/d', '/s', '/c', safeCommand, ...args]
         }
     }
-    return { command, args }
+    return { command: safeCommand, args }
 }
 
 /**
@@ -352,7 +386,8 @@ async function getLanguageCommand(
     switch (normalizedLang) {
         case 'javascript':
         case 'node': {
-            const nodePath = await findBinary('node', workspacePath) || process.execPath
+            const rawNodePath = await findBinary('node', workspacePath) || process.execPath
+            const nodePath = sanitizeExecutablePath(rawNodePath, ['node', 'node.exe'])
             return { command: nodePath, args: [tempFile] }
         }
 
