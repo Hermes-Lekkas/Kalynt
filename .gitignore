@@ -47,6 +47,7 @@ snyk_report.json
 .idea/
 *.swp
 *.swo
+.kilocodemodes
 
 # OS
 .DS_Store
@@ -91,3 +92,4 @@ SKILL.md
 !DEVELOPER_GUIDE.md
 .gemini/
 gha-creds-*.json
+.kilocodemodes
