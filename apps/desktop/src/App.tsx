@@ -146,11 +146,11 @@ function App() {
         return
       }
 
-      // Save password if included in the link
+      // Save space settings if password is included in the link
       if (parsed.password) {
+        // Do not persist the actual room password in localStorage to avoid cleartext storage
         localStorage.setItem(`space-settings-${parsed.roomId}`, JSON.stringify({
-          encryptionEnabled: true,
-          roomPassword: parsed.password
+          encryptionEnabled: true
         }))
       }
 
