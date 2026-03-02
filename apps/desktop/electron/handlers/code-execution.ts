@@ -17,6 +17,27 @@ const runningProcesses = new Map<string, ChildProcess>()
 // Maps binary name -> resolved path (or null if not found)
 const binaryPathCache = new Map<string, string | null>()
 
+/**
+ * Sanitize an executable path before passing it to spawn/execFile.
+ * - Ensures the path is absolute when expected.
+ * - Normalizes the path to avoid surprising forms.
+ * Falls back to the original value if it cannot be normalized.
+ */
+function sanitizeExecutablePath(executable: string): string {
+    try {
+        // If it's an absolute path, normalize it.
+        if (path.isAbsolute(executable)) {
+            return path.normalize(executable)
+        }
+        // For non-absolute executables (like "node" or "cmd.exe"),
+        // just trim whitespace; resolution is left to the OS PATH.
+        return executable.trim()
+    } catch {
+        // In the unlikely event of failure, return the original value.
+        return executable
+    }
+}
+
 // SECURITY FIX: Whitelist of safe environment variables to pass to child processes
 // This prevents leaking sensitive credentials like API keys to user-executed code
 const SAFE_ENV_VARS = new Set([
@@ -278,12 +299,14 @@ async function findBinary(name: string, workspacePath?: string | null): Promise<
  */
 function wrapWindowsCommand(command: string, args: string[]): { command: string; args: string[] } {
     if (process.platform === 'win32' && (command.endsWith('.cmd') || command.endsWith('.bat'))) {
+        const comspec = sanitizeExecutablePath(process.env.COMSPEC || 'cmd.exe')
+        const scriptPath = sanitizeExecutablePath(command)
         return {
-            command: process.env.COMSPEC || 'cmd.exe',
-            args: ['/d', '/s', '/c', command, ...args]
+            command: comspec,
+            args: ['/d', '/s', '/c', scriptPath, ...args]
         }
     }
-    return { command, args }
+    return { command: sanitizeExecutablePath(command), args }
 }
 
 /**
@@ -353,7 +376,8 @@ async function getLanguageCommand(
         case 'javascript':
         case 'node': {
             const nodePath = await findBinary('node', workspacePath) || process.execPath
-            return { command: nodePath, args: [tempFile] }
+            const safeNodePath = sanitizeExecutablePath(nodePath)
+            return { command: safeNodePath, args: [tempFile] }
         }
 
         case 'typescript': {
